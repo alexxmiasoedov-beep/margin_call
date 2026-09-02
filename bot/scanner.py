@@ -217,6 +217,28 @@ def fmt_price(p):
     return f"{p:.6g}"
 
 
+def funding(sym):
+    """Текущая ставка фандинга на бессрочном контракте: {"rate": % за период, "hours": период, "src"} или None."""
+    j = http_json(f"https://contract.mexc.com/api/v1/contract/funding_rate/{sym}_USDT", 15)
+    if isinstance(j, dict) and j.get("success") and j.get("data", {}).get("fundingRate") is not None:
+        d = j["data"]
+        return {"rate": float(d["fundingRate"]) * 100, "hours": int(d.get("collectCycle") or 8), "src": "MEXC"}
+    j = http_json(f"https://api.gateio.ws/api/v4/futures/usdt/contracts/{sym}_USDT", 15)
+    if isinstance(j, dict) and j.get("funding_rate") is not None:
+        return {"rate": float(j["funding_rate"]) * 100, "hours": int(j.get("funding_interval") or 28800) // 3600, "src": "Gate"}
+    j = http_json(f"https://api.bitget.com/api/v2/mix/market/current-fund-rate?symbol={sym}USDT&productType=USDT-FUTURES", 15)
+    if isinstance(j, dict) and j.get("data"):
+        d = j["data"][0]
+        return {"rate": float(d["fundingRate"]) * 100, "hours": int(d.get("fundingRateInterval") or 8), "src": "Bitget"}
+    return None
+
+
+def fmt_funding(f):
+    if not f:
+        return "нет бессрочного контракта"
+    return f"{f['rate']:+.4f}% / {f['hours']} ч ({f['src']})"
+
+
 # ---------------------------------------------------------------- сигналы
 def fmt_run(c):
     return ("≥" if c.get("capped") else "") + f"{c['run_h']:.1f} ч"
@@ -228,7 +250,7 @@ def status_text(cands):
     lines = ["Монеты, висящие в канале ≥%g ч (рост за 4ч):" % MIN_RUN_H]
     for c in sorted(cands, key=lambda c: -c["b4h"]):
         flag = "🔻" if PUMP_MIN <= c["b4h"] <= PUMP_MAX else "  "
-        lines.append(f"{flag} {c['sym']}: {fmt_run(c)}, {c['b4h']:+.1f}%")
+        lines.append(f"{flag} {c['sym']}: {fmt_run(c)}, {c['b4h']:+.1f}%, фандинг {fmt_funding(c.get('funding'))}")
     return "\n".join(lines)
 
 
@@ -238,6 +260,7 @@ def signal_text(c):
         f"🔻 <b>ШОРТ-сигнал: {c['sym']}</b>\n"
         f"Цена: {fmt_price(c['price'])} USDT ({c['src']})\n"
         f"Рост за 4 ч: <b>{c['b4h']:+.1f}%</b>\n"
+        f"Фандинг: {fmt_funding(c.get('funding'))}\n"
         f"В канале непрерывно: {fmt_run(c)} (BOR {bor}, REP {rep}, B/R {br})\n\n"
         f"Правило: ≥{MIN_RUN_H:g} ч в канале + рост {PUMP_MIN:g}–{PUMP_MAX:g}% за 4 ч.\n"
         "Статистика за август: −10…−14% за сутки сверх рынка, 9 из 10 в минусе, "
@@ -276,13 +299,14 @@ def scan(state, dry):
         if not pc:
             log("нет цены для", sym)
             continue
-        c = {"sym": sym, "run_h": r["run_h"], "capped": r["capped"], "info": r["info"], **pc}
+        c = {"sym": sym, "run_h": r["run_h"], "capped": r["capped"], "info": r["info"], "funding": funding(sym), **pc}
         cands.append(c)
         recent = [a for a in state["alerts"] if a["sym"] == sym and now - a["ts"] < COOLDOWN_H * 3600]
         if PUMP_MIN <= c["b4h"] <= PUMP_MAX and not recent:
             log("СИГНАЛ", sym, f"{c['b4h']:+.1f}%", f"{c['run_h']:.1f}ч")
             broadcast(state, signal_text(c), dry)
-            state["alerts"].append({"sym": sym, "ts": now, "price": c["price"], "b4h": c["b4h"], "run_h": c["run_h"]})
+            state["alerts"].append({"sym": sym, "ts": now, "price": c["price"], "b4h": c["b4h"], "run_h": c["run_h"],
+                                    "funding": (c["funding"] or {}).get("rate")})
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
