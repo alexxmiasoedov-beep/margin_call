@@ -1,0 +1,15 @@
+# systemd-юнит: скопировать в /etc/systemd/system/, поправить пути, затем
+#   systemctl daemon-reload && systemctl enable --now margin-scanner
+[Unit]
+Description=Margin-call scanner (MarginData -> Telegram)
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/margin_call/bot
+EnvironmentFile=/opt/margin_call/.env
+ExecStart=/usr/bin/python3 /opt/margin_call/bot/scanner.py --loop
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
