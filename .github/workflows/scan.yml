@@ -1,30 +1,75 @@
-# Вариант без своего сервера: GitHub Actions запускает один проход сканера
-# каждые 15 минут, в :03/:18/:33/:48 — не в «круглые» минуты, где очередь GitHub
-# самая большая и запуски чаще пропускаются (задержки 5–15 минут всё равно бывают).
+# Запуск без своего сервера, два режима в одном workflow:
+#  * schedule (cron каждые 15 мин) — один быстрый проход (--once), ~1 минута Actions;
+#  * workflow_dispatch — сканер работает циклом ~5 ч 40 мин, сохраняет состояние
+#    каждые 10 минут и в конце САМ запускает следующий такой же прогон, если за
+#    последние 2 часа cron не срабатывал (у новых репозиториев GitHub cron часто
+#    молчит часами). Как только cron заработает — цепочка сама останавливается.
 # Нужен секрет репозитория TG_BOT_TOKEN (Settings → Secrets and variables → Actions).
+# Цена цепочки: ~24 ч Actions в сутки; для приватного репозитория бесплатный лимит
+# 2 000 мин/мес, для публичного — без ограничений.
 name: scan
 on:
   schedule:
     - cron: "3,18,33,48 * * * *"
   workflow_dispatch:
+    inputs:
+      max_runtime_sec:
+        description: "Сколько секунд работать циклом (по умолчанию 20400 = 5 ч 40 мин)"
+        default: "20400"
+        required: false
 concurrency:
   group: scan
   cancel-in-progress: false
 permissions:
   contents: write
+  actions: write
 jobs:
   scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      STATE_FILE: bot/state.json
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - name: Scan once
-        env:
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          STATE_FILE: bot/state.json
-        run: python3 bot/scanner.py --once
-      - name: Save state
+      - name: Git identity
         run: |
           git config user.name "margin-scanner"
           git config user.email "margin-scanner@users.noreply.github.com"
-          git add bot/state.json
-          git diff --cached --quiet || (git commit -m "scanner: state $(date -u +%FT%TZ)" && git pull --rebase && git push)
+      - name: Scan
+        run: |
+          save() {
+            git add bot/state.json
+            git diff --cached --quiet && return 0
+            git commit -qm "scanner: state $(date -u +%FT%TZ)" && git pull -q --rebase --autostash && git push -q || echo "::warning::не удалось сохранить состояние"
+          }
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python3 bot/scanner.py --once
+            save
+            exit 0
+          fi
+          MAX_RUNTIME_SEC="${{ github.event.inputs.max_runtime_sec || '20400' }}" python3 bot/scanner.py --loop &
+          PID=$!
+          while kill -0 $PID 2>/dev/null; do
+            sleep 600 & SLEEP=$!
+            wait $SLEEP
+            save
+          done
+          wait $PID || true
+          save
+      - name: Chain next run if cron is silent
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          recent=$(gh run list --workflow scan.yml --event schedule --limit 10 --json createdAt \
+                   --jq '[.[] | select((now - (.createdAt | fromdateiso8601)) < 7200)] | length')
+          if [ "${recent:-0}" -gt 0 ]; then
+            echo "cron за последние 2 часа срабатывал ($recent раз) — цепочку не продолжаю"
+            exit 0
+          fi
+          for i in 1 2 3 4 5; do
+            gh workflow run scan.yml --ref main && { echo "следующий прогон запущен"; exit 0; }
+            sleep 30
+          done
+          echo "::error::не удалось запустить следующий прогон"
+          exit 1

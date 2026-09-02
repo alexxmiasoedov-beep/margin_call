@@ -32,6 +32,7 @@ PUMP_MIN = float(os.environ.get("PUMP_MIN", "8"))
 PUMP_MAX = float(os.environ.get("PUMP_MAX", "17"))
 COOLDOWN_H = float(os.environ.get("COOLDOWN_H", "24"))
 POLL_SEC = int(os.environ.get("POLL_SEC", "300"))
+MAX_RUNTIME_SEC = int(os.environ.get("MAX_RUNTIME_SEC", "0"))  # --loop: выйти через N секунд (0 = бесконечно)
 LOOKBACK_H = MIN_RUN_H + 1.5  # сколько часов постов тянуть из канала
 UA = "Mozilla/5.0 (margin-call scanner)"
 
@@ -342,11 +343,15 @@ def main():
     if not TOKEN and not dry:
         sys.exit("TG_BOT_TOKEN не задан (или используйте --dry-run)")
     if "--loop" in sys.argv:
+        started = time.time()
         while True:
             try:
                 cycle(dry)
             except Exception as e:
                 log("ошибка цикла:", repr(e))
+            if MAX_RUNTIME_SEC and time.time() - started + POLL_SEC > MAX_RUNTIME_SEC:
+                log("достигнут MAX_RUNTIME_SEC, выхожу")
+                break
             time.sleep(POLL_SEC)
     else:
         cycle(dry)
