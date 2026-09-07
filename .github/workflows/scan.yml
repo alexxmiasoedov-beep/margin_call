@@ -1,12 +1,11 @@
-# Запуск без своего сервера, два режима в одном workflow:
-#  * schedule (cron каждые 15 мин) — один быстрый проход (--once), ~1 минута Actions;
-#  * workflow_dispatch — сканер работает циклом ~5 ч 40 мин, сохраняет состояние
-#    каждые 10 минут и в конце САМ запускает следующий такой же прогон, если за
-#    последние 2 часа cron не срабатывал (у новых репозиториев GitHub cron часто
-#    молчит часами). Как только cron заработает — цепочка сама останавливается.
+# Запуск без своего сервера (репозиторий публичный — минуты Actions бесплатны):
+#  * workflow_dispatch — сканер работает циклом ~5 ч 40 мин (опрос канала каждые
+#    5 минут), сохраняет состояние каждые 10 минут и в конце САМ запускает
+#    следующий такой же прогон. Так получается непрерывная цепочка.
+#  * schedule (cron) — сторож: быстрый проход (--once) и перезапуск цепочки, если
+#    она оборвалась. Пока цепочка жива, cron-запуски стоят в очереди
+#    (concurrency) и отменяются следующим звеном цепочки — это нормально.
 # Нужен секрет репозитория TG_BOT_TOKEN (Settings → Secrets and variables → Actions).
-# Цена цепочки: ~24 ч Actions в сутки; для приватного репозитория бесплатный лимит
-# 2 000 мин/мес, для публичного — без ограничений.
 name: scan
 on:
   schedule:
@@ -58,18 +57,11 @@ jobs:
           done
           wait $PID || true
           save
-      - name: Chain next run if cron is silent
-        if: github.event_name == 'workflow_dispatch'
+      - name: Chain next run
         run: |
-          recent=$(gh run list --workflow scan.yml --event schedule --limit 10 --json createdAt \
-                   --jq '[.[] | select((now - (.createdAt | fromdateiso8601)) < 7200)] | length')
-          if [ "${recent:-0}" -gt 0 ]; then
-            echo "cron за последние 2 часа срабатывал ($recent раз) — цепочку не продолжаю"
-            exit 0
-          fi
           for i in 1 2 3 4 5; do
             gh workflow run scan.yml --ref main && { echo "следующий прогон запущен"; exit 0; }
             sleep 30
           done
-          echo "::error::не удалось запустить следующий прогон"
+          echo "::error::не удалось запустить следующий прогон — цепочку перезапустит cron"
           exit 1
