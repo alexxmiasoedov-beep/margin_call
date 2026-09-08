@@ -264,6 +264,10 @@ def summary(state):
     closed = [t for t in state["trades"] if t.get("closed")]
     lines = [f"Режим: {MODE}, маржа {MARGIN_USDT:g} USDT × {LEVERAGE}x, стоп +{SL_PCT:g}%, тейк −{TP_PCT:g}%, "
              f"выход {HOLD_H:g} ч" + (" — НА ПАУЗЕ" if state.get("trading_paused") else "")]
+    if MODE != "off":
+        b = balance() if KEY and SECRET else None
+        lines.append(f"BingX: баланс {b['balance']:.2f} {b['asset']}, доступно {b['available']:.2f}" if b
+                     else "BingX: ключи не подошли или не заданы — реальные ордера невозможны")
     if ot:
         lines.append("Открытые:")
         for t in ot:

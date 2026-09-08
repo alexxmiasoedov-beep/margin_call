@@ -366,7 +366,10 @@ def main():
     dry = "--dry-run" in sys.argv
     if not TOKEN and not dry:
         sys.exit("TG_BOT_TOKEN не задан (или используйте --dry-run)")
-    log(trader.startup_check())
+    check = trader.startup_check()
+    log(check)
+    if trader.MODE != "off" and not check.startswith("BingX OK") and not dry:
+        broadcast(load_state(), f"⚠️ Исполнитель сделок: {check}", dry)
     if "--loop" in sys.argv:
         started = time.time()
         while True:
