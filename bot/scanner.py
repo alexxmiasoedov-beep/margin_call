@@ -23,6 +23,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
+import trader
+
 CHANNEL = os.environ.get("CHANNEL", "cryptocode_margin_data")
 TOKEN = os.environ.get("TG_BOT_TOKEN", "")
 STATE_FILE = os.environ.get("STATE_FILE", "state.json")
@@ -90,7 +92,8 @@ WELCOME = (
     "Подписка оформлена. Буду присылать шорт-сигналы по правилу:\n"
     f"монета висит в канале MarginData непрерывно ≥{MIN_RUN_H:g} ч и выросла на "
     f"{PUMP_MIN:g}–{PUMP_MAX:g}% за 4 ч.\n\n"
-    "Команды: /status — текущие кандидаты, /stop — отписаться."
+    "Команды: /status — текущие кандидаты, /trades — сделки и PnL, /pause и /resume — пауза торговли, "
+    "/stop — отписаться."
 )
 
 
@@ -119,6 +122,14 @@ def poll_commands(state, candidates, dry):
             send(cid, "Отписал. Чтобы вернуться — /start.")
         elif text.startswith("/status"):
             send(cid, status_text(candidates))
+        elif text.startswith("/trades"):
+            send(cid, trader.summary(state))
+        elif text.startswith("/pause"):
+            state["trading_paused"] = True
+            send(cid, "Торговля на паузе: новые сделки не открываются, открытые ведутся до выхода. /resume — продолжить.")
+        elif text.startswith("/resume"):
+            state["trading_paused"] = False
+            send(cid, "Торговля возобновлена.")
 
 
 # ---------------------------------------------------------------- канал
@@ -308,6 +319,13 @@ def scan(state, dry):
             broadcast(state, signal_text(c), dry)
             state["alerts"].append({"sym": sym, "ts": now, "price": c["price"], "b4h": c["b4h"], "run_h": c["run_h"],
                                     "funding": (c["funding"] or {}).get("rate")})
+            try:
+                msg = trader.on_signal(state, sym, c["price"])
+            except Exception as e:
+                msg = f"❌ {sym}: ошибка исполнителя: {e!r}"
+            if msg:
+                log(msg.replace("\n", " | "))
+                broadcast(state, msg, dry)
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
@@ -334,6 +352,12 @@ def cycle(dry):
     state = load_state()
     cands = scan(state, dry)
     followups(state, dry)
+    try:
+        for msg in trader.manage(state):
+            log(msg)
+            broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка исполнителя:", repr(e))
     poll_commands(state, cands, dry)
     save_state(state)
 
@@ -342,6 +366,7 @@ def main():
     dry = "--dry-run" in sys.argv
     if not TOKEN and not dry:
         sys.exit("TG_BOT_TOKEN не задан (или используйте --dry-run)")
+    log(trader.startup_check())
     if "--loop" in sys.argv:
         started = time.time()
         while True:
