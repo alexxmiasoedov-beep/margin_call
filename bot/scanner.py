@@ -58,13 +58,13 @@ def http_json(url, timeout=30):
 
 
 # ---------------------------------------------------------------- Telegram
-def tg(method, **params):
+def tg(method, _timeout=30, **params):
     if not TOKEN:
         return None
     url = f"https://api.telegram.org/bot{TOKEN}/{method}"
     data = urllib.parse.urlencode(params).encode()
     try:
-        return json.loads(http(url, data=data))
+        return json.loads(http(url, data=data, timeout=_timeout))
     except Exception as e:
         log("telegram fail", method, e)
         return None
@@ -169,11 +169,12 @@ def handle_callback(state, cq, candidates):
         tg("sendMessage", chat_id=cid, text="Торговля возобновлена.", reply_markup=main_menu(state))
 
 
-def poll_commands(state, candidates, dry):
-    """Обрабатывает команды, нажатия кнопок и ввод значений параметров."""
+def poll_commands(state, candidates, dry, wait=0):
+    """Обрабатывает команды, нажатия кнопок и ввод значений параметров.
+    wait > 0 — длинный опрос: Telegram держит запрос до wait секунд и отвечает сразу, как придёт событие."""
     if not TOKEN:
         return
-    r = tg("getUpdates", offset=state.get("update_offset", 0), timeout=0)
+    r = tg("getUpdates", _timeout=wait + 15, offset=state.get("update_offset", 0), timeout=wait)
     if not r or not r.get("ok"):
         return
     for u in r["result"]:
@@ -463,8 +464,9 @@ def save_state(s):
     os.replace(tmp, STATE_FILE)
 
 
-def cycle(dry):
-    state = load_state()
+def cycle(dry, state=None):
+    """Один проход: канал → сигналы/сделки → отчёты → сопровождение позиций. Возвращает кандидатов."""
+    state = state if state is not None else load_state()
     trader.configure(state)
     cands = scan(state, dry)
     followups(state, dry)
@@ -474,8 +476,35 @@ def cycle(dry):
             broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка исполнителя:", repr(e))
-    poll_commands(state, cands, dry)
     save_state(state)
+    return cands
+
+
+def run_loop(dry):
+    """Сканирование раз в POLL_SEC, а между ними — длинный опрос Telegram, чтобы кнопки отвечали сразу."""
+    state = load_state()
+    cands = []
+    started = time.time()
+    next_scan = 0
+    while True:
+        now = time.time()
+        if now >= next_scan:
+            try:
+                cands = cycle(dry, state)
+            except Exception as e:
+                log("ошибка цикла:", repr(e))
+            next_scan = time.time() + POLL_SEC
+            if MAX_RUNTIME_SEC and time.time() - started + POLL_SEC > MAX_RUNTIME_SEC:
+                log("достигнут MAX_RUNTIME_SEC, выхожу")
+                break
+        wait = max(1, min(25, int(next_scan - time.time())))
+        try:
+            trader.configure(state)
+            poll_commands(state, cands, dry, wait=wait)
+            save_state(state)
+        except Exception as e:
+            log("ошибка обработки команд:", repr(e))
+            time.sleep(3)
 
 
 def main():
@@ -489,18 +518,12 @@ def main():
     if trader.MODE != "off" and not check.startswith("BingX OK") and not dry:
         broadcast(load_state(), f"⚠️ Исполнитель сделок: {check}", dry)
     if "--loop" in sys.argv:
-        started = time.time()
-        while True:
-            try:
-                cycle(dry)
-            except Exception as e:
-                log("ошибка цикла:", repr(e))
-            if MAX_RUNTIME_SEC and time.time() - started + POLL_SEC > MAX_RUNTIME_SEC:
-                log("достигнут MAX_RUNTIME_SEC, выхожу")
-                break
-            time.sleep(POLL_SEC)
+        run_loop(dry)
     else:
-        cycle(dry)
+        state = load_state()
+        cands = cycle(dry, state)
+        poll_commands(state, cands, dry)
+        save_state(state)
 
 
 if __name__ == "__main__":
