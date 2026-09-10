@@ -153,6 +153,29 @@ def position(sym):
     return None
 
 
+def realized(sym, since_ts):
+    """Фактический результат по контракту с момента since_ts по данным BingX:
+    {"pnl": реализованный PnL, "fee": комиссии, "funding": фандинг} в USDT или None."""
+    j = _request("GET", "/openApi/swap/v2/user/income",
+                 {"symbol": f"{sym}-USDT", "startTime": int(since_ts * 1000), "limit": 200})
+    rows = j.get("data") if isinstance(j, dict) else None
+    if not isinstance(rows, list):
+        return None
+    out = {"pnl": 0.0, "fee": 0.0, "funding": 0.0}
+    for r in rows:
+        try:
+            t, v = str(r.get("incomeType", "")).upper(), float(r.get("income", 0))
+        except (TypeError, ValueError):
+            continue
+        if "REALIZED" in t:
+            out["pnl"] += v
+        elif "COMMISSION" in t or ("FEE" in t and "FUNDING" not in t):
+            out["fee"] += v
+        elif "FUNDING" in t:
+            out["funding"] += v
+    return out
+
+
 def positions_text():
     """Реальные открытые позиции на BingX (все контракты)."""
     if not KEY or not SECRET:
@@ -281,9 +304,18 @@ def _close(state, t, price, reason):
     pnl_pct = (t["entry"] / price - 1) * 100 * t["lev"]      # шорт: прибыль при падении, к марже с плечом
     t["pnl_pct"] = pnl_pct
     t["pnl_usdt"] = t["margin"] * pnl_pct / 100
-    mark = "✅" if pnl_pct > 0 else "❌"
-    return (f"{mark} закрыт шорт {t['sym']} ({t['mode']}): {reason}, вход {t['entry']:.6g} → выход {price:.6g}, "
-            f"PnL {pnl_pct:+.1f}% к марже ({t['pnl_usdt']:+.2f} USDT)")
+    extra = ""
+    if t["mode"] == "live":
+        r = realized(t["sym"], t["opened"] - 60)
+        if r and (r["pnl"] or r["fee"] or r["funding"]):
+            net = r["pnl"] + r["fee"] + r["funding"]
+            t["pnl_usdt"] = net
+            t["pnl_pct"] = net / t["margin"] * 100
+            extra = (f"\nПо данным биржи: PnL {r['pnl']:+.2f}, комиссии {r['fee']:+.2f}, фандинг {r['funding']:+.2f} "
+                     f"→ итого {net:+.2f} USDT ({t['pnl_pct']:+.1f}% к марже)")
+    mark = "✅" if t["pnl_usdt"] > 0 else "❌"
+    return (f"{mark} закрыт шорт {t['sym']} ({t['mode']}): {reason}, вход {t['entry']:.6g} → выход ≈{price:.6g}, "
+            f"расчётный PnL {pnl_pct:+.1f}% к марже ({t['margin'] * pnl_pct / 100:+.2f} USDT){extra}")
 
 
 def manage(state):
