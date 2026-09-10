@@ -98,8 +98,79 @@ WELCOME = (
 )
 
 
+def kb(rows):
+    """Инлайн-клавиатура: rows = [[(текст, data), ...], ...]."""
+    return json.dumps({"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in row] for row in rows]})
+
+
+def main_menu(state):
+    pause = ("▶️ Возобновить торговлю", "resume") if state.get("trading_paused") else ("⏸ Пауза торговли", "pause")
+    return kb([
+        [("⚙️ Параметры сделок", "params"), ("📊 Позиции на BingX", "positions")],
+        [("📒 Журнал сделок", "trades"), ("🔍 Кандидаты в канале", "status")],
+        [pause],
+    ])
+
+
+def params_menu():
+    rows, row = [], []
+    for name, (var, typ, lo, hi, desc) in trader.PARAMS.items():
+        row.append((f"{desc.split(',')[0]}: {getattr(trader, var):g}", f"p:{name}"))
+        if len(row) == 2:
+            rows.append(row); row = []
+    if row:
+        rows.append(row)
+    rows.append([("◀️ Меню", "menu")])
+    return kb(rows)
+
+
+def send_menu(cid, state):
+    tg("sendMessage", chat_id=cid, text="Меню бота. Выберите действие:", reply_markup=main_menu(state))
+
+
+def setup_commands():
+    """Регистрирует команды в меню Telegram (кнопка «/» у поля ввода)."""
+    cmds = [("menu", "Меню с кнопками"), ("params", "Параметры сделок"), ("positions", "Открытые позиции на BingX"),
+            ("trades", "Журнал сделок, баланс"), ("status", "Кандидаты в канале"), ("pause", "Пауза торговли"),
+            ("resume", "Возобновить торговлю"), ("stop", "Отписаться")]
+    tg("setMyCommands", commands=json.dumps([{"command": c, "description": d} for c, d in cmds]))
+
+
+def handle_callback(state, cq, candidates):
+    cid = cq["message"]["chat"]["id"]
+    data = cq.get("data", "")
+    tg("answerCallbackQuery", callback_query_id=cq["id"])
+    if data == "menu":
+        send_menu(cid, state)
+    elif data == "params":
+        tg("sendMessage", chat_id=cid, text=trader.params_text() + "\n\nНажмите параметр, чтобы изменить:",
+           reply_markup=params_menu())
+    elif data.startswith("p:"):
+        name = data[2:]
+        if name in trader.PARAMS:
+            var, typ, lo, hi, desc = trader.PARAMS[name]
+            state.setdefault("awaiting", {})[str(cid)] = name
+            tg("sendMessage", chat_id=cid,
+               text=f"Введите новое значение — {desc} (сейчас {getattr(trader, var):g}, допустимо {lo:g}–{hi:g}).\n"
+                    "Ответьте на это сообщение числом или напишите «отмена».",
+               reply_markup=json.dumps({"force_reply": True, "input_field_placeholder": "число"}))
+    elif data == "positions":
+        send(cid, trader.positions_text())
+    elif data == "trades":
+        send(cid, trader.summary(state))
+    elif data == "status":
+        send(cid, status_text(candidates))
+    elif data == "pause":
+        state["trading_paused"] = True
+        tg("sendMessage", chat_id=cid, text="Торговля на паузе: новые сделки не открываются, открытые ведутся до выхода.",
+           reply_markup=main_menu(state))
+    elif data == "resume":
+        state["trading_paused"] = False
+        tg("sendMessage", chat_id=cid, text="Торговля возобновлена.", reply_markup=main_menu(state))
+
+
 def poll_commands(state, candidates, dry):
-    """Читает /start, /stop, /status. Возвращает True, если список подписчиков изменился."""
+    """Обрабатывает команды, нажатия кнопок и ввод значений параметров."""
     if not TOKEN:
         return
     r = tg("getUpdates", offset=state.get("update_offset", 0), timeout=0)
@@ -107,16 +178,36 @@ def poll_commands(state, candidates, dry):
         return
     for u in r["result"]:
         state["update_offset"] = u["update_id"] + 1
+        if "callback_query" in u:
+            try:
+                handle_callback(state, u["callback_query"], candidates)
+            except Exception as e:
+                log("ошибка кнопки:", repr(e))
+            continue
         msg = u.get("message") or u.get("channel_post")
         if not msg or "text" not in msg:
             continue
         cid = msg["chat"]["id"]
-        text = msg["text"].strip().lower()
+        raw = msg["text"].strip()
+        text = raw.lower().split("@")[0] if raw.startswith("/") else raw.lower()
+        awaiting = state.get("awaiting", {}).get(str(cid))
+        if awaiting and not raw.startswith("/"):
+            state["awaiting"].pop(str(cid), None)
+            if text in ("отмена", "cancel", "нет"):
+                tg("sendMessage", chat_id=cid, text="Отменено.", reply_markup=params_menu())
+            else:
+                reply = trader.set_param(state, awaiting, raw.replace(",", "."))
+                log("параметр из чата:", awaiting, raw)
+                tg("sendMessage", chat_id=cid, text=reply, reply_markup=params_menu())
+            continue
         if text.startswith("/start"):
             if cid not in state["subscribers"]:
                 state["subscribers"].append(cid)
                 log("новый подписчик", cid)
             send(cid, WELCOME)
+            send_menu(cid, state)
+        elif text.startswith("/menu"):
+            send_menu(cid, state)
         elif text.startswith("/stop"):
             if cid in state["subscribers"]:
                 state["subscribers"].remove(cid)
@@ -128,11 +219,13 @@ def poll_commands(state, candidates, dry):
         elif text.startswith("/positions"):
             send(cid, trader.positions_text())
         elif text.startswith("/params"):
-            send(cid, trader.params_text())
+            tg("sendMessage", chat_id=cid, text=trader.params_text() + "\n\nНажмите параметр, чтобы изменить:",
+               reply_markup=params_menu())
         elif text.startswith("/set"):
             parts = text.split()
             if len(parts) != 3:
-                send(cid, "Формат: /set <параметр> <число>\n\n" + trader.params_text())
+                tg("sendMessage", chat_id=cid, text="Формат: /set <параметр> <число>, или выберите кнопкой:",
+                   reply_markup=params_menu())
             else:
                 reply = trader.set_param(state, parts[1], parts[2])
                 log("параметр из чата:", parts[1], parts[2])
@@ -391,6 +484,8 @@ def main():
         sys.exit("TG_BOT_TOKEN не задан (или используйте --dry-run)")
     check = trader.startup_check()
     log(check)
+    if TOKEN and not dry:
+        setup_commands()
     if trader.MODE != "off" and not check.startswith("BingX OK") and not dry:
         broadcast(load_state(), f"⚠️ Исполнитель сделок: {check}", dry)
     if "--loop" in sys.argv:
