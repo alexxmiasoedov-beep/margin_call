@@ -161,18 +161,20 @@ def realized(sym, since_ts):
     rows = j.get("data") if isinstance(j, dict) else None
     if not isinstance(rows, list):
         return None
-    out = {"pnl": 0.0, "fee": 0.0, "funding": 0.0}
+    out = {"pnl": 0.0, "fee": 0.0, "funding": 0.0, "types": set()}
     for r in rows:
         try:
             t, v = str(r.get("incomeType", "")).upper(), float(r.get("income", 0))
         except (TypeError, ValueError):
             continue
-        if "REALIZED" in t:
+        out["types"].add(t)
+        if "REALIZED" in t or "ADL" in t or "DELEVERAG" in t or "LIQUIDAT" in t:
             out["pnl"] += v
         elif "COMMISSION" in t or ("FEE" in t and "FUNDING" not in t):
             out["fee"] += v
         elif "FUNDING" in t:
             out["funding"] += v
+    out["types"] = ", ".join(sorted(out["types"]))
     return out
 
 
@@ -358,7 +360,7 @@ def _close(state, t, price, reason):
             t["pnl_usdt"] = net
             t["pnl_pct"] = net / t["margin"] * 100
             extra = (f"\nПо данным биржи: PnL {r['pnl']:+.2f}, комиссии {r['fee']:+.2f}, фандинг {r['funding']:+.2f} "
-                     f"→ итого {net:+.2f} USDT ({t['pnl_pct']:+.1f}% к марже)")
+                     f"→ итого {net:+.2f} USDT ({t['pnl_pct']:+.1f}% к марже); записи: {r['types']}")
     mark = "✅" if t["pnl_usdt"] > 0 else "❌"
     return (f"{mark} закрыт шорт {t['sym']} ({t['mode']}): {reason}, вход {t['entry']:.6g} → выход ≈{price:.6g}, "
             f"расчётный PnL {pnl_pct:+.1f}% к марже ({t['margin'] * pnl_pct / 100:+.2f} USDT){extra}")
@@ -381,10 +383,13 @@ def manage(state):
             if pos is None:
                 # позицию закрыла биржа (стоп, тейк или ликвидация) — снимаем оставшийся условный ордер
                 cancel_orders(sym)
-                if price > t["entry"]:
+                if price >= t["sl"] * 0.99:
                     msgs.append(_close(state, t, min(price, t["sl"]), "стоп-лосс / ликвидация на бирже"))
-                else:
+                elif price <= t["tp"] * 1.01:
                     msgs.append(_close(state, t, max(price, t["tp"]), "тейк-профит на бирже"))
+                else:
+                    msgs.append(_close(state, t, price, "закрыта биржей ДО стопа/тейка — вероятно, авто-делеверидж (ADL) "
+                                                        "или ручное закрытие; проверьте историю ордеров"))
                 continue
             if now - t["opened"] >= HOLD_H * 3600:
                 ok, msg = live_close_short(sym, t["qty"], t.get("pside", "SHORT"))
