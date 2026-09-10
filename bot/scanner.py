@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Margin-call scanner.
-
-Следит за публичным Telegram-каналом MarginData (@cryptocode_margin_data) через
-веб-превью t.me/s/..., считает, сколько часов подряд монета висит в постах, берёт
-изменение цены за 4 часа с биржи и шлёт шорт-сигнал подписчикам бота.
-
-Правило (см. README): монета непрерывно в постах канала >= MIN_RUN_H часов
-(перерывы до GAP_MIN минут допустимы) и выросла на PUMP_MIN..PUMP_MAX % за 4 часа.
+"""Сканер Telegram-канала с уведомлениями подписчикам бота.
 
 Запуск:  python3 scanner.py --once        один проход (для cron / GitHub Actions)
          python3 scanner.py --loop        бесконечный цикл, POLL_SEC между проходами
@@ -89,9 +82,7 @@ def broadcast(state, text, dry):
 
 
 WELCOME = (
-    "Подписка оформлена. Буду присылать шорт-сигналы по правилу:\n"
-    f"монета висит в канале MarginData непрерывно ≥{MIN_RUN_H:g} ч и выросла на "
-    f"{PUMP_MIN:g}–{PUMP_MAX:g}% за 4 ч.\n\n"
+    "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
     "/positions — открытые позиции на BingX, /params — параметры сделок, /set <параметр> <число> — изменить "
     "(margin, lev, tp, sl, hold, max, limit), /pause и /resume — пауза торговли, /stop — отписаться."
@@ -311,8 +302,7 @@ def channel_runs(posts):
 
 # ---------------------------------------------------------------- цены
 def klines_15m(sym, n=17):
-    """Последние n 15-минутных закрытий: (source, [close,...]) или None.
-    BingX первым: на нём торгуем, и там есть почти все монеты канала (данные канала — с Binance)."""
+    """Последние n 15-минутных закрытий: (source, [close,...]) или None."""
     j = http_json(f"https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol={sym}-USDT&interval=15m&limit={n}", 15)
     if isinstance(j, dict) and len(j.get("data") or []) >= n:
         return "BingX", [float(k["close"]) for k in sorted(j["data"], key=lambda k: int(k["time"]))[-n:]]
@@ -389,10 +379,7 @@ def signal_text(c):
         f"Цена: {fmt_price(c['price'])} USDT ({c['src']})\n"
         f"Рост за 4 ч: <b>{c['b4h']:+.1f}%</b>\n"
         f"Фандинг: {fmt_funding(c.get('funding'))}\n"
-        f"В канале непрерывно: {fmt_run(c)} (BOR {bor}, REP {rep}, B/R {br})\n\n"
-        f"Правило: ≥{MIN_RUN_H:g} ч в канале + рост {PUMP_MIN:g}–{PUMP_MAX:g}% за 4 ч.\n"
-        "Статистика за август: −10…−14% за сутки сверх рынка, 9 из 10 в минусе, "
-        "средний ход против позиции +15–19% — стоп не ближе 15–20%."
+        f"В канале непрерывно: {fmt_run(c)} (BOR {bor}, REP {rep}, B/R {br})"
     )
 
 

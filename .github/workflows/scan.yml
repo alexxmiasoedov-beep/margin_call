@@ -2,9 +2,9 @@
 #  * workflow_dispatch — сканер работает циклом ~5 ч 40 мин (опрос канала каждые
 #    5 минут), сохраняет состояние каждые 10 минут и в конце САМ запускает
 #    следующий такой же прогон. Так получается непрерывная цепочка.
-#  * schedule (cron) — сторож: быстрый проход (--once) и перезапуск цепочки, если
-#    она оборвалась. Пока цепочка жива, cron-запуски стоят в очереди
-#    (concurrency) и отменяются следующим звеном цепочки — это нормально.
+#  * schedule (cron) — сторож: перезапуск цепочки, если она оборвалась. Пока
+#    цепочка жива, cron-запуски стоят в очереди (concurrency) и отменяются
+#    следующим звеном цепочки — это нормально.
 # Нужен секрет репозитория TG_BOT_TOKEN (Settings → Secrets and variables → Actions).
 name: scan
 on:
@@ -30,17 +30,16 @@ jobs:
       TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
       STATE_FILE: bot/state.json
       GH_TOKEN: ${{ github.token }}
-      # --- исполнитель сделок на BingX (bot/trader.py) ---
       BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
       BINGX_API_SECRET: ${{ secrets.BINGX_API_SECRET }}
-      TRADE_MODE: live           # off | paper | live
-      POSITION_USDT: "7"         # маржа на сделку, USDT
+      TRADE_MODE: live           
+      POSITION_USDT: "7"
       LEVERAGE: "10"
-      SL_PCT: "18"               # стоп-лосс, % движения цены выше входа (180% к марже при 10x)
-      TP_PCT: "8"                # тейк-профит, % движения цены ниже входа (80% к марже при 10x)
-      HOLD_H: "24"               # выход по времени, часов
+      SL_PCT: "18"
+      TP_PCT: "8"
+      HOLD_H: "24"
       MAX_POSITIONS: "3"
-      DAILY_LOSS_LIMIT_USDT: "16"   # один полный стоп при 7 USDT × 10x и 18% = 12,6 USDT
+      DAILY_LOSS_LIMIT_USDT: "16"
     steps:
       - uses: actions/checkout@v4
       - name: Git identity

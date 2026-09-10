@@ -1,10 +1,4 @@
-"""Исполнитель сделок на BingX (USDT-M perpetual) для сканера margin_call.
-
-Режимы (TRADE_MODE): off — не торговать; paper — виртуальные сделки по реальным
-ценам с журналом и PnL; live — реальные ордера через API BingX.
-Ключи только из окружения: BINGX_API_KEY / BINGX_API_SECRET.
-Зависимостей нет (urllib, hmac).
-"""
+"""Исполнитель ордеров (BingX USDT-M perpetual). Ключи только из окружения."""
 import hashlib
 import hmac
 import json
