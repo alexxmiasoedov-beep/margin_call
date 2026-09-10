@@ -178,6 +178,47 @@ def realized(sym, since_ts):
     return out
 
 
+def history_text(sym, hours=24):
+    """Ордера и записи счёта по контракту за последние hours часов — чтобы видеть, чем закрылась позиция."""
+    if not KEY or not SECRET:
+        return "BingX: ключи не заданы"
+    since = int((time.time() - hours * 3600) * 1000)
+    lines = [f"История {sym}-USDT за {hours} ч (UTC):"]
+    j = _request("GET", "/openApi/swap/v2/trade/allOrders", {"symbol": f"{sym}-USDT", "startTime": since, "limit": 50})
+    orders = (j.get("data") or {}).get("orders") if isinstance(j.get("data"), dict) else j.get("data")
+    if not isinstance(orders, list):
+        lines.append(f"  ордера: не удалось получить ({j.get('msg')})")
+    elif not orders:
+        lines.append("  ордеров нет")
+    else:
+        lines.append("Ордера:")
+        for o in sorted(orders, key=lambda o: int(o.get("updateTime") or o.get("time") or 0)):
+            ts = time.strftime("%d.%m %H:%M:%S", time.gmtime(int(o.get("updateTime") or o.get("time") or 0) / 1000))
+            extra = []
+            if o.get("stopPrice") not in (None, "", "0", 0):
+                extra.append(f"триггер {o['stopPrice']}")
+            if o.get("workingType"):
+                extra.append(str(o["workingType"]))
+            if str(o.get("reduceOnly")).lower() == "true":
+                extra.append("reduceOnly")
+            lines.append(f"  {ts} {o.get('type')} {o.get('side')}/{o.get('positionSide')} {o.get('status')}: "
+                         f"объём {o.get('executedQty')}/{o.get('origQty')}, ср. цена {o.get('avgPrice')}"
+                         + (f" ({', '.join(extra)})" if extra else "") + f", id {o.get('orderId')}")
+    j = _request("GET", "/openApi/swap/v2/user/income", {"symbol": f"{sym}-USDT", "startTime": since, "limit": 100})
+    rows = j.get("data") if isinstance(j, dict) else None
+    if isinstance(rows, list) and rows:
+        lines.append("Записи счёта:")
+        for r in sorted(rows, key=lambda r: int(r.get("time") or 0)):
+            ts = time.strftime("%d.%m %H:%M:%S", time.gmtime(int(r.get("time") or 0) / 1000))
+            lines.append(f"  {ts} {r.get('incomeType')}: {r.get('income')} {r.get('asset', '')} {r.get('info', '') or ''}")
+    elif isinstance(rows, list):
+        lines.append("Записей счёта нет")
+    else:
+        lines.append(f"Записи счёта: не удалось получить ({j.get('msg')})")
+    text = "\n".join(lines)
+    return text if len(text) < 3900 else text[:3850] + "\n…(обрезано)"
+
+
 def positions_text():
     """Реальные открытые позиции на BingX (все контракты)."""
     if not KEY or not SECRET:

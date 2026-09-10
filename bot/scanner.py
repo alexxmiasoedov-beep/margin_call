@@ -122,6 +122,7 @@ def send_menu(cid, state):
 def setup_commands():
     """Регистрирует команды в меню Telegram (кнопка «/» у поля ввода)."""
     cmds = [("menu", "Меню с кнопками"), ("params", "Параметры сделок"), ("positions", "Открытые позиции на BingX"),
+            ("history", "Ордера по монете за 24 ч: /history LSK"),
             ("trades", "Журнал сделок, баланс"), ("status", "Кандидаты в канале"), ("pause", "Пауза торговли"),
             ("resume", "Возобновить торговлю"), ("stop", "Отписаться")]
     tg("setMyCommands", commands=json.dumps([{"command": c, "description": d} for c, d in cmds]))
@@ -210,6 +211,13 @@ def poll_commands(state, candidates, dry, wait=0):
             send(cid, trader.summary(state))
         elif text.startswith("/positions"):
             send(cid, trader.positions_text())
+        elif text.startswith("/history"):
+            parts = raw.split()
+            if len(parts) < 2:
+                send(cid, "Формат: /history LSK  (ордера и записи счёта по контракту за 24 ч)")
+            else:
+                hours = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 24
+                send(cid, trader.history_text(parts[1].upper().replace("-USDT", "").replace("USDT", ""), hours))
         elif text.startswith("/params"):
             tg("sendMessage", chat_id=cid, text=trader.params_text() + "\n\nНажмите параметр, чтобы изменить:",
                reply_markup=params_menu())
