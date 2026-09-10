@@ -34,13 +34,13 @@ jobs:
       BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
       BINGX_API_SECRET: ${{ secrets.BINGX_API_SECRET }}
       TRADE_MODE: live           # off | paper | live
-      POSITION_USDT: "2"         # маржа на сделку, USDT
+      POSITION_USDT: "7"         # маржа на сделку, USDT
       LEVERAGE: "10"
       SL_PCT: "18"               # стоп-лосс, % движения цены выше входа (180% к марже при 10x)
       TP_PCT: "8"                # тейк-профит, % движения цены ниже входа (80% к марже при 10x)
       HOLD_H: "24"               # выход по времени, часов
       MAX_POSITIONS: "3"
-      DAILY_LOSS_LIMIT_USDT: "10"
+      DAILY_LOSS_LIMIT_USDT: "13"   # один полный стоп при 7 USDT × 10x и 18% = 12,6 USDT
     steps:
       - uses: actions/checkout@v4
       - name: Git identity
