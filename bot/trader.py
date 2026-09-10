@@ -216,7 +216,36 @@ def qty_for(sym, price):
     return q
 
 
+def fill_price(sym, order_id, fallback):
+    """Фактическая средняя цена исполнения ордера (по ордеру, затем по позиции), иначе fallback."""
+    for _ in range(3):
+        j = _request("GET", "/openApi/swap/v2/trade/order", {"symbol": f"{sym}-USDT", "orderId": order_id})
+        o = (j.get("data") or {}).get("order") or {}
+        try:
+            p = float(o.get("avgPrice") or 0)
+            if p > 0:
+                return p
+        except (TypeError, ValueError):
+            pass
+        time.sleep(1)
+    pos = position(sym)
+    try:
+        p = float((pos or {}).get("avgPrice") or 0)
+        if p > 0:
+            return p
+    except (TypeError, ValueError):
+        pass
+    return fallback
+
+
+def cancel_orders(sym):
+    """Снимает все открытые (в т.ч. условные) ордера по контракту."""
+    j = _request("DELETE", "/openApi/swap/v2/trade/allOpenOrders", {"symbol": f"{sym}-USDT"})
+    return j.get("code") == 0
+
+
 def live_open_short(sym, price):
+    """Рыночный шорт; стоп и тейк ставятся отдельными ордерами от ФАКТИЧЕСКОЙ цены исполнения."""
     c = contract(sym)
     hedge = hedge_mode()
     pside = "SHORT" if hedge else "BOTH"
@@ -226,24 +255,37 @@ def live_open_short(sym, price):
     q = qty_for(sym, price)
     if not q:
         return None, "объём меньше минимального для контракта"
-    pp = int(c.get("pricePrecision", 4))
-    sl = _round(price * (1 + SL_PCT / 100), pp)
-    tp = _round(price * (1 - TP_PCT / 100), pp)
-    params = {
-        "symbol": f"{sym}-USDT", "side": "SELL", "positionSide": pside, "type": "MARKET", "quantity": q,
-        "stopLoss": json.dumps({"type": "STOP_MARKET", "stopPrice": float(sl), "workingType": "MARK_PRICE"},
-                               separators=(",", ":")),
-        "takeProfit": json.dumps({"type": "TAKE_PROFIT_MARKET", "stopPrice": float(tp), "workingType": "MARK_PRICE"},
-                                 separators=(",", ":")),
-    }
-    j = _request("POST", "/openApi/swap/v2/trade/order", params)
+    j = _request("POST", "/openApi/swap/v2/trade/order",
+                 {"symbol": f"{sym}-USDT", "side": "SELL", "positionSide": pside, "type": "MARKET", "quantity": q})
     if j.get("code") != 0:
         return None, f"ордер отклонён: {j.get('msg')}"
     order = (j.get("data") or {}).get("order") or {}
-    return {"qty": q, "sl": float(sl), "tp": float(tp), "order_id": order.get("orderId"), "pside": pside}, None
+    fill = fill_price(sym, order.get("orderId"), price)
+    pp = int(c.get("pricePrecision", 4))
+    sl = float(_round(fill * (1 + SL_PCT / 100), pp))
+    tp = float(_round(fill * (1 - TP_PCT / 100), pp))
+    close_side = {"symbol": f"{sym}-USDT", "side": "BUY", "positionSide": pside, "quantity": q}
+    if pside == "BOTH":
+        close_side["reduceOnly"] = "true"
+    # стоп — по марк-цене (защита от одиночных проколов), тейк — по цене сделок, как и вход
+    js = _request("POST", "/openApi/swap/v2/trade/order",
+                  {**close_side, "type": "STOP_MARKET", "stopPrice": sl, "workingType": "MARK_PRICE"})
+    jt = _request("POST", "/openApi/swap/v2/trade/order",
+                  {**close_side, "type": "TAKE_PROFIT_MARKET", "stopPrice": tp, "workingType": "CONTRACT_PRICE"})
+    warn = []
+    if js.get("code") != 0:
+        warn.append(f"стоп не установлен: {js.get('msg')}")
+    if jt.get("code") != 0:
+        warn.append(f"тейк не установлен: {jt.get('msg')}")
+    res = {"qty": q, "sl": sl, "tp": tp, "order_id": order.get("orderId"), "pside": pside, "quote": price,
+           "sl_order_id": ((js.get("data") or {}).get("order") or {}).get("orderId"),
+           "tp_order_id": ((jt.get("data") or {}).get("order") or {}).get("orderId"),
+           "entry": fill, "warn": "; ".join(warn)}
+    return res, None
 
 
 def live_close_short(sym, qty, pside):
+    cancel_orders(sym)
     params = {"symbol": f"{sym}-USDT", "side": "BUY", "positionSide": pside, "type": "MARKET", "quantity": qty}
     if pside == "BOTH":
         params["reduceOnly"] = "true"
@@ -292,9 +334,13 @@ def on_signal(state, sym, price_hint):
         t["qty"] = qty_for(sym, price) or (MARGIN_USDT * LEVERAGE / price)
     state["trades"].append(t)
     tag = "📝 БУМАЖНАЯ" if MODE == "paper" else "💰 РЕАЛЬНАЯ"
-    return (f"{tag} сделка: шорт {sym} по {price:.6g}\n"
-            f"маржа {MARGIN_USDT:g} USDT × {LEVERAGE}x, стоп {t['sl']:.6g} (+{SL_PCT:g}%), "
-            f"тейк {t['tp']:.6g} (−{TP_PCT:g}%), выход не позже чем через {HOLD_H:g} ч")
+    note = ""
+    if t.get("quote") and abs(t["entry"] / t["quote"] - 1) > 0.0005:
+        note = f" (котировка была {t['quote']:.6g}, проскальзывание {(t['entry'] / t['quote'] - 1) * 100:+.2f}%)"
+    warn = f"\n⚠️ {t['warn']}" if t.get("warn") else ""
+    return (f"{tag} сделка: шорт {sym} по {t['entry']:.6g}{note}\n"
+            f"маржа {MARGIN_USDT:g} USDT × {LEVERAGE}x, стоп {t['sl']:.6g} (+{SL_PCT:g}% от входа), "
+            f"тейк {t['tp']:.6g} (−{TP_PCT:g}% от входа), выход не позже чем через {HOLD_H:g} ч{warn}")
 
 
 def _close(state, t, price, reason):
@@ -333,7 +379,8 @@ def manage(state):
         if t["mode"] == "live":
             pos = position(sym)
             if pos is None:
-                # позицию закрыла биржа (стоп, тейк или ликвидация) — определяем по цене
+                # позицию закрыла биржа (стоп, тейк или ликвидация) — снимаем оставшийся условный ордер
+                cancel_orders(sym)
                 if price > t["entry"]:
                     msgs.append(_close(state, t, min(price, t["sl"]), "стоп-лосс / ликвидация на бирже"))
                 else:
