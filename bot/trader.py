@@ -33,9 +33,9 @@ def log(*a):
 
 # ------------------------------------------------------------------ API
 def _sign(params):
-    qs = "&".join(f"{k}={params[k]}" for k in sorted(params))
-    sig = hmac.new(SECRET.encode(), qs.encode(), hashlib.sha256).hexdigest()
-    return qs + "&signature=" + sig
+    """Подпись BingX считается по сырой строке k=v&k=v (ключи по алфавиту, значения без кодирования)."""
+    raw = "&".join(f"{k}={params[k]}" for k in sorted(params))
+    return hmac.new(SECRET.encode(), raw.encode(), hashlib.sha256).hexdigest()
 
 
 def _request(method, path, params=None, signed=True):
@@ -43,7 +43,10 @@ def _request(method, path, params=None, signed=True):
     if signed:
         params["timestamp"] = int(time.time() * 1000)
         params["recvWindow"] = 10000
-        qs = _sign(params)
+        sig = _sign(params)
+        # в URL значения обязательно кодируем: в stopLoss/takeProfit лежит JSON с кавычками
+        qs = "&".join(f"{k}={urllib.parse.quote(str(params[k]), safe='')}" for k in sorted(params))
+        qs += "&signature=" + sig
     else:
         qs = urllib.parse.urlencode(params)
     url = f"{BASE}{path}?{qs}"
@@ -140,8 +143,10 @@ def live_open_short(sym, price):
     tp = _round(price * (1 - TP_PCT / 100), pp)
     params = {
         "symbol": f"{sym}-USDT", "side": "SELL", "positionSide": pside, "type": "MARKET", "quantity": q,
-        "stopLoss": json.dumps({"type": "STOP_MARKET", "stopPrice": float(sl), "workingType": "MARK_PRICE"}),
-        "takeProfit": json.dumps({"type": "TAKE_PROFIT_MARKET", "stopPrice": float(tp), "workingType": "MARK_PRICE"}),
+        "stopLoss": json.dumps({"type": "STOP_MARKET", "stopPrice": float(sl), "workingType": "MARK_PRICE"},
+                               separators=(",", ":")),
+        "takeProfit": json.dumps({"type": "TAKE_PROFIT_MARKET", "stopPrice": float(tp), "workingType": "MARK_PRICE"},
+                                 separators=(",", ":")),
     }
     j = _request("POST", "/openApi/swap/v2/trade/order", params)
     if j.get("code") != 0:

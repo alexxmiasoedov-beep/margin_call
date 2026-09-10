@@ -204,7 +204,11 @@ def channel_runs(posts):
 
 # ---------------------------------------------------------------- цены
 def klines_15m(sym, n=17):
-    """Последние n 15-минутных закрытий: (source, [close,...]) или None."""
+    """Последние n 15-минутных закрытий: (source, [close,...]) или None.
+    BingX первым: на нём торгуем, и там есть почти все монеты канала (данные канала — с Binance)."""
+    j = http_json(f"https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol={sym}-USDT&interval=15m&limit={n}", 15)
+    if isinstance(j, dict) and len(j.get("data") or []) >= n:
+        return "BingX", [float(k["close"]) for k in sorted(j["data"], key=lambda k: int(k["time"]))[-n:]]
     j = http_json(f"https://api.mexc.com/api/v3/klines?symbol={sym}USDT&interval=15m&limit={n}", 15)
     if isinstance(j, list) and len(j) >= n:
         return "MEXC", [float(k[4]) for k in j]
@@ -230,7 +234,12 @@ def fmt_price(p):
 
 
 def funding(sym):
-    """Текущая ставка фандинга на бессрочном контракте: {"rate": % за период, "hours": период, "src"} или None."""
+    """Текущая ставка фандинга на бессрочном контракте: {"rate": % за период, "hours": период, "src"} или None.
+    BingX первым — именно эту ставку платит/получает наша позиция."""
+    j = http_json(f"https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex?symbol={sym}-USDT", 15)
+    if isinstance(j, dict) and (j.get("data") or {}).get("lastFundingRate") is not None:
+        d = j["data"]
+        return {"rate": float(d["lastFundingRate"]) * 100, "hours": int(d.get("fundingIntervalHours") or 8), "src": "BingX"}
     j = http_json(f"https://contract.mexc.com/api/v1/contract/funding_rate/{sym}_USDT", 15)
     if isinstance(j, dict) and j.get("success") and j.get("data", {}).get("fundingRate") is not None:
         d = j["data"]
