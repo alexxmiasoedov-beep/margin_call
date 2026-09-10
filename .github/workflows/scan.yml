@@ -50,8 +50,12 @@ jobs:
         run: |
           save() {
             git add bot/state.json
-            git diff --cached --quiet && return 0
-            git commit -qm "scanner: state $(date -u +%FT%TZ)" && git pull -q --rebase --autostash && git push -q || echo "::warning::не удалось сохранить состояние"
+            git diff --cached --quiet || git commit -qm "scanner: state $(date -u +%FT%TZ)"
+            git fetch -q origin main || true
+            # пушим, если есть локальные коммиты, в т.ч. оставшиеся после неудачного прошлого пуша
+            if [ -n "$(git log origin/main..HEAD --oneline 2>/dev/null)" ]; then
+              git pull -q --rebase --autostash && git push -q || echo "::warning::не удалось сохранить состояние"
+            fi
           }
           if [ "${{ github.event_name }}" = "schedule" ]; then
             python3 bot/scanner.py --once
