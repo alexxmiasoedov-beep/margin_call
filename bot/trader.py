@@ -31,6 +31,54 @@ def log(*a):
     print(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()), "[trader]", *a, flush=True)
 
 
+# Параметры, которые можно менять из Telegram (/set): имя → (глобальная переменная, тип, минимум, максимум, описание)
+PARAMS = {
+    "margin": ("MARGIN_USDT", float, 1, 10000, "маржа на сделку, USDT"),
+    "lev": ("LEVERAGE", int, 1, 50, "плечо"),
+    "tp": ("TP_PCT", float, 0.5, 90, "тейк-профит, % движения цены"),
+    "sl": ("SL_PCT", float, 1, 200, "стоп-лосс, % движения цены"),
+    "hold": ("HOLD_H", float, 1, 168, "выход по времени, часов"),
+    "max": ("MAX_POSITIONS", int, 1, 20, "максимум открытых позиций"),
+    "limit": ("DAILY_LOSS_LIMIT_USDT", float, 1, 100000, "дневной лимит убытка, USDT"),
+}
+
+
+def configure(state):
+    """Применяет переопределения из state["params"] поверх значений из окружения."""
+    for name, val in (state.get("params") or {}).items():
+        if name in PARAMS:
+            globals()[PARAMS[name][0]] = PARAMS[name][1](val)
+
+
+def set_param(state, name, value):
+    """Меняет параметр из чата. Возвращает текст ответа."""
+    name = name.lower()
+    if name not in PARAMS:
+        return "Неизвестный параметр. Доступны: " + ", ".join(f"{k} ({v[4]})" for k, v in PARAMS.items())
+    var, typ, lo, hi, desc = PARAMS[name]
+    try:
+        v = typ(float(value))
+    except ValueError:
+        return f"Значение должно быть числом: /set {name} 10"
+    if not lo <= v <= hi:
+        return f"{desc}: допустимо от {lo:g} до {hi:g}"
+    state.setdefault("params", {})[name] = v
+    globals()[var] = v
+    return f"Ок: {desc} = {v:g}. Действует для новых сделок.\n\n" + params_text()
+
+
+def params_text():
+    return ("Параметры сделок:\n"
+            f"  margin — маржа на сделку: {MARGIN_USDT:g} USDT\n"
+            f"  lev — плечо: {LEVERAGE}x (номинал {MARGIN_USDT * LEVERAGE:g} USDT)\n"
+            f"  tp — тейк-профит: −{TP_PCT:g}% цены ({TP_PCT * LEVERAGE:g}% к марже)\n"
+            f"  sl — стоп-лосс: +{SL_PCT:g}% цены ({SL_PCT * LEVERAGE:g}% к марже)\n"
+            f"  hold — выход по времени: {HOLD_H:g} ч\n"
+            f"  max — максимум позиций: {MAX_POSITIONS}\n"
+            f"  limit — дневной лимит убытка: {DAILY_LOSS_LIMIT_USDT:g} USDT\n"
+            "Изменить: /set margin 7, /set lev 10, /set tp 8, /set sl 18")
+
+
 # ------------------------------------------------------------------ API
 def _sign(params):
     """Подпись BingX считается по сырой строке k=v&k=v (ключи по алфавиту, значения без кодирования)."""
@@ -109,6 +157,29 @@ def position(sym):
         if p.get("positionSide") in ("SHORT", "BOTH") and float(p.get("positionAmt", 0)) != 0:
             return p
     return None
+
+
+def positions_text():
+    """Реальные открытые позиции на BingX (все контракты)."""
+    if not KEY or not SECRET:
+        return "BingX: ключи не заданы"
+    j = _request("GET", "/openApi/swap/v2/user/positions")
+    if j.get("code") not in (0, None):
+        return f"BingX: не удалось получить позиции ({j.get('msg')})"
+    rows = [p for p in (j.get("data") or []) if float(p.get("positionAmt", 0) or 0) != 0]
+    if not rows:
+        return "На BingX открытых позиций нет."
+    lines = ["Открытые позиции на BingX:"]
+    for p in rows:
+        try:
+            amt = float(p["positionAmt"]); entry = float(p.get("avgPrice") or 0); mark = float(p.get("markPrice") or 0)
+            upnl = float(p.get("unrealizedProfit") or 0); margin = float(p.get("initialMargin") or p.get("margin") or 0)
+            pct = f" ({upnl / margin * 100:+.1f}% к марже)" if margin else ""
+            lines.append(f"  {p['symbol']} {p.get('positionSide')} {abs(amt):g} шт, вход {entry:.6g}, сейчас {mark:.6g}, "
+                         f"плечо {p.get('leverage')}x, PnL {upnl:+.2f} USDT{pct}")
+        except (KeyError, ValueError, TypeError):
+            lines.append(f"  {p.get('symbol')}: {p}")
+    return "\n".join(lines)
 
 
 def _round(x, prec):
@@ -273,6 +344,8 @@ def summary(state):
         b = balance() if KEY and SECRET else None
         lines.append(f"BingX: баланс {b['balance']:.2f} {b['asset']}, доступно {b['available']:.2f}" if b
                      else "BingX: ключи не подошли или не заданы — реальные ордера невозможны")
+        if MODE == "live":
+            lines.append(positions_text())
     if ot:
         lines.append("Открытые:")
         for t in ot:

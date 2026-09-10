@@ -92,8 +92,9 @@ WELCOME = (
     "Подписка оформлена. Буду присылать шорт-сигналы по правилу:\n"
     f"монета висит в канале MarginData непрерывно ≥{MIN_RUN_H:g} ч и выросла на "
     f"{PUMP_MIN:g}–{PUMP_MAX:g}% за 4 ч.\n\n"
-    "Команды: /status — текущие кандидаты, /trades — сделки и PnL, /pause и /resume — пауза торговли, "
-    "/stop — отписаться."
+    "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
+    "/positions — открытые позиции на BingX, /params — параметры сделок, /set <параметр> <число> — изменить "
+    "(margin, lev, tp, sl, hold, max, limit), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
 
@@ -124,6 +125,18 @@ def poll_commands(state, candidates, dry):
             send(cid, status_text(candidates))
         elif text.startswith("/trades"):
             send(cid, trader.summary(state))
+        elif text.startswith("/positions"):
+            send(cid, trader.positions_text())
+        elif text.startswith("/params"):
+            send(cid, trader.params_text())
+        elif text.startswith("/set"):
+            parts = text.split()
+            if len(parts) != 3:
+                send(cid, "Формат: /set <параметр> <число>\n\n" + trader.params_text())
+            else:
+                reply = trader.set_param(state, parts[1], parts[2])
+                log("параметр из чата:", parts[1], parts[2])
+                send(cid, reply)
         elif text.startswith("/pause"):
             state["trading_paused"] = True
             send(cid, "Торговля на паузе: новые сделки не открываются, открытые ведутся до выхода. /resume — продолжить.")
@@ -359,6 +372,7 @@ def save_state(s):
 
 def cycle(dry):
     state = load_state()
+    trader.configure(state)
     cands = scan(state, dry)
     followups(state, dry)
     try:
