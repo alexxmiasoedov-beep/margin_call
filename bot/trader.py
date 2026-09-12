@@ -209,6 +209,13 @@ def history_text(sym, hours=24):
             lines.append(f"  {ts} {o.get('type')} {o.get('side')}/{o.get('positionSide')} {o.get('status')}: "
                          f"объём {o.get('executedQty')}/{o.get('origQty')}, ср. цена {o.get('avgPrice')}"
                          + (f" ({', '.join(extra)})" if extra else "") + f", id {o.get('orderId')}")
+    j = _request("GET", "/fapi/v1/allAlgoOrders", {"symbol": f"{sym}USDT", "startTime": since})
+    rows = (j.get("orders") if isinstance(j, dict) else j) or []
+    if rows:
+        lines.append("Условные ордера (стопы/тейки):")
+        for o in rows:
+            lines.append(f"  algoId {o.get('algoId')} {o.get('side')}: триггер {o.get('triggerPrice')} "
+                         f"({o.get('workingType')}), статус {o.get('algoStatus')}")
     j = _request("GET", "/fapi/v1/income", {"symbol": f"{sym}USDT", "startTime": since, "limit": 100})
     if isinstance(j, list) and j:
         lines.append("Записи счёта:")
@@ -294,9 +301,10 @@ def fill_price(sym, order_id, fallback):
 
 
 def cancel_orders(sym):
-    """Снимает все открытые (в т.ч. условные) ордера по контракту."""
+    """Снимает все открытые ордера по контракту: обычные и условные (algo — стопы/тейки)."""
     j = _request("DELETE", "/fapi/v1/allOpenOrders", {"symbol": f"{sym}USDT"})
-    return not _err(j)
+    ja = _request("DELETE", "/fapi/v1/algoOpenOrders", {"symbol": f"{sym}USDT"})
+    return not _err(j) and not _err(ja)
 
 
 def live_open_short(sym, price):
@@ -323,20 +331,22 @@ def live_open_short(sym, price):
         fill = fill_price(sym, j.get("orderId"), price)
     sl = _round_price(c, fill * (1 + SL_PCT / 100))
     tp = _round_price(c, fill * (1 - TP_PCT / 100))
+    # условные ордера с 12.2025 идут через Algo API (/fapi/v1/algoOrder, триггер — triggerPrice);
     # closePosition=true — закрыть всю позицию по срабатыванию, объём не нужен
-    close_side = {"symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside, "closePosition": "true"}
+    close_side = {"algoType": "CONDITIONAL", "symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside,
+                  "closePosition": "true"}
     # стоп — по марк-цене (защита от одиночных проколов), тейк — по цене сделок, как и вход
-    js = _request("POST", "/fapi/v1/order",
-                  {**close_side, "type": "STOP_MARKET", "stopPrice": sl, "workingType": "MARK_PRICE"})
-    jt = _request("POST", "/fapi/v1/order",
-                  {**close_side, "type": "TAKE_PROFIT_MARKET", "stopPrice": tp, "workingType": "CONTRACT_PRICE"})
+    js = _request("POST", "/fapi/v1/algoOrder",
+                  {**close_side, "type": "STOP_MARKET", "triggerPrice": sl, "workingType": "MARK_PRICE"})
+    jt = _request("POST", "/fapi/v1/algoOrder",
+                  {**close_side, "type": "TAKE_PROFIT_MARKET", "triggerPrice": tp, "workingType": "CONTRACT_PRICE"})
     warn = []
     if _err(js):
         warn.append(f"стоп не установлен: {_err(js)}")
     if _err(jt):
         warn.append(f"тейк не установлен: {_err(jt)}")
     res = {"qty": q, "sl": sl, "tp": tp, "order_id": j.get("orderId"), "pside": pside, "quote": price,
-           "sl_order_id": js.get("orderId"), "tp_order_id": jt.get("orderId"),
+           "sl_order_id": js.get("algoId"), "tp_order_id": jt.get("algoId"),
            "entry": fill, "warn": "; ".join(warn)}
     return res, None
 
