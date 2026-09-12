@@ -84,7 +84,7 @@ def broadcast(state, text, dry):
 WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
-    "/positions — открытые позиции на BingX, /params — параметры сделок, /set <параметр> <число> — изменить "
+    "/positions — открытые позиции на Binance, /params — параметры сделок, /set <параметр> <число> — изменить "
     "(margin, lev, tp, sl, hold, max, limit), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
@@ -97,7 +97,7 @@ def kb(rows):
 def main_menu(state):
     pause = ("▶️ Возобновить торговлю", "resume") if state.get("trading_paused") else ("⏸ Пауза торговли", "pause")
     return kb([
-        [("⚙️ Параметры сделок", "params"), ("📊 Позиции на BingX", "positions")],
+        [("⚙️ Параметры сделок", "params"), ("📊 Позиции на Binance", "positions")],
         [("📒 Журнал сделок", "trades"), ("🔍 Кандидаты в канале", "status")],
         [pause],
     ])
@@ -121,7 +121,7 @@ def send_menu(cid, state):
 
 def setup_commands():
     """Регистрирует команды в меню Telegram (кнопка «/» у поля ввода)."""
-    cmds = [("menu", "Меню с кнопками"), ("params", "Параметры сделок"), ("positions", "Открытые позиции на BingX"),
+    cmds = [("menu", "Меню с кнопками"), ("params", "Параметры сделок"), ("positions", "Открытые позиции на Binance"),
             ("history", "Ордера по монете за 24 ч: /history LSK"),
             ("trades", "Журнал сделок, баланс"), ("status", "Кандидаты в канале"), ("pause", "Пауза торговли"),
             ("resume", "Возобновить торговлю"), ("stop", "Отписаться")]
@@ -310,10 +310,14 @@ def channel_runs(posts):
 
 # ---------------------------------------------------------------- цены
 def klines_15m(sym, n=17):
-    """Последние n 15-минутных закрытий: (source, [close,...]) или None."""
-    j = http_json(f"https://open-api.bingx.com/openApi/swap/v3/quote/klines?symbol={sym}-USDT&interval=15m&limit={n}", 15)
-    if isinstance(j, dict) and len(j.get("data") or []) >= n:
-        return "BingX", [float(k["close"]) for k in sorted(j["data"], key=lambda k: int(k["time"]))[-n:]]
+    """Последние n 15-минутных закрытий: (source, [close,...]) или None.
+    Binance первым — сигналы канала про монеты Binance, и торгуем мы там же."""
+    j = http_json(f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}USDT&interval=15m&limit={n}", 15)
+    if isinstance(j, list) and len(j) >= n:
+        return "Binance", [float(k[4]) for k in j]
+    j = http_json(f"https://api.binance.com/api/v3/klines?symbol={sym}USDT&interval=15m&limit={n}", 15)
+    if isinstance(j, list) and len(j) >= n:
+        return "Binance-spot", [float(k[4]) for k in j]
     j = http_json(f"https://api.mexc.com/api/v3/klines?symbol={sym}USDT&interval=15m&limit={n}", 15)
     if isinstance(j, list) and len(j) >= n:
         return "MEXC", [float(k[4]) for k in j]
@@ -338,13 +342,20 @@ def fmt_price(p):
     return f"{p:.6g}"
 
 
+_funding_hours = {}
+
+
 def funding(sym):
     """Текущая ставка фандинга на бессрочном контракте: {"rate": % за период, "hours": период, "src"} или None.
-    BingX первым — именно эту ставку платит/получает наша позиция."""
-    j = http_json(f"https://open-api.bingx.com/openApi/swap/v2/quote/premiumIndex?symbol={sym}-USDT", 15)
-    if isinstance(j, dict) and (j.get("data") or {}).get("lastFundingRate") is not None:
-        d = j["data"]
-        return {"rate": float(d["lastFundingRate"]) * 100, "hours": int(d.get("fundingIntervalHours") or 8), "src": "BingX"}
+    Binance первым — именно эту ставку платит/получает наша позиция."""
+    j = http_json(f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={sym}USDT", 15)
+    if isinstance(j, dict) and j.get("lastFundingRate") is not None:
+        if not _funding_hours:  # интервалы фандинга: в списке только контракты с ненулевой настройкой, прочие — 8 ч
+            fi = http_json("https://fapi.binance.com/fapi/v1/fundingInfo", 15)
+            for f in fi if isinstance(fi, list) else []:
+                _funding_hours[f.get("symbol")] = int(f.get("fundingIntervalHours") or 8)
+            _funding_hours.setdefault("_loaded", 8)
+        return {"rate": float(j["lastFundingRate"]) * 100, "hours": _funding_hours.get(f"{sym}USDT", 8), "src": "Binance"}
     j = http_json(f"https://contract.mexc.com/api/v1/contract/funding_rate/{sym}_USDT", 15)
     if isinstance(j, dict) and j.get("success") and j.get("data", {}).get("fundingRate") is not None:
         d = j["data"]
@@ -510,7 +521,7 @@ def main():
     log(check)
     if TOKEN and not dry:
         setup_commands()
-    if trader.MODE != "off" and not check.startswith("BingX OK") and not dry:
+    if trader.MODE != "off" and not check.startswith("Binance OK") and not dry:
         broadcast(load_state(), f"⚠️ Исполнитель сделок: {check}", dry)
     if "--loop" in sys.argv:
         run_loop(dry)

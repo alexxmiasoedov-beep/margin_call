@@ -30,9 +30,12 @@ jobs:
       TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
       STATE_FILE: bot/state.json
       GH_TOKEN: ${{ github.token }}
-      BINGX_API_KEY: ${{ secrets.BINGX_API_KEY }}
-      BINGX_API_SECRET: ${{ secrets.BINGX_API_SECRET }}
-      TRADE_MODE: live           
+      # ВНИМАНИЕ: Binance блокирует IP из США, а раннеры GitHub Actions находятся в США —
+      # реальная торговля из Actions скорее всего не сработает (HTTP 451). Торговый цикл
+      # должен работать на своём сервере (см. bot/margin-scanner.service), здесь TRADE_MODE=off.
+      BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+      BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
+      TRADE_MODE: off
       POSITION_USDT: "7"
       LEVERAGE: "10"
       SL_PCT: "18"

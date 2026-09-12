@@ -1,4 +1,4 @@
-"""Исполнитель ордеров (BingX USDT-M perpetual). Ключи только из окружения."""
+"""Исполнитель ордеров (Binance USDT-M perpetual). Ключи только из окружения."""
 import hashlib
 import hmac
 import json
@@ -8,9 +8,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE = "https://open-api.bingx.com"
-KEY = os.environ.get("BINGX_API_KEY", "")
-SECRET = os.environ.get("BINGX_API_SECRET", "")
+BASE = "https://fapi.binance.com"
+KEY = os.environ.get("BINANCE_API_KEY", "")
+SECRET = os.environ.get("BINANCE_API_SECRET", "")
 MODE = os.environ.get("TRADE_MODE", "off").lower()          # off | paper | live
 MARGIN_USDT = float(os.environ.get("POSITION_USDT", "50"))   # маржа на сделку
 LEVERAGE = int(os.environ.get("LEVERAGE", "2"))
@@ -74,25 +74,17 @@ def params_text():
 
 
 # ------------------------------------------------------------------ API
-def _sign(params):
-    """Подпись BingX считается по сырой строке k=v&k=v (ключи по алфавиту, значения без кодирования)."""
-    raw = "&".join(f"{k}={params[k]}" for k in sorted(params))
-    return hmac.new(SECRET.encode(), raw.encode(), hashlib.sha256).hexdigest()
-
-
 def _request(method, path, params=None, signed=True):
+    """Binance USDT-M futures. Ошибка — dict с отрицательным code; успех может быть list, dict или {"code": 200}."""
     params = dict(params or {})
+    qs = urllib.parse.urlencode(params)
     if signed:
         params["timestamp"] = int(time.time() * 1000)
         params["recvWindow"] = 10000
-        sig = _sign(params)
-        # в URL значения обязательно кодируем: в stopLoss/takeProfit лежит JSON с кавычками
-        qs = "&".join(f"{k}={urllib.parse.quote(str(params[k]), safe='')}" for k in sorted(params))
-        qs += "&signature=" + sig
-    else:
         qs = urllib.parse.urlencode(params)
-    url = f"{BASE}{path}?{qs}"
-    req = urllib.request.Request(url, method=method, headers={"X-BX-APIKEY": KEY, "User-Agent": "margin-call"})
+        qs += "&signature=" + hmac.new(SECRET.encode(), qs.encode(), hashlib.sha256).hexdigest()
+    url = f"{BASE}{path}" + (f"?{qs}" if qs else "")
+    req = urllib.request.Request(url, method=method, headers={"X-MBX-APIKEY": KEY, "User-Agent": "margin-call"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             j = json.loads(r.read().decode())
@@ -103,72 +95,86 @@ def _request(method, path, params=None, signed=True):
             j = {"code": e.code, "msg": str(e)}
     except Exception as e:
         j = {"code": -1, "msg": repr(e)}
-    if j.get("code") not in (0, None):
+    if _err(j):
         log("API error", method, path, j.get("code"), j.get("msg"))
     return j
+
+
+def _err(j):
+    """Текст ошибки Binance или None. Успех: list, либо dict без code, либо code 200."""
+    if isinstance(j, dict) and j.get("code") not in (None, 200):
+        return j.get("msg") or str(j.get("code"))
+    return None
 
 
 _contracts = {}
 
 
 def contract(sym):
-    """Параметры контракта SYM-USDT или None, если контракта нет."""
+    """Параметры контракта SYMUSDT или None, если бессрочного контракта нет."""
     if not _contracts:
-        j = _request("GET", "/openApi/swap/v2/quote/contracts", signed=False)
-        for c in j.get("data") or []:
-            _contracts[c["symbol"]] = c
-    return _contracts.get(f"{sym}-USDT")
+        j = _request("GET", "/fapi/v1/exchangeInfo", signed=False)
+        for c in (j.get("symbols") or []) if isinstance(j, dict) else []:
+            if c.get("contractType") == "PERPETUAL" and c.get("status") == "TRADING" and c.get("quoteAsset") == "USDT":
+                f = {x["filterType"]: x for x in c.get("filters", [])}
+                _contracts[c["symbol"]] = {
+                    "quantityPrecision": int(c.get("quantityPrecision", 0)),
+                    "pricePrecision": int(c.get("pricePrecision", 4)),
+                    "tickSize": float(f.get("PRICE_FILTER", {}).get("tickSize", 0) or 0),
+                    "minQty": float(f.get("LOT_SIZE", {}).get("minQty", 0) or 0),
+                    "minNotional": float(f.get("MIN_NOTIONAL", {}).get("notional", 0) or 0),
+                }
+    return _contracts.get(f"{sym}USDT")
 
 
 def mark_price(sym):
-    j = _request("GET", "/openApi/swap/v2/quote/price", {"symbol": f"{sym}-USDT"}, signed=False)
+    j = _request("GET", "/fapi/v1/premiumIndex", {"symbol": f"{sym}USDT"}, signed=False)
     try:
-        return float(j["data"]["price"])
+        return float(j["markPrice"])
     except Exception:
         return None
 
 
 def balance():
-    j = _request("GET", "/openApi/swap/v2/user/balance")
-    try:
-        b = j["data"]["balance"]
-        return {"asset": b["asset"], "balance": float(b["balance"]), "available": float(b["availableMargin"])}
-    except Exception:
-        return None
+    j = _request("GET", "/fapi/v2/balance")
+    if isinstance(j, list):
+        for b in j:
+            if b.get("asset") == "USDT":
+                return {"asset": "USDT", "balance": float(b["balance"]), "available": float(b["availableBalance"])}
+    return None
 
 
 def hedge_mode():
-    j = _request("GET", "/openApi/swap/v1/positionSide/dual")
+    j = _request("GET", "/fapi/v1/positionSide/dual")
     try:
-        return str(j["data"]["dualSidePosition"]).lower() == "true"
+        return str(j["dualSidePosition"]).lower() == "true"
     except Exception:
-        return True
+        return False
 
 
 def position(sym):
-    j = _request("GET", "/openApi/swap/v2/user/positions", {"symbol": f"{sym}-USDT"})
-    for p in j.get("data") or []:
+    j = _request("GET", "/fapi/v2/positionRisk", {"symbol": f"{sym}USDT"})
+    for p in j if isinstance(j, list) else []:
         if p.get("positionSide") in ("SHORT", "BOTH") and float(p.get("positionAmt", 0)) != 0:
             return p
     return None
 
 
 def realized(sym, since_ts):
-    """Фактический результат по контракту с момента since_ts по данным BingX:
+    """Фактический результат по контракту с момента since_ts по данным Binance:
     {"pnl": реализованный PnL, "fee": комиссии, "funding": фандинг} в USDT или None."""
-    j = _request("GET", "/openApi/swap/v2/user/income",
-                 {"symbol": f"{sym}-USDT", "startTime": int(since_ts * 1000), "limit": 200})
-    rows = j.get("data") if isinstance(j, dict) else None
-    if not isinstance(rows, list):
+    j = _request("GET", "/fapi/v1/income",
+                 {"symbol": f"{sym}USDT", "startTime": int(since_ts * 1000), "limit": 1000})
+    if not isinstance(j, list):
         return None
     out = {"pnl": 0.0, "fee": 0.0, "funding": 0.0, "types": set()}
-    for r in rows:
+    for r in j:
         try:
             t, v = str(r.get("incomeType", "")).upper(), float(r.get("income", 0))
         except (TypeError, ValueError):
             continue
         out["types"].add(t)
-        if "REALIZED" in t or "ADL" in t or "DELEVERAG" in t or "LIQUIDAT" in t:
+        if "REALIZED" in t or "ADL" in t or "DELEVERAG" in t or "LIQUIDAT" in t or "INSURANCE" in t:
             out["pnl"] += v
         elif "COMMISSION" in t or ("FEE" in t and "FUNDING" not in t):
             out["fee"] += v
@@ -181,62 +187,61 @@ def realized(sym, since_ts):
 def history_text(sym, hours=24):
     """Ордера и записи счёта по контракту за последние hours часов — чтобы видеть, чем закрылась позиция."""
     if not KEY or not SECRET:
-        return "BingX: ключи не заданы"
+        return "Binance: ключи не заданы"
     since = int((time.time() - hours * 3600) * 1000)
-    lines = [f"История {sym}-USDT за {hours} ч (UTC):"]
-    j = _request("GET", "/openApi/swap/v2/trade/allOrders", {"symbol": f"{sym}-USDT", "startTime": since, "limit": 50})
-    orders = (j.get("data") or {}).get("orders") if isinstance(j.get("data"), dict) else j.get("data")
-    if not isinstance(orders, list):
-        lines.append(f"  ордера: не удалось получить ({j.get('msg')})")
-    elif not orders:
+    lines = [f"История {sym}USDT за {hours} ч (UTC):"]
+    j = _request("GET", "/fapi/v1/allOrders", {"symbol": f"{sym}USDT", "startTime": since, "limit": 50})
+    if not isinstance(j, list):
+        lines.append(f"  ордера: не удалось получить ({_err(j)})")
+    elif not j:
         lines.append("  ордеров нет")
     else:
         lines.append("Ордера:")
-        for o in sorted(orders, key=lambda o: int(o.get("updateTime") or o.get("time") or 0)):
+        for o in sorted(j, key=lambda o: int(o.get("updateTime") or o.get("time") or 0)):
             ts = time.strftime("%d.%m %H:%M:%S", time.gmtime(int(o.get("updateTime") or o.get("time") or 0) / 1000))
             extra = []
             if o.get("stopPrice") not in (None, "", "0", 0):
                 extra.append(f"триггер {o['stopPrice']}")
             if o.get("workingType"):
                 extra.append(str(o["workingType"]))
-            if str(o.get("reduceOnly")).lower() == "true":
+            if str(o.get("reduceOnly")).lower() == "true" or str(o.get("closePosition")).lower() == "true":
                 extra.append("reduceOnly")
             lines.append(f"  {ts} {o.get('type')} {o.get('side')}/{o.get('positionSide')} {o.get('status')}: "
                          f"объём {o.get('executedQty')}/{o.get('origQty')}, ср. цена {o.get('avgPrice')}"
                          + (f" ({', '.join(extra)})" if extra else "") + f", id {o.get('orderId')}")
-    j = _request("GET", "/openApi/swap/v2/user/income", {"symbol": f"{sym}-USDT", "startTime": since, "limit": 100})
-    rows = j.get("data") if isinstance(j, dict) else None
-    if isinstance(rows, list) and rows:
+    j = _request("GET", "/fapi/v1/income", {"symbol": f"{sym}USDT", "startTime": since, "limit": 100})
+    if isinstance(j, list) and j:
         lines.append("Записи счёта:")
-        for r in sorted(rows, key=lambda r: int(r.get("time") or 0)):
+        for r in sorted(j, key=lambda r: int(r.get("time") or 0)):
             ts = time.strftime("%d.%m %H:%M:%S", time.gmtime(int(r.get("time") or 0) / 1000))
             lines.append(f"  {ts} {r.get('incomeType')}: {r.get('income')} {r.get('asset', '')} {r.get('info', '') or ''}")
-    elif isinstance(rows, list):
+    elif isinstance(j, list):
         lines.append("Записей счёта нет")
     else:
-        lines.append(f"Записи счёта: не удалось получить ({j.get('msg')})")
+        lines.append(f"Записи счёта: не удалось получить ({_err(j)})")
     text = "\n".join(lines)
     return text if len(text) < 3900 else text[:3850] + "\n…(обрезано)"
 
 
 def positions_text():
-    """Реальные открытые позиции на BingX (все контракты)."""
+    """Реальные открытые позиции на Binance (все контракты)."""
     if not KEY or not SECRET:
-        return "BingX: ключи не заданы"
-    j = _request("GET", "/openApi/swap/v2/user/positions")
-    if j.get("code") not in (0, None):
-        return f"BingX: не удалось получить позиции ({j.get('msg')})"
-    rows = [p for p in (j.get("data") or []) if float(p.get("positionAmt", 0) or 0) != 0]
+        return "Binance: ключи не заданы"
+    j = _request("GET", "/fapi/v2/positionRisk")
+    if not isinstance(j, list):
+        return f"Binance: не удалось получить позиции ({_err(j)})"
+    rows = [p for p in j if float(p.get("positionAmt", 0) or 0) != 0]
     if not rows:
-        return "На BingX открытых позиций нет."
-    lines = ["Открытые позиции на BingX:"]
+        return "На Binance открытых позиций нет."
+    lines = ["Открытые позиции на Binance:"]
     for p in rows:
         try:
-            amt = float(p["positionAmt"]); entry = float(p.get("avgPrice") or 0); mark = float(p.get("markPrice") or 0)
-            upnl = float(p.get("unrealizedProfit") or 0); margin = float(p.get("initialMargin") or p.get("margin") or 0)
+            amt = float(p["positionAmt"]); entry = float(p.get("entryPrice") or 0); mark = float(p.get("markPrice") or 0)
+            upnl = float(p.get("unRealizedProfit") or 0); lev = int(float(p.get("leverage") or 0) or 1)
+            margin = abs(float(p.get("notional") or 0)) / lev if lev else 0
             pct = f" ({upnl / margin * 100:+.1f}% к марже)" if margin else ""
             lines.append(f"  {p['symbol']} {p.get('positionSide')} {abs(amt):g} шт, вход {entry:.6g}, сейчас {mark:.6g}, "
-                         f"плечо {p.get('leverage')}x, PnL {upnl:+.2f} USDT{pct}")
+                         f"плечо {lev}x, PnL {upnl:+.2f} USDT{pct}")
         except (KeyError, ValueError, TypeError):
             lines.append(f"  {p.get('symbol')}: {p}")
     return "\n".join(lines)
@@ -246,15 +251,23 @@ def _round(x, prec):
     return f"{x:.{int(prec)}f}"
 
 
+def _round_price(c, price):
+    """Цена, кратная шагу tickSize, в строковом виде с точностью контракта."""
+    tick = c.get("tickSize") or 0
+    if tick:
+        price = round(price / tick) * tick
+    return float(_round(price, c.get("pricePrecision", 4)))
+
+
 def qty_for(sym, price):
     c = contract(sym)
     if not c or not price:
         return None
     notional = MARGIN_USDT * LEVERAGE
     q = notional / price
-    prec = int(c.get("quantityPrecision", 0))
-    q = float(_round(q, prec))
-    if q < float(c.get("tradeMinQuantity", 0)):
+    step = 10 ** c["quantityPrecision"]
+    q = int(q * step) / step  # вниз, чтобы номинал не превысил маржу × плечо
+    if q < c["minQty"] or q * price < c["minNotional"]:
         return None
     return q
 
@@ -262,10 +275,9 @@ def qty_for(sym, price):
 def fill_price(sym, order_id, fallback):
     """Фактическая средняя цена исполнения ордера (по ордеру, затем по позиции), иначе fallback."""
     for _ in range(3):
-        j = _request("GET", "/openApi/swap/v2/trade/order", {"symbol": f"{sym}-USDT", "orderId": order_id})
-        o = (j.get("data") or {}).get("order") or {}
+        j = _request("GET", "/fapi/v1/order", {"symbol": f"{sym}USDT", "orderId": order_id})
         try:
-            p = float(o.get("avgPrice") or 0)
+            p = float(j.get("avgPrice") or 0)
             if p > 0:
                 return p
         except (TypeError, ValueError):
@@ -273,7 +285,7 @@ def fill_price(sym, order_id, fallback):
         time.sleep(1)
     pos = position(sym)
     try:
-        p = float((pos or {}).get("avgPrice") or 0)
+        p = float((pos or {}).get("entryPrice") or 0)
         if p > 0:
             return p
     except (TypeError, ValueError):
@@ -283,8 +295,8 @@ def fill_price(sym, order_id, fallback):
 
 def cancel_orders(sym):
     """Снимает все открытые (в т.ч. условные) ордера по контракту."""
-    j = _request("DELETE", "/openApi/swap/v2/trade/allOpenOrders", {"symbol": f"{sym}-USDT"})
-    return j.get("code") == 0
+    j = _request("DELETE", "/fapi/v1/allOpenOrders", {"symbol": f"{sym}USDT"})
+    return not _err(j)
 
 
 def live_open_short(sym, price):
@@ -292,48 +304,50 @@ def live_open_short(sym, price):
     c = contract(sym)
     hedge = hedge_mode()
     pside = "SHORT" if hedge else "BOTH"
-    _request("POST", "/openApi/swap/v2/trade/marginType", {"symbol": f"{sym}-USDT", "marginType": "CROSSED"})
-    _request("POST", "/openApi/swap/v2/trade/leverage",
-             {"symbol": f"{sym}-USDT", "side": "SHORT" if hedge else "BOTH", "leverage": LEVERAGE})
+    # -4046 "No need to change margin type" — не ошибка
+    _request("POST", "/fapi/v1/marginType", {"symbol": f"{sym}USDT", "marginType": "CROSSED"})
+    _request("POST", "/fapi/v1/leverage", {"symbol": f"{sym}USDT", "leverage": LEVERAGE})
     q = qty_for(sym, price)
     if not q:
         return None, "объём меньше минимального для контракта"
-    j = _request("POST", "/openApi/swap/v2/trade/order",
-                 {"symbol": f"{sym}-USDT", "side": "SELL", "positionSide": pside, "type": "MARKET", "quantity": q})
-    if j.get("code") != 0:
-        return None, f"ордер отклонён: {j.get('msg')}"
-    order = (j.get("data") or {}).get("order") or {}
-    fill = fill_price(sym, order.get("orderId"), price)
-    pp = int(c.get("pricePrecision", 4))
-    sl = float(_round(fill * (1 + SL_PCT / 100), pp))
-    tp = float(_round(fill * (1 - TP_PCT / 100), pp))
-    close_side = {"symbol": f"{sym}-USDT", "side": "BUY", "positionSide": pside, "quantity": q}
-    if pside == "BOTH":
-        close_side["reduceOnly"] = "true"
+    j = _request("POST", "/fapi/v1/order",
+                 {"symbol": f"{sym}USDT", "side": "SELL", "positionSide": pside, "type": "MARKET",
+                  "quantity": q, "newOrderRespType": "RESULT"})
+    if _err(j):
+        return None, f"ордер отклонён: {_err(j)}"
+    try:
+        fill = float(j.get("avgPrice") or 0)
+    except (TypeError, ValueError):
+        fill = 0
+    if not fill:
+        fill = fill_price(sym, j.get("orderId"), price)
+    sl = _round_price(c, fill * (1 + SL_PCT / 100))
+    tp = _round_price(c, fill * (1 - TP_PCT / 100))
+    # closePosition=true — закрыть всю позицию по срабатыванию, объём не нужен
+    close_side = {"symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside, "closePosition": "true"}
     # стоп — по марк-цене (защита от одиночных проколов), тейк — по цене сделок, как и вход
-    js = _request("POST", "/openApi/swap/v2/trade/order",
+    js = _request("POST", "/fapi/v1/order",
                   {**close_side, "type": "STOP_MARKET", "stopPrice": sl, "workingType": "MARK_PRICE"})
-    jt = _request("POST", "/openApi/swap/v2/trade/order",
+    jt = _request("POST", "/fapi/v1/order",
                   {**close_side, "type": "TAKE_PROFIT_MARKET", "stopPrice": tp, "workingType": "CONTRACT_PRICE"})
     warn = []
-    if js.get("code") != 0:
-        warn.append(f"стоп не установлен: {js.get('msg')}")
-    if jt.get("code") != 0:
-        warn.append(f"тейк не установлен: {jt.get('msg')}")
-    res = {"qty": q, "sl": sl, "tp": tp, "order_id": order.get("orderId"), "pside": pside, "quote": price,
-           "sl_order_id": ((js.get("data") or {}).get("order") or {}).get("orderId"),
-           "tp_order_id": ((jt.get("data") or {}).get("order") or {}).get("orderId"),
+    if _err(js):
+        warn.append(f"стоп не установлен: {_err(js)}")
+    if _err(jt):
+        warn.append(f"тейк не установлен: {_err(jt)}")
+    res = {"qty": q, "sl": sl, "tp": tp, "order_id": j.get("orderId"), "pside": pside, "quote": price,
+           "sl_order_id": js.get("orderId"), "tp_order_id": jt.get("orderId"),
            "entry": fill, "warn": "; ".join(warn)}
     return res, None
 
 
 def live_close_short(sym, qty, pside):
     cancel_orders(sym)
-    params = {"symbol": f"{sym}-USDT", "side": "BUY", "positionSide": pside, "type": "MARKET", "quantity": qty}
+    params = {"symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside, "type": "MARKET", "quantity": qty}
     if pside == "BOTH":
         params["reduceOnly"] = "true"
-    j = _request("POST", "/openApi/swap/v2/trade/order", params)
-    return j.get("code") == 0, j.get("msg")
+    j = _request("POST", "/fapi/v1/order", params)
+    return not _err(j), _err(j)
 
 
 # ------------------------------------------------------------------ логика сделок
@@ -362,10 +376,10 @@ def on_signal(state, sym, price_hint):
     if any(t["sym"] == sym for t in open_trades(state)):
         return None
     if not contract(sym):
-        return f"⚠️ {sym}: на BingX нет бессрочного контракта, сделка не открыта"
+        return f"⚠️ {sym}: на Binance нет бессрочного контракта, сделка не открыта"
     price = mark_price(sym) or price_hint
     if not price:
-        return f"⚠️ {sym}: не удалось получить цену BingX, сделка не открыта"
+        return f"⚠️ {sym}: не удалось получить цену Binance, сделка не открыта"
     t = {"sym": sym, "opened": time.time(), "entry": price, "mode": MODE, "margin": MARGIN_USDT, "lev": LEVERAGE,
          "sl": price * (1 + SL_PCT / 100), "tp": price * (1 - TP_PCT / 100)}
     if MODE == "live":
@@ -461,8 +475,8 @@ def summary(state):
              f"выход {HOLD_H:g} ч" + (" — НА ПАУЗЕ" if state.get("trading_paused") else "")]
     if MODE != "off":
         b = balance() if KEY and SECRET else None
-        lines.append(f"BingX: баланс {b['balance']:.2f} {b['asset']}, доступно {b['available']:.2f}" if b
-                     else "BingX: ключи не подошли или не заданы — реальные ордера невозможны")
+        lines.append(f"Binance: баланс {b['balance']:.2f} {b['asset']}, доступно {b['available']:.2f}" if b
+                     else "Binance: ключи не подошли или не заданы — реальные ордера невозможны")
         if MODE == "live":
             lines.append(positions_text())
     if ot:
@@ -487,8 +501,8 @@ def startup_check():
     if MODE == "off":
         return "торговля выключена (TRADE_MODE=off)"
     if not KEY or not SECRET:
-        return "BINGX_API_KEY/SECRET не заданы — торговля невозможна"
+        return "BINANCE_API_KEY/SECRET не заданы — торговля невозможна"
     b = balance()
     if not b:
-        return "BingX: ключи не подошли или API недоступен"
-    return f"BingX OK: баланс {b['balance']:.2f} {b['asset']}, доступно {b['available']:.2f}; режим {MODE}"
+        return "Binance: ключи не подошли или API недоступен"
+    return f"Binance OK: баланс {b['balance']:.2f} {b['asset']}, доступно {b['available']:.2f}; режим {MODE}"
