@@ -85,7 +85,7 @@ WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
     "/positions — открытые позиции на Binance, /params — параметры сделок, /set <параметр> <число> — изменить "
-    "(margin, lev, tp, sl, hold, max, limit, lsr), /pause и /resume — пауза торговли, /stop — отписаться."
+    "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
 
@@ -381,12 +381,33 @@ def fmt_run(c):
     return ("≥" if c.get("capped") else "") + f"{c['run_h']:.1f} ч"
 
 
+def _num(s):
+    """Число из ячейки поста: '551.2K', '1,2M', '45.2' → float; иначе None."""
+    try:
+        s = str(s).strip().replace(",", ".").replace(" ", "")
+        mult = {"K": 1e3, "M": 1e6, "B": 1e9}.get(s[-1:].upper(), 1)
+        return float(s[:-1] if mult != 1 else s) * mult
+    except (ValueError, TypeError):
+        return None
+
+
+def rule_for(c):
+    """Какое правило даёт сигнал по кандидату: 'pump' (рост 8–17%), 'dump' (падение 8–17% при B/R ≥ порога) или None."""
+    if PUMP_MIN <= c["b4h"] <= PUMP_MAX:
+        return "pump"
+    if trader.DUMP_RULE and -PUMP_MAX <= c["b4h"] <= -PUMP_MIN:
+        br = _num(c["info"][2])
+        if br is not None and br >= trader.DUMP_BR_MIN:
+            return "dump"
+    return None
+
+
 def status_text(cands):
     if not cands:
         return "Сейчас в канале нет монет, которые висят ≥%g ч." % MIN_RUN_H
-    lines = ["Монеты, висящие в канале ≥%g ч (рост за 4ч):" % MIN_RUN_H]
+    lines = ["Монеты, висящие в канале ≥%g ч (движение за 4ч):" % MIN_RUN_H]
     for c in sorted(cands, key=lambda c: -c["b4h"]):
-        flag = "🔻" if PUMP_MIN <= c["b4h"] <= PUMP_MAX else "  "
+        flag = {"pump": "🔻", "dump": "🔽"}.get(rule_for(c), "  ")
         lines.append(f"{flag} {c['sym']}: {fmt_run(c)}, {c['b4h']:+.1f}%, фандинг {fmt_funding(c.get('funding'))}")
     return "\n".join(lines)
 
@@ -395,10 +416,11 @@ def signal_text(c):
     bor, rep, br = c["info"]
     lsr = c.get("lsr")
     lsr_line = f"LSR тейкеров (1 ч): {lsr:.2f}\n" if isinstance(lsr, (int, float)) else "LSR тейкеров: нет данных\n"
+    title = "🔽 <b>ШОРТ-сигнал (правило 2, после падения): " if c.get("rule") == "dump" else "🔻 <b>ШОРТ-сигнал: "
     return (
-        f"🔻 <b>ШОРТ-сигнал: {c['sym']}</b>\n"
+        f"{title}{c['sym']}</b>\n"
         f"Цена: {fmt_price(c['price'])} USDT ({c['src']})\n"
-        f"Рост за 4 ч: <b>{c['b4h']:+.1f}%</b>\n"
+        f"Движение за 4 ч: <b>{c['b4h']:+.1f}%</b>\n"
         f"Фандинг: {fmt_funding(c.get('funding'))}\n"
         f"{lsr_line}"
         f"В канале непрерывно: {fmt_run(c)} (BOR {bor}, REP {rep}, B/R {br})"
@@ -439,17 +461,20 @@ def scan(state, dry):
         c = {"sym": sym, "run_h": r["run_h"], "capped": r["capped"], "info": r["info"], "funding": funding(sym), **pc}
         cands.append(c)
         recent = [a for a in state["alerts"] if a["sym"] == sym and now - a["ts"] < COOLDOWN_H * 3600]
-        if PUMP_MIN <= c["b4h"] <= PUMP_MAX and not recent:
+        rule = rule_for(c)
+        if rule and not recent:
+            c["rule"] = rule
             try:
                 c["lsr"] = trader.taker_lsr(sym)
             except Exception:
                 c["lsr"] = None
-            log("СИГНАЛ", sym, f"{c['b4h']:+.1f}%", f"{c['run_h']:.1f}ч", f"LSR {c['lsr']}")
+            log("СИГНАЛ", rule, sym, f"{c['b4h']:+.1f}%", f"{c['run_h']:.1f}ч", f"B/R {c['info'][2]}", f"LSR {c['lsr']}")
             broadcast(state, signal_text(c), dry)
             state["alerts"].append({"sym": sym, "ts": now, "price": c["price"], "b4h": c["b4h"], "run_h": c["run_h"],
-                                    "funding": (c["funding"] or {}).get("rate"), "lsr": c["lsr"]})
+                                    "funding": (c["funding"] or {}).get("rate"), "lsr": c["lsr"], "rule": rule,
+                                    "br": _num(c["info"][2])})
             try:
-                msg = trader.on_signal(state, sym, c["price"], lsr=c["lsr"])
+                msg = trader.on_signal(state, sym, c["price"], lsr=c["lsr"], rule=rule)
             except Exception as e:
                 msg = f"❌ {sym}: ошибка исполнителя: {e!r}"
             if msg:

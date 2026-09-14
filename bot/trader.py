@@ -17,9 +17,11 @@ LEVERAGE = int(os.environ.get("LEVERAGE", "2"))
 SL_PCT = float(os.environ.get("SL_PCT", "18"))               # стоп: цена выше входа на N %
 TP_PCT = float(os.environ.get("TP_PCT", "10"))               # тейк: цена ниже входа на N %
 HOLD_H = float(os.environ.get("HOLD_H", "24"))               # принудительный выход через N часов
-MAX_POSITIONS = int(os.environ.get("MAX_POSITIONS", "3"))
+MAX_POSITIONS = int(os.environ.get("MAX_POSITIONS", "0"))    # 0 = без ограничения, ограничивает только баланс
 DAILY_LOSS_LIMIT_USDT = float(os.environ.get("DAILY_LOSS_LIMIT_USDT", str(MARGIN_USDT * 0.4)))
 LSR_MAX = float(os.environ.get("LSR_MAX", "1.1"))            # не входить, если LSR тейкеров >= этого (0 = фильтр выключен)
+DUMP_RULE = int(os.environ.get("DUMP_RULE", "1"))            # правило 2: шорт после падения 8–17% за 4 ч в серии (1 = вкл.)
+DUMP_BR_MIN = float(os.environ.get("DUMP_BR_MIN", "5"))      # правило 2 только при B/R >= этого
 
 
 def log(*a):
@@ -33,9 +35,11 @@ PARAMS = {
     "tp": ("TP_PCT", float, 0.5, 90, "тейк-профит, % движения цены"),
     "sl": ("SL_PCT", float, 1, 200, "стоп-лосс, % движения цены"),
     "hold": ("HOLD_H", float, 1, 168, "выход по времени, часов"),
-    "max": ("MAX_POSITIONS", int, 1, 20, "максимум открытых позиций"),
+    "max": ("MAX_POSITIONS", int, 0, 100, "максимум открытых позиций (0 = без лимита)"),
     "limit": ("DAILY_LOSS_LIMIT_USDT", float, 1, 100000, "дневной лимит убытка, USDT"),
     "lsr": ("LSR_MAX", float, 0, 100, "порог LSR тейкеров (вход только ниже; 0 = выкл.)"),
+    "dump": ("DUMP_RULE", int, 0, 1, "правило 2 — шорт после падения 8–17% (1 = вкл., 0 = выкл.)"),
+    "br": ("DUMP_BR_MIN", float, 0, 1000000, "мин. B/R для правила 2"),
 }
 
 
@@ -70,10 +74,12 @@ def params_text():
             f"  tp — тейк-профит: −{TP_PCT:g}% цены ({TP_PCT * LEVERAGE:g}% к марже)\n"
             f"  sl — стоп-лосс: +{SL_PCT:g}% цены ({SL_PCT * LEVERAGE:g}% к марже)\n"
             f"  hold — выход по времени: {HOLD_H:g} ч\n"
-            f"  max — максимум позиций: {MAX_POSITIONS}\n"
+            f"  max — максимум позиций: {MAX_POSITIONS if MAX_POSITIONS > 0 else 'без лимита (0)'}\n"
             f"  limit — дневной лимит убытка: {DAILY_LOSS_LIMIT_USDT:g} USDT\n"
             f"  lsr — фильтр тейкеров: вход только при LSR < {LSR_MAX:g}" + (" (выключен)" if LSR_MAX <= 0 else "") + "\n"
-            "Изменить: /set margin 7, /set lev 10, /set tp 8, /set sl 18, /set lsr 1.1")
+            f"  dump — правило 2 (шорт после падения 8–17% в серии): {'включено' if DUMP_RULE else 'выключено'}\n"
+            f"  br — правило 2 только при B/R ≥ {DUMP_BR_MIN:g}\n"
+            "Изменить: /set margin 7, /set lev 10, /set tp 8, /set sl 18, /set lsr 1.1, /set dump 0, /set br 5")
 
 
 # ------------------------------------------------------------------ API
@@ -398,14 +404,14 @@ def open_trades(state):
     return [t for t in state["trades"] if not t.get("closed")]
 
 
-def on_signal(state, sym, price_hint, lsr=None):
-    """Вызывается сканером при сигнале. Возвращает текст для чата или None."""
+def on_signal(state, sym, price_hint, lsr=None, rule="pump"):
+    """Вызывается сканером при сигнале (rule: pump — памп, dump — падение). Возвращает текст для чата или None."""
     if MODE == "off":
         return None
     state.setdefault("trades", [])
     if state.get("trading_paused"):
         return f"⏸ {sym}: торговля на паузе (дневной лимит убытка или /pause), сделка не открыта"
-    if len(open_trades(state)) >= MAX_POSITIONS:
+    if MAX_POSITIONS > 0 and len(open_trades(state)) >= MAX_POSITIONS:
         return f"⚠️ {sym}: уже {MAX_POSITIONS} открытых позиций, сделка не открыта"
     if any(t["sym"] == sym for t in open_trades(state)):
         return None
@@ -428,7 +434,7 @@ def on_signal(state, sym, price_hint, lsr=None):
     if not price:
         return f"⚠️ {sym}: не удалось получить цену Binance, сделка не открыта"
     t = {"sym": sym, "opened": time.time(), "entry": price, "mode": MODE, "margin": MARGIN_USDT, "lev": LEVERAGE,
-         "sl": price * (1 + SL_PCT / 100), "tp": price * (1 - TP_PCT / 100), "lsr": lsr}
+         "sl": price * (1 + SL_PCT / 100), "tp": price * (1 - TP_PCT / 100), "lsr": lsr, "rule": rule}
     if MODE == "live":
         res, err = live_open_short(sym, price)
         if err:
@@ -442,7 +448,8 @@ def on_signal(state, sym, price_hint, lsr=None):
     if t.get("quote") and abs(t["entry"] / t["quote"] - 1) > 0.0005:
         note = f" (котировка была {t['quote']:.6g}, проскальзывание {(t['entry'] / t['quote'] - 1) * 100:+.2f}%)"
     warn = f"\n⚠️ {t['warn']}" if t.get("warn") else ""
-    return (f"{tag} сделка: шорт {sym} по {t['entry']:.6g}{note}\n"
+    kind = " (правило 2, после падения)" if rule == "dump" else ""
+    return (f"{tag} сделка: шорт {sym} по {t['entry']:.6g}{note}{kind}\n"
             f"маржа {MARGIN_USDT:g} USDT × {LEVERAGE}x, стоп {t['sl']:.6g} (+{SL_PCT:g}% от входа), "
             f"тейк {t['tp']:.6g} (−{TP_PCT:g}% от входа), выход не позже чем через {HOLD_H:g} ч{lsr_note}{warn}")
 
