@@ -4,6 +4,8 @@
 # Файл состояния bot/state.json никогда не трогается.
 set -u
 cd "$(dirname "$0")/.." || exit 1
+# Бот может стоять как пользовательская служба (systemctl --user) или системная
+if systemctl --user cat margin-scanner >/dev/null 2>&1; then SC="systemctl --user"; else SC="systemctl"; fi
 git fetch -q origin main || { echo "autoupdate: git fetch не удался"; exit 1; }
 # Файлы кода, которые обновляем (только те, что есть в origin/main)
 CODE=""
@@ -26,7 +28,7 @@ SUBJ=$(git log -1 --format=%s origin/main)
 python3 -c "import ast; ast.parse(open('bot/scanner.py').read()); ast.parse(open('bot/trader.py').read())" \
     || { echo "autoupdate: синтаксическая ошибка в новом коде, служба не перезапущена"; exit 1; }
 
-systemctl restart margin-scanner
+$SC restart margin-scanner || { echo "autoupdate: не удалось перезапустить margin-scanner ($SC)"; exit 1; }
 echo "autoupdate: $OLD -> $NEW: $SUBJ"
 
 # Сообщение в Telegram всем подписчикам бота
