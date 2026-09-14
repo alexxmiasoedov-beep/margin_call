@@ -31,9 +31,11 @@ python3 -c "import ast; ast.parse(open('bot/scanner.py').read()); ast.parse(open
 $SC restart margin-scanner || { echo "autoupdate: не удалось перезапустить margin-scanner ($SC)"; exit 1; }
 echo "autoupdate: $OLD -> $NEW: $SUBJ"
 
-# Сообщение в Telegram всем подписчикам бота
-TOKEN=$(grep -E '^TG_BOT_TOKEN=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"' ")
-STATE=$(grep -E '^STATE_FILE=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'"' ")
+# Сообщение в Telegram всем подписчикам бота. Настройки — из EnvironmentFile службы, иначе из .env репозитория
+ENVF=$($SC show -p EnvironmentFile margin-scanner 2>/dev/null | sed -e 's/^EnvironmentFile=//' -e 's/ (.*//')
+[ -f "$ENVF" ] || ENVF=.env
+TOKEN=$(grep -E '^TG_BOT_TOKEN=' "$ENVF" 2>/dev/null | cut -d= -f2- | tr -d '"'"' ")
+STATE=$(grep -E '^STATE_FILE=' "$ENVF" 2>/dev/null | cut -d= -f2- | tr -d '"'"' ")
 STATE=${STATE:-state.json}; [[ "$STATE" = /* ]] || STATE="bot/$STATE"
 [ -n "$TOKEN" ] && [ -f "$STATE" ] && python3 - "$TOKEN" "$STATE" "$NEW" "$SUBJ" <<'PY'
 import json, sys, urllib.parse, urllib.request
