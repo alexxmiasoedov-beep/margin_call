@@ -19,6 +19,7 @@ TP_PCT = float(os.environ.get("TP_PCT", "10"))               # тейк: цен�
 HOLD_H = float(os.environ.get("HOLD_H", "24"))               # принудительный выход через N часов
 MAX_POSITIONS = int(os.environ.get("MAX_POSITIONS", "3"))
 DAILY_LOSS_LIMIT_USDT = float(os.environ.get("DAILY_LOSS_LIMIT_USDT", str(MARGIN_USDT * 0.4)))
+LSR_MAX = float(os.environ.get("LSR_MAX", "1.1"))            # не входить, если LSR тейкеров >= этого (0 = фильтр выключен)
 
 
 def log(*a):
@@ -34,6 +35,7 @@ PARAMS = {
     "hold": ("HOLD_H", float, 1, 168, "выход по времени, часов"),
     "max": ("MAX_POSITIONS", int, 1, 20, "максимум открытых позиций"),
     "limit": ("DAILY_LOSS_LIMIT_USDT", float, 1, 100000, "дневной лимит убытка, USDT"),
+    "lsr": ("LSR_MAX", float, 0, 100, "порог LSR тейкеров (вход только ниже; 0 = выкл.)"),
 }
 
 
@@ -70,7 +72,8 @@ def params_text():
             f"  hold — выход по времени: {HOLD_H:g} ч\n"
             f"  max — максимум позиций: {MAX_POSITIONS}\n"
             f"  limit — дневной лимит убытка: {DAILY_LOSS_LIMIT_USDT:g} USDT\n"
-            "Изменить: /set margin 7, /set lev 10, /set tp 8, /set sl 18")
+            f"  lsr — фильтр тейкеров: вход только при LSR < {LSR_MAX:g}" + (" (выключен)" if LSR_MAX <= 0 else "") + "\n"
+            "Изменить: /set margin 7, /set lev 10, /set tp 8, /set sl 18, /set lsr 1.1")
 
 
 # ------------------------------------------------------------------ API
@@ -133,6 +136,27 @@ def mark_price(sym):
         return float(j["markPrice"])
     except Exception:
         return None
+
+
+def taker_lsr(sym):
+    """Соотношение объёмов тейкеров покупка/продажа за последний завершённый час: >1 — агрессивно покупают.
+    Binance (takerlongshortRatio), резерв — Gate (lsr_taker). None, если данных нет."""
+    j = _request("GET", "/futures/data/takerlongshortRatio", {"symbol": f"{sym}USDT", "period": "1h", "limit": 1},
+                 signed=False)
+    try:
+        if isinstance(j, list) and j:
+            return float(j[-1]["buySellRatio"])
+    except (KeyError, TypeError, ValueError):
+        pass
+    try:
+        u = f"https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract={sym}_USDT&interval=1h&limit=1"
+        with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "margin-call"}), timeout=15) as r:
+            g = json.loads(r.read().decode())
+        if isinstance(g, list) and g and g[0].get("lsr_taker") is not None:
+            return float(g[0]["lsr_taker"])
+    except Exception:
+        pass
+    return None
 
 
 def balance():
@@ -374,7 +398,7 @@ def open_trades(state):
     return [t for t in state["trades"] if not t.get("closed")]
 
 
-def on_signal(state, sym, price_hint):
+def on_signal(state, sym, price_hint, lsr=None):
     """Вызывается сканером при сигнале. Возвращает текст для чата или None."""
     if MODE == "off":
         return None
@@ -387,11 +411,24 @@ def on_signal(state, sym, price_hint):
         return None
     if not contract(sym):
         return f"⚠️ {sym}: на Binance нет бессрочного контракта, сделка не открыта"
+    lsr_note = ""
+    if LSR_MAX > 0:
+        if lsr is None:
+            lsr = taker_lsr(sym)
+        if lsr is None:
+            lsr_note = "\nLSR тейкеров: нет данных, фильтр пропущен"
+        elif lsr >= LSR_MAX:
+            state.setdefault("skipped", []).append({"sym": sym, "ts": time.time(), "lsr": lsr, "price": price_hint})
+            state["skipped"] = state["skipped"][-200:]
+            return (f"⏭ {sym}: сделка не открыта — LSR тейкеров {lsr:.2f} ≥ {LSR_MAX:g}, "
+                    "покупатели ещё давят по рынку (в такой группе за полгода 25% стопов и минус по итогу)")
+        else:
+            lsr_note = f"\nLSR тейкеров: {lsr:.2f} (порог {LSR_MAX:g})"
     price = mark_price(sym) or price_hint
     if not price:
         return f"⚠️ {sym}: не удалось получить цену Binance, сделка не открыта"
     t = {"sym": sym, "opened": time.time(), "entry": price, "mode": MODE, "margin": MARGIN_USDT, "lev": LEVERAGE,
-         "sl": price * (1 + SL_PCT / 100), "tp": price * (1 - TP_PCT / 100)}
+         "sl": price * (1 + SL_PCT / 100), "tp": price * (1 - TP_PCT / 100), "lsr": lsr}
     if MODE == "live":
         res, err = live_open_short(sym, price)
         if err:
@@ -407,7 +444,7 @@ def on_signal(state, sym, price_hint):
     warn = f"\n⚠️ {t['warn']}" if t.get("warn") else ""
     return (f"{tag} сделка: шорт {sym} по {t['entry']:.6g}{note}\n"
             f"маржа {MARGIN_USDT:g} USDT × {LEVERAGE}x, стоп {t['sl']:.6g} (+{SL_PCT:g}% от входа), "
-            f"тейк {t['tp']:.6g} (−{TP_PCT:g}% от входа), выход не позже чем через {HOLD_H:g} ч{warn}")
+            f"тейк {t['tp']:.6g} (−{TP_PCT:g}% от входа), выход не позже чем через {HOLD_H:g} ч{lsr_note}{warn}")
 
 
 def _close(state, t, price, reason):
