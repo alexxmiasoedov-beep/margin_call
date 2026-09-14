@@ -1,0 +1,11 @@
+# Таймер: проверять обновления каждые 5 минут
+[Unit]
+Description=Check margin-call bot updates every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=margin-autoupdate.service
+
+[Install]
+WantedBy=timers.target

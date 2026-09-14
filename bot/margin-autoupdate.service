@@ -1,0 +1,9 @@
+# Разовый запуск скрипта автообновления (его дёргает margin-autoupdate.timer)
+[Unit]
+Description=Margin-call bot auto-update from GitHub
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/margin_call
+ExecStart=/bin/bash /opt/margin_call/bot/autoupdate.sh
