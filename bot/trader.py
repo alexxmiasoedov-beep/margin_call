@@ -83,13 +83,27 @@ def params_text():
 
 
 # ------------------------------------------------------------------ API
-def _request(method, path, params=None, signed=True):
+_time_offset = 0   # серверное время Binance минус локальное, мс
+
+
+def sync_time():
+    """Сверяет часы с Binance, чтобы подписанные запросы не отбрасывались по recvWindow."""
+    global _time_offset
+    j = _request("GET", "/fapi/v1/time", signed=False)
+    try:
+        _time_offset = int(j["serverTime"]) - int(time.time() * 1000)
+        log(f"часы: смещение относительно Binance {_time_offset:+d} мс")
+    except (KeyError, TypeError, ValueError):
+        pass
+
+
+def _request(method, path, params=None, signed=True, _retry=True):
     """Binance USDT-M futures. Ошибка — dict с отрицательным code; успех может быть list, dict или {"code": 200}."""
     params = dict(params or {})
     qs = urllib.parse.urlencode(params)
     if signed:
-        params["timestamp"] = int(time.time() * 1000)
-        params["recvWindow"] = 10000
+        params["timestamp"] = int(time.time() * 1000) + _time_offset
+        params["recvWindow"] = 20000
         qs = urllib.parse.urlencode(params)
         qs += "&signature=" + hmac.new(SECRET.encode(), qs.encode(), hashlib.sha256).hexdigest()
     url = f"{BASE}{path}" + (f"?{qs}" if qs else "")
@@ -106,6 +120,10 @@ def _request(method, path, params=None, signed=True):
         j = {"code": -1, "msg": repr(e)}
     if _err(j):
         log("API error", method, path, j.get("code"), j.get("msg"))
+        if signed and _retry and j.get("code") == -1021:      # часы разошлись — сверяем и повторяем один раз
+            sync_time()
+            return _request(method, path, params={k: v for k, v in params.items() if k not in ("timestamp", "recvWindow")},
+                            signed=True, _retry=False)
     return j
 
 
@@ -183,11 +201,31 @@ def hedge_mode():
 
 
 def position(sym):
+    """Открытая позиция по контракту: dict; None — позиции нет; False — запрос не удался (НЕ значит, что закрыта)."""
     j = _request("GET", "/fapi/v2/positionRisk", {"symbol": f"{sym}USDT"})
-    for p in j if isinstance(j, list) else []:
+    if not isinstance(j, list):
+        return False
+    for p in j:
         if p.get("positionSide") in ("SHORT", "BOTH") and float(p.get("positionAmt", 0)) != 0:
             return p
     return None
+
+
+def all_short_positions():
+    """Все открытые шорты на бирже: {SYM: позиция} или None, если запрос не удался."""
+    j = _request("GET", "/fapi/v2/positionRisk")
+    if not isinstance(j, list):
+        return None
+    out = {}
+    for p in j:
+        try:
+            amt = float(p.get("positionAmt") or 0)
+        except (TypeError, ValueError):
+            continue
+        s = str(p.get("symbol", ""))
+        if amt < 0 and p.get("positionSide") in ("SHORT", "BOTH") and s.endswith("USDT"):
+            out[s[:-4]] = p
+    return out
 
 
 def realized(sym, since_ts):
@@ -290,6 +328,8 @@ def _round(x, prec):
 
 def _round_price(c, price):
     """Цена, кратная шагу tickSize, в строковом виде с точностью контракта."""
+    if not c:
+        return float(f"{price:.6g}")
     tick = c.get("tickSize") or 0
     if tick:
         price = round(price / tick) * tick
@@ -359,8 +399,16 @@ def live_open_short(sym, price):
         fill = 0
     if not fill:
         fill = fill_price(sym, j.get("orderId"), price)
-    sl = _round_price(c, fill * (1 + SL_PCT / 100))
-    tp = _round_price(c, fill * (1 - TP_PCT / 100))
+    prot = place_protection(sym, fill, pside)
+    res = {"qty": q, "order_id": j.get("orderId"), "pside": pside, "quote": price, "entry": fill, **prot}
+    return res, None
+
+
+def place_protection(sym, entry, pside):
+    """Ставит стоп и тейк от цены entry по текущим SL_PCT/TP_PCT. Возвращает {sl, tp, sl_order_id, tp_order_id, warn}."""
+    c = contract(sym)
+    sl = _round_price(c, entry * (1 + SL_PCT / 100))
+    tp = _round_price(c, entry * (1 - TP_PCT / 100))
     # условные ордера с 12.2025 идут через Algo API (/fapi/v1/algoOrder, триггер — triggerPrice);
     # closePosition=true — закрыть всю позицию по срабатыванию, объём не нужен
     close_side = {"algoType": "CONDITIONAL", "symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside,
@@ -375,10 +423,37 @@ def live_open_short(sym, price):
         warn.append(f"стоп не установлен: {_err(js)}")
     if _err(jt):
         warn.append(f"тейк не установлен: {_err(jt)}")
-    res = {"qty": q, "sl": sl, "tp": tp, "order_id": j.get("orderId"), "pside": pside, "quote": price,
-           "sl_order_id": js.get("algoId"), "tp_order_id": jt.get("algoId"),
-           "entry": fill, "warn": "; ".join(warn)}
-    return res, None
+    return {"sl": sl, "tp": tp, "sl_order_id": js.get("algoId"), "tp_order_id": jt.get("algoId"), "warn": "; ".join(warn)}
+
+
+def adopt_positions(state, allpos):
+    """Шорты, которые есть на бирже, но не в журнале бота (забытые после сбоя или открытые вручную):
+    берём под управление — заново ставим стоп/тейк и включаем выход по времени."""
+    msgs = []
+    known = {t["sym"] for t in open_trades(state)}
+    for sym, p in allpos.items():
+        if sym in known:
+            continue
+        try:
+            entry = float(p.get("entryPrice") or 0); qty = abs(float(p.get("positionAmt") or 0))
+            lev = int(float(p.get("leverage") or 0) or LEVERAGE)
+            margin = abs(float(p.get("notional") or 0)) / lev if lev else MARGIN_USDT
+            opened = int(p.get("updateTime") or 0) / 1000 or time.time()
+        except (TypeError, ValueError):
+            continue
+        if not entry or not qty:
+            continue
+        pside = p.get("positionSide") or "BOTH"
+        cancel_orders(sym)
+        prot = place_protection(sym, entry, pside)
+        t = {"sym": sym, "opened": opened, "entry": entry, "mode": "live", "margin": round(margin, 4) or MARGIN_USDT,
+             "lev": lev, "qty": qty, "pside": pside, "adopted": True, "rule": "adopted", **prot}
+        state["trades"].append(t)
+        warn = f"\n⚠️ {t['warn']}" if t.get("warn") else ""
+        msgs.append(f"🔁 {sym}: на бирже есть шорт, которого нет в журнале бота — беру под управление. "
+                    f"Вход {entry:.6g}, объём {qty:g}, открыт {time.strftime('%d.%m %H:%M', time.gmtime(opened))} UTC. "
+                    f"Стоп {t['sl']:.6g} (+{SL_PCT:g}%), тейк {t['tp']:.6g} (−{TP_PCT:g}%), выход по времени через {HOLD_H:g} ч от открытия{warn}")
+    return msgs
 
 
 def live_close_short(sym, qty, pside):
@@ -482,13 +557,28 @@ def manage(state):
         return msgs
     state.setdefault("trades", [])
     now = time.time()
+    allpos = None
+    if MODE == "live":
+        allpos = all_short_positions()
+        if allpos is None:
+            log("позиции с биржи не получены — сопровождение реальных сделок пропущено в этом цикле")
+        else:
+            msgs += adopt_positions(state, allpos)
     for t in open_trades(state):
         sym = t["sym"]
         price = mark_price(sym)
         if not price:
             continue
         if t["mode"] == "live":
-            pos = position(sym)
+            if allpos is None:
+                continue
+            pos = allpos.get(sym)
+            if pos is None:
+                # в общем списке позиции нет — перепроверяем отдельным запросом, чтобы не принять сбой за закрытие
+                time.sleep(2)
+                pos = position(sym)
+                if pos is False:
+                    continue
             if pos is None:
                 # позицию закрыла биржа (стоп, тейк или ликвидация) — снимаем оставшийся условный ордер
                 cancel_orders(sym)
@@ -556,6 +646,7 @@ def startup_check():
         return "торговля выключена (TRADE_MODE=off)"
     if not KEY or not SECRET:
         return "BINANCE_API_KEY/SECRET не заданы — торговля невозможна"
+    sync_time()
     b = balance()
     if not b:
         return "Binance: ключи не подошли или API недоступен"
