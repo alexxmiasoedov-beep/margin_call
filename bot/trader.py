@@ -22,6 +22,7 @@ DAILY_LOSS_LIMIT_USDT = float(os.environ.get("DAILY_LOSS_LIMIT_USDT", str(MARGIN
 LSR_MAX = float(os.environ.get("LSR_MAX", "1.1"))            # не входить, если LSR тейкеров >= этого (0 = фильтр выключен)
 DUMP_RULE = int(os.environ.get("DUMP_RULE", "1"))            # правило 2: шорт после падения 8–17% за 4 ч в серии (1 = вкл.)
 DUMP_BR_MIN = float(os.environ.get("DUMP_BR_MIN", "5"))      # правило 2 только при B/R >= этого
+STOP_PAUSE_H = float(os.environ.get("STOP_PAUSE_H", "48"))    # после стопа по монете не входить в неё N часов (0 = выкл.)
 
 
 def log(*a):
@@ -40,6 +41,7 @@ PARAMS = {
     "lsr": ("LSR_MAX", float, 0, 100, "порог LSR тейкеров (вход только ниже; 0 = выкл.)"),
     "dump": ("DUMP_RULE", int, 0, 1, "правило 2 — шорт после падения 8–17% (1 = вкл., 0 = выкл.)"),
     "br": ("DUMP_BR_MIN", float, 0, 1000000, "мин. B/R для правила 2"),
+    "pause": ("STOP_PAUSE_H", float, 0, 720, "пауза по монете после стопа, часов (0 = выкл.)"),
 }
 
 
@@ -79,7 +81,8 @@ def params_text():
             f"  lsr — фильтр тейкеров: вход только при LSR < {LSR_MAX:g}" + (" (выключен)" if LSR_MAX <= 0 else "") + "\n"
             f"  dump — правило 2 (шорт после падения 8–17% в серии): {'включено' if DUMP_RULE else 'выключено'}\n"
             f"  br — правило 2 только при B/R ≥ {DUMP_BR_MIN:g}\n"
-            "Изменить: /set margin 7, /set lev 10, /set tp 8, /set sl 18, /set lsr 1.1, /set dump 0, /set br 5")
+            f"  pause — после стопа не входить в ту же монету: {STOP_PAUSE_H:g} ч" + (" (выключено)" if STOP_PAUSE_H <= 0 else "") + "\n"
+            "Изменить: /set margin 7, /set lev 10, /set tp 8, /set sl 18, /set lsr 1.1, /set dump 0, /set br 5, /set pause 48")
 
 
 # ------------------------------------------------------------------ API
@@ -490,6 +493,13 @@ def on_signal(state, sym, price_hint, lsr=None, rule="pump"):
         return f"⚠️ {sym}: уже {MAX_POSITIONS} открытых позиций, сделка не открыта"
     if any(t["sym"] == sym for t in open_trades(state)):
         return None
+    if STOP_PAUSE_H > 0:
+        now = time.time()
+        for t in state["trades"]:
+            if t["sym"] == sym and t.get("closed") and "стоп" in str(t.get("reason", "")) and now - t["closed"] < STOP_PAUSE_H * 3600:
+                ago = (now - t["closed"]) / 3600
+                return (f"⏭ {sym}: сделка не открыта — по монете был стоп {ago:.0f} ч назад, пауза после стопа {STOP_PAUSE_H:g} ч "
+                        f"(повторный вход в первые двое суток после стопа даёт 25% стопов против 13%)")
     if not contract(sym):
         return f"⚠️ {sym}: на Binance нет бессрочного контракта, сделка не открыта"
     lsr_note = ""
