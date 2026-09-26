@@ -332,22 +332,35 @@ def klines_15m(sym, n=17):
 
 
 def price_and_change(sym):
-    r = klines_15m(sym)
+    r = klines_15m(sym, 97)                     # сутки свечей: 4 ч для правил + 20 ч до них для паттерна правила 2
     if not r:
-        return None
+        r = klines_15m(sym)
+        if not r:
+            return None
     src, c, h, l = r
-    # положение цены относительно экстремума 16 завершённых свечей (4 ч) — для пометки паттерна «разворот начался»
-    peak = max(h[:-1]); low = min(l[:-1])
+    # положение цены относительно экстремума 16 завершённых свечей (4 ч) — паттерн правила 1 «разворот начался»
+    peak = max(h[-17:-1]); low = min(l[-17:-1])
+    # рост за 20 ч ДО 4-часового окна — паттерн правила 2 «слив после пампа»
+    rise_before = (c[-17] / c[-97] - 1) * 100 if len(c) >= 97 and c[-97] else None
     return {"src": src, "price": c[-1], "b4h": (c[-1] / c[-17] - 1) * 100,
-            "from_peak": (c[-1] / peak - 1) * 100 if peak else None, "from_low": (c[-1] / low - 1) * 100 if low else None}
+            "from_peak": (c[-1] / peak - 1) * 100 if peak else None, "from_low": (c[-1] / low - 1) * 100 if low else None,
+            "rise_before": rise_before}
 
 
 def pattern_line(c):
     """Строка про паттерн «цена отошла от экстремума 4ч на 0,5–3%» (по бэктесту: тейк 85% против 76%, стоп 8% против 20%)."""
     rule = c.get("rule")
     if rule == "dump":
-        x = c.get("from_low")
-        return "" if x is None else f"Отскок от минимума 4 ч: {x:+.1f}% (справочно, для правила 2 паттерн не подтверждён)\n"
+        x = c.get("rise_before")
+        if x is None:
+            return "Паттерн: нет данных за сутки\n"
+        if x >= 30:
+            return f"Паттерн ✅✅: слив после пампа, за 20 ч до падения рост {x:+.0f}% (по истории тейк 90%, стоп 8%)\n"
+        if x >= 15:
+            return f"Паттерн ✅: слив после пампа, за 20 ч до падения рост {x:+.0f}% (по истории тейк 72%, стоп 8%)\n"
+        if x >= 5:
+            return f"Паттерн ⚠️ не выполнен: до падения рост всего {x:+.0f}% (по истории тейк 49%, половина висит до выхода по времени)\n"
+        return f"Паттерн ⚠️ не выполнен: пампа не было, за 20 ч до падения {x:+.0f}% (по истории тейк 68%, стоп 16%)\n"
     if rule != "pump":
         return ""
     x = c.get("from_peak")
@@ -361,10 +374,12 @@ def pattern_line(c):
 
 
 def pattern_ok(c):
-    """True/False для правила 1 (откат от пика 0,5–3%), None если нет данных или правило 2."""
-    if c.get("rule") != "pump" or c.get("from_peak") is None:
-        return None
-    return bool(-3 <= c["from_peak"] <= -0.5)
+    """True/False: правило 1 — откат от пика 0,5–3%; правило 2 — рост ≥15% за 20 ч до падения. None, если нет данных."""
+    if c.get("rule") == "pump":
+        return None if c.get("from_peak") is None else bool(-3 <= c["from_peak"] <= -0.5)
+    if c.get("rule") == "dump":
+        return None if c.get("rise_before") is None else bool(c["rise_before"] >= 15)
+    return None
 
 
 def fmt_price(p):
@@ -504,7 +519,7 @@ def scan(state, dry):
             state["alerts"].append({"sym": sym, "ts": now, "price": c["price"], "b4h": c["b4h"], "run_h": c["run_h"],
                                     "funding": (c["funding"] or {}).get("rate"), "lsr": c["lsr"], "rule": rule,
                                     "br": _num(c["info"][2]), "from_peak": c.get("from_peak"), "from_low": c.get("from_low"),
-                                    "pattern": pattern_ok(c)})
+                                    "rise_before": c.get("rise_before"), "pattern": pattern_ok(c)})
             try:
                 msg = trader.on_signal(state, sym, c["price"], lsr=c["lsr"], rule=rule)
             except Exception as e:
