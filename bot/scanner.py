@@ -310,23 +310,24 @@ def channel_runs(posts):
 
 # ---------------------------------------------------------------- цены
 def klines_15m(sym, n=17):
-    """Последние n 15-минутных закрытий: (source, [close,...]) или None.
+    """Последние n 15-минутных свечей: (source, [close,...], [high,...], [low,...]) или None.
     Binance первым — сигналы канала про монеты Binance, и торгуем мы там же."""
     j = http_json(f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}USDT&interval=15m&limit={n}", 15)
     if isinstance(j, list) and len(j) >= n:
-        return "Binance", [float(k[4]) for k in j]
+        return "Binance", [float(k[4]) for k in j], [float(k[2]) for k in j], [float(k[3]) for k in j]
     j = http_json(f"https://api.binance.com/api/v3/klines?symbol={sym}USDT&interval=15m&limit={n}", 15)
     if isinstance(j, list) and len(j) >= n:
-        return "Binance-spot", [float(k[4]) for k in j]
+        return "Binance-spot", [float(k[4]) for k in j], [float(k[2]) for k in j], [float(k[3]) for k in j]
     j = http_json(f"https://api.mexc.com/api/v3/klines?symbol={sym}USDT&interval=15m&limit={n}", 15)
     if isinstance(j, list) and len(j) >= n:
-        return "MEXC", [float(k[4]) for k in j]
+        return "MEXC", [float(k[4]) for k in j], [float(k[2]) for k in j], [float(k[3]) for k in j]
     j = http_json(f"https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair={sym}_USDT&interval=15m&limit={n}", 15)
     if isinstance(j, list) and len(j) >= n:
-        return "Gate", [float(k[2]) for k in j]
+        return "Gate", [float(k[2]) for k in j], [float(k[3]) for k in j], [float(k[4]) for k in j]
     j = http_json(f"https://api.kucoin.com/api/v1/market/candles?type=15min&symbol={sym}-USDT", 15)
     if isinstance(j, dict) and len(j.get("data") or []) >= n:
-        return "KuCoin", [float(k[2]) for k in sorted(j["data"], key=lambda k: int(k[0]))[-n:]]
+        d = sorted(j["data"], key=lambda k: int(k[0]))[-n:]
+        return "KuCoin", [float(k[2]) for k in d], [float(k[3]) for k in d], [float(k[4]) for k in d]
     return None
 
 
@@ -334,8 +335,36 @@ def price_and_change(sym):
     r = klines_15m(sym)
     if not r:
         return None
-    src, c = r
-    return {"src": src, "price": c[-1], "b4h": (c[-1] / c[-17] - 1) * 100}
+    src, c, h, l = r
+    # положение цены относительно экстремума 16 завершённых свечей (4 ч) — для пометки паттерна «разворот начался»
+    peak = max(h[:-1]); low = min(l[:-1])
+    return {"src": src, "price": c[-1], "b4h": (c[-1] / c[-17] - 1) * 100,
+            "from_peak": (c[-1] / peak - 1) * 100 if peak else None, "from_low": (c[-1] / low - 1) * 100 if low else None}
+
+
+def pattern_line(c):
+    """Строка про паттерн «цена отошла от экстремума 4ч на 0,5–3%» (по бэктесту: тейк 85% против 76%, стоп 8% против 20%)."""
+    rule = c.get("rule")
+    if rule == "dump":
+        x = c.get("from_low")
+        return "" if x is None else f"Отскок от минимума 4 ч: {x:+.1f}% (справочно, для правила 2 паттерн не подтверждён)\n"
+    if rule != "pump":
+        return ""
+    x = c.get("from_peak")
+    if x is None:
+        return "Паттерн: нет данных\n"
+    if x > -0.5:
+        return f"Паттерн: цена на пике 4 ч ({x:+.1f}%) ⚠️ не выполнен (по истории тейк 74%, стоп 20%)\n"
+    if x >= -3:
+        return f"Паттерн ✅: от пика 4 ч {x:+.1f}% — разворот только начался (по истории тейк 85%, стоп 8%)\n"
+    return f"Паттерн: от пика 4 ч {x:+.1f}% — откат уже больше 3% ⚠️ не выполнен (по истории тейк 77%, стоп 20%)\n"
+
+
+def pattern_ok(c):
+    """True/False для правила 1 (откат от пика 0,5–3%), None если нет данных или правило 2."""
+    if c.get("rule") != "pump" or c.get("from_peak") is None:
+        return None
+    return bool(-3 <= c["from_peak"] <= -0.5)
 
 
 def fmt_price(p):
@@ -421,6 +450,7 @@ def signal_text(c):
         f"{title}{c['sym']}</b>\n"
         f"Цена: {fmt_price(c['price'])} USDT ({c['src']})\n"
         f"Движение за 4 ч: <b>{c['b4h']:+.1f}%</b>\n"
+        f"{pattern_line(c)}"
         f"Фандинг: {fmt_funding(c.get('funding'))}\n"
         f"{lsr_line}"
         f"В канале непрерывно: {fmt_run(c)} (BOR {bor}, REP {rep}, B/R {br})"
@@ -468,11 +498,13 @@ def scan(state, dry):
                 c["lsr"] = trader.taker_lsr(sym)
             except Exception:
                 c["lsr"] = None
-            log("СИГНАЛ", rule, sym, f"{c['b4h']:+.1f}%", f"{c['run_h']:.1f}ч", f"B/R {c['info'][2]}", f"LSR {c['lsr']}")
+            log("СИГНАЛ", rule, sym, f"{c['b4h']:+.1f}%", f"{c['run_h']:.1f}ч", f"B/R {c['info'][2]}", f"LSR {c['lsr']}",
+                f"от пика {c.get('from_peak')}", f"паттерн {pattern_ok(c)}")
             broadcast(state, signal_text(c), dry)
             state["alerts"].append({"sym": sym, "ts": now, "price": c["price"], "b4h": c["b4h"], "run_h": c["run_h"],
                                     "funding": (c["funding"] or {}).get("rate"), "lsr": c["lsr"], "rule": rule,
-                                    "br": _num(c["info"][2])})
+                                    "br": _num(c["info"][2]), "from_peak": c.get("from_peak"), "from_low": c.get("from_low"),
+                                    "pattern": pattern_ok(c)})
             try:
                 msg = trader.on_signal(state, sym, c["price"], lsr=c["lsr"], rule=rule)
             except Exception as e:
