@@ -402,31 +402,37 @@ def live_open_short(sym, price):
         fill = 0
     if not fill:
         fill = fill_price(sym, j.get("orderId"), price)
-    prot = place_protection(sym, fill, pside)
+    prot = place_protection(sym, fill, pside, q)
     res = {"qty": q, "order_id": j.get("orderId"), "pside": pside, "quote": price, "entry": fill, **prot}
     return res, None
 
 
-def place_protection(sym, entry, pside):
-    """Ставит стоп и тейк от цены entry по текущим SL_PCT/TP_PCT. Возвращает {sl, tp, sl_order_id, tp_order_id, warn}."""
+def place_protection(sym, entry, pside, qty):
+    """Ставит стоп и тейк от цены entry по текущим SL_PCT/TP_PCT. Возвращает {sl, tp, sl_order_id, tp_order_id, warn}.
+    Стоп — условный рыночный по марк-цене (Algo API, closePosition). Тейк — ЛИМИТНЫЙ ордер в стакане на весь объём:
+    исполняется ровно по своей цене (без проскальзывания рыночного тейка) и с комиссией мейкера."""
     c = contract(sym)
     sl = _round_price(c, entry * (1 + SL_PCT / 100))
     tp = _round_price(c, entry * (1 - TP_PCT / 100))
-    # условные ордера с 12.2025 идут через Algo API (/fapi/v1/algoOrder, триггер — triggerPrice);
-    # closePosition=true — закрыть всю позицию по срабатыванию, объём не нужен
-    close_side = {"algoType": "CONDITIONAL", "symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside,
-                  "closePosition": "true"}
-    # стоп — по марк-цене (защита от одиночных проколов), тейк — по цене сделок, как и вход
     js = _request("POST", "/fapi/v1/algoOrder",
-                  {**close_side, "type": "STOP_MARKET", "triggerPrice": sl, "workingType": "MARK_PRICE"})
-    jt = _request("POST", "/fapi/v1/algoOrder",
-                  {**close_side, "type": "TAKE_PROFIT_MARKET", "triggerPrice": tp, "workingType": "CONTRACT_PRICE"})
+                  {"algoType": "CONDITIONAL", "symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside,
+                   "closePosition": "true", "type": "STOP_MARKET", "triggerPrice": sl, "workingType": "MARK_PRICE"})
+    tp_params = {"symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside, "type": "LIMIT", "timeInForce": "GTC",
+                 "price": tp, "quantity": qty}
+    if pside == "BOTH":
+        tp_params["reduceOnly"] = "true"
+    jt = _request("POST", "/fapi/v1/order", tp_params)
     warn = []
     if _err(js):
         warn.append(f"стоп не установлен: {_err(js)}")
     if _err(jt):
-        warn.append(f"тейк не установлен: {_err(jt)}")
-    return {"sl": sl, "tp": tp, "sl_order_id": js.get("algoId"), "tp_order_id": jt.get("algoId"), "warn": "; ".join(warn)}
+        # запасной вариант — условный рыночный тейк, как раньше
+        jt = _request("POST", "/fapi/v1/algoOrder",
+                      {"algoType": "CONDITIONAL", "symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside,
+                       "closePosition": "true", "type": "TAKE_PROFIT_MARKET", "triggerPrice": tp, "workingType": "CONTRACT_PRICE"})
+        warn.append("лимитный тейк не принят, поставлен рыночный" if not _err(jt) else f"тейк не установлен: {_err(jt)}")
+    return {"sl": sl, "tp": tp, "sl_order_id": js.get("algoId"), "tp_order_id": jt.get("orderId") or jt.get("algoId"),
+            "warn": "; ".join(warn)}
 
 
 def adopt_positions(state, allpos):
@@ -448,7 +454,7 @@ def adopt_positions(state, allpos):
             continue
         pside = p.get("positionSide") or "BOTH"
         cancel_orders(sym)
-        prot = place_protection(sym, entry, pside)
+        prot = place_protection(sym, entry, pside, qty)
         t = {"sym": sym, "opened": opened, "entry": entry, "mode": "live", "margin": round(margin, 4) or MARGIN_USDT,
              "lev": lev, "qty": qty, "pside": pside, "adopted": True, "rule": "adopted", **prot}
         state["trades"].append(t)
@@ -461,6 +467,14 @@ def adopt_positions(state, allpos):
 
 def live_close_short(sym, qty, pside):
     cancel_orders(sym)
+    pos = position(sym)          # закрываем фактический остаток (тейк мог исполниться частично)
+    if pos is None:
+        return True, None
+    if pos:
+        try:
+            qty = abs(float(pos.get("positionAmt") or qty)) or qty
+        except (TypeError, ValueError):
+            pass
     params = {"symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside, "type": "MARKET", "quantity": qty}
     if pside == "BOTH":
         params["reduceOnly"] = "true"
