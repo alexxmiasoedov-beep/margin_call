@@ -84,7 +84,7 @@ def broadcast(state, text, dry):
 WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
-    "/positions — открытые позиции на Binance, /params — параметры сделок, /set <параметр> <число> — изменить "
+    "/positions — открытые позиции на Binance, /virtual — виртуальный журнал (без тейка, стоп 25), /params — параметры сделок, /set <параметр> <число> — изменить "
     "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
@@ -99,6 +99,7 @@ def main_menu(state):
     return kb([
         [("⚙️ Параметры сделок", "params"), ("📊 Позиции на Binance", "positions")],
         [("📒 Журнал сделок", "trades"), ("🔍 Кандидаты в канале", "status")],
+        [("📓 Виртуальный журнал (без тейка)", "virtual")],
         [pause],
     ])
 
@@ -150,6 +151,8 @@ def handle_callback(state, cq, candidates):
         send(cid, trader.positions_text())
     elif data == "trades":
         send(cid, trader.summary(state))
+    elif data == "virtual":
+        send(cid, trader.virt_text(state))
     elif data == "status":
         send(cid, status_text(candidates))
     elif data == "pause":
@@ -209,6 +212,8 @@ def poll_commands(state, candidates, dry, wait=0):
             send(cid, status_text(candidates))
         elif text.startswith("/trades"):
             send(cid, trader.summary(state))
+        elif text.startswith("/virtual"):
+            send(cid, trader.virt_text(state))
         elif text.startswith("/positions"):
             send(cid, trader.positions_text())
         elif text.startswith("/history"):
@@ -583,6 +588,12 @@ def scan(state, dry):
             if msg:
                 log(msg.replace("\n", " | "))
                 broadcast(state, msg, dry)
+            try:
+                vmsg = trader.virt_on_signal(state, sym, c["price"], rule)
+            except Exception as e:
+                vmsg = None; log("ошибка виртуального журнала:", repr(e))
+            if vmsg:
+                log(vmsg); broadcast(state, vmsg, dry)
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
@@ -617,6 +628,12 @@ def cycle(dry, state=None):
             broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка исполнителя:", repr(e))
+    try:
+        for msg in trader.virt_manage(state):
+            log(msg)
+            broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка виртуального журнала:", repr(e))
     save_state(state)
     return cands
 
