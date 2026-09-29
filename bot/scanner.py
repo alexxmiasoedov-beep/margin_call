@@ -331,52 +331,107 @@ def klines_15m(sym, n=17):
     return None
 
 
+def _zigzag(c, th=3.0):
+    """Число разворотов (свингов) на закрытиях с порогом th %."""
+    n = 0; d = 0; ext = c[0]
+    for x in c[1:]:
+        if d == 0:
+            if (x / ext - 1) * 100 >= th: d = 1; ext = x
+            elif (ext / x - 1) * 100 >= th: d = -1; ext = x
+        elif d == 1:
+            if x > ext: ext = x
+            elif (ext / x - 1) * 100 >= th: n += 1; d = -1; ext = x
+        else:
+            if x < ext: ext = x
+            elif (x / ext - 1) * 100 >= th: n += 1; d = 1; ext = x
+    return n
+
+
+def _structure(c, h, l, invert=False):
+    """Форма суток до сигнала по 96 завершённым свечам (те же формулы, что в research/shape.py).
+    invert=True — для падений график переворачивается (1/цена), и слив выглядит как памп."""
+    if len(c) < 97:
+        return None
+    p = c[-1]
+    H, L, C = h[:-1], l[:-1], c[:-1]
+    if invert:
+        H, L, C, p = [1 / x for x in l[:-1]], [1 / x for x in h[:-1]], [1 / x for x in c[:-1]], 1 / p
+    H, L, C = H[-96:], L[-96:], C[-96:]
+    prior_h = H[:-16]; prior_ext = max(prior_h); prior_idx = prior_h.index(prior_ext)
+    vs_prior = (p / prior_ext - 1) * 100                              # >0 — перехай прежнего экстремума
+    pull = (min(L[prior_idx:-16]) / prior_ext - 1) * 100              # откат между прежним экстремумом и 4-часовым окном
+    move_prior = (prior_ext / C[0] - 1) * 100                         # рост от начала суток до прежнего экстремума
+    rng = max(H) - min(L)
+    return {"move_prior": move_prior, "pull": pull, "vs_prior": vs_prior, "swings": _zigzag(C),
+            "pos24": (p - min(L)) / rng if rng > 0 else None}
+
+
 def price_and_change(sym):
-    r = klines_15m(sym, 97)                     # сутки свечей: 4 ч для правил + 20 ч до них для паттерна правила 2
+    r = klines_15m(sym, 97)                     # сутки свечей: 4 ч для правил + 20 ч до них для паттернов
     if not r:
         r = klines_15m(sym)
         if not r:
             return None
     src, c, h, l = r
-    # положение цены относительно экстремума 16 завершённых свечей (4 ч) — паттерн правила 1 «разворот начался»
     peak = max(h[-17:-1]); low = min(l[-17:-1])
-    # рост за 20 ч ДО 4-часового окна — паттерн правила 2 «слив после пампа»
     rise_before = (c[-17] / c[-97] - 1) * 100 if len(c) >= 97 and c[-97] else None
     return {"src": src, "price": c[-1], "b4h": (c[-1] / c[-17] - 1) * 100,
             "from_peak": (c[-1] / peak - 1) * 100 if peak else None, "from_low": (c[-1] / low - 1) * 100 if low else None,
-            "rise_before": rise_before}
+            "rise_before": rise_before, "s_pump": _structure(c, h, l), "s_dump": _structure(c, h, l, invert=True)}
 
 
 def pattern_line(c):
-    """Строка про паттерн «цена отошла от экстремума 4ч на 0,5–3%» (по бэктесту: тейк 85% против 76%, стоп 8% против 20%)."""
+    """Строки про паттерны формы графика за сутки (только пометка; по бэктесту за полгода, research/shape.py)."""
     rule = c.get("rule")
     if rule == "dump":
-        x = c.get("rise_before")
+        x = c.get("rise_before"); s = c.get("s_dump") or {}
+        out = []
         if x is None:
-            return "Паттерн: нет данных за сутки\n"
-        if x >= 30:
-            return f"Паттерн ✅✅: слив после пампа, за 20 ч до падения рост {x:+.0f}% (по истории тейк 90%, стоп 8%)\n"
-        if x >= 15:
-            return f"Паттерн ✅: слив после пампа, за 20 ч до падения рост {x:+.0f}% (по истории тейк 72%, стоп 8%)\n"
-        if x >= 5:
-            return f"Паттерн ⚠️ не выполнен: до падения рост всего {x:+.0f}% (по истории тейк 49%, половина висит до выхода по времени)\n"
-        return f"Паттерн ⚠️ не выполнен: пампа не было, за 20 ч до падения {x:+.0f}% (по истории тейк 68%, стоп 16%)\n"
+            out.append("Паттерн: нет данных за сутки")
+        elif x >= 30:
+            out.append(f"Паттерн ✅✅: слив после пампа, за 20 ч до падения рост {x:+.0f}% (по истории тейк 90%, стоп 8%)")
+        elif x >= 15:
+            out.append(f"Паттерн ✅: слив после пампа, за 20 ч до падения рост {x:+.0f}% (по истории тейк 72%, стоп 8%)")
+        elif x >= 5:
+            out.append(f"Паттерн ⚠️ не выполнен: до падения рост всего {x:+.0f}% (по истории тейк 49%, половина висит до выхода по времени)")
+        else:
+            out.append(f"Паттерн ⚠️ не выполнен: пампа не было, за 20 ч до падения {x:+.0f}% (по истории тейк 68%, стоп 16%)")
+        if s.get("pos24") is not None:
+            pos = 1 - s["pos24"]                                       # доля высоты суточного диапазона, где стоит цена (1 = у максимума)
+            if pos >= 0.5:
+                out.append(f"Форма ✅: цена ещё в верхней половине диапазона суток ({pos*100:.0f}%), разворотов за сутки {s['swings']} (по истории тейк 87%)")
+            elif pos <= 0.2:
+                out.append(f"Форма ⚠️: цена у минимума суток ({pos*100:.0f}% диапазона), разворотов {s['swings']} (по истории тейк 59%, стоп 16%)")
+            else:
+                out.append(f"Форма: цена на {pos*100:.0f}% высоты диапазона суток, разворотов за сутки {s['swings']} (по истории тейк 67%)")
+        return "\n".join(out) + "\n"
     if rule != "pump":
         return ""
-    x = c.get("from_peak")
-    if x is None:
-        return "Паттерн: нет данных\n"
-    if x > -0.5:
-        return f"Паттерн: цена на пике 4 ч ({x:+.1f}%) ⚠️ не выполнен (по истории тейк 74%, стоп 20%)\n"
-    if x >= -3:
-        return f"Паттерн ✅: от пика 4 ч {x:+.1f}% — разворот только начался (по истории тейк 85%, стоп 8%)\n"
-    return f"Паттерн: от пика 4 ч {x:+.1f}% — откат уже больше 3% ⚠️ не выполнен (по истории тейк 77%, стоп 20%)\n"
+    s = c.get("s_pump"); fp = c.get("from_peak")
+    tail = f"; от пика 4 ч {fp:+.1f}%" if fp is not None else ""
+    if not s:
+        return "Паттерн: нет данных за сутки\n"
+    if s["move_prior"] < 3:
+        return f"Структура ⚠️: прямой памп без прежнего максимума за сутки{tail} (по истории тейк 69%, стоп 18%)\n"
+    if s["vs_prior"] < -3:
+        return f"Структура ⚠️: нижний хай — заход ниже прежнего максимума на {-s['vs_prior']:.0f}%, откат между ними {-s['pull']:.0f}%{tail} (по истории тейк 75%, стоп 21%)\n"
+    if s["pull"] > -4:
+        return f"Структура ⚠️: откат между максимумами всего {-s['pull']:.0f}%{tail} (по истории тейк 68%, стоп 22%)\n"
+    if s["pull"] < -15:
+        return f"Структура ⚠️: откат между максимумами {-s['pull']:.0f}%, слишком глубокий{tail} (по истории тейк 76%, стоп 21%)\n"
+    kind = "перехай" if s["vs_prior"] > 0.5 else "двойная вершина"
+    return (f"Структура ✅: рост → откат {-s['pull']:.0f}% → {kind} ({s['vs_prior']:+.1f}% к прежнему максимуму), "
+            f"разворотов за сутки {s['swings']}{tail} (по истории тейк 90%, стоп 8%)\n")
 
 
 def pattern_ok(c):
-    """True/False: правило 1 — откат от пика 0,5–3%; правило 2 — рост ≥15% за 20 ч до падения. None, если нет данных."""
+    """True/False: правило 1 — структура «прежний хай + откат 4–15% + заход не ниже хая на 3%»;
+    правило 2 — рост ≥15% за 20 ч до падения. None, если нет данных."""
     if c.get("rule") == "pump":
-        return None if c.get("from_peak") is None else bool(-3 <= c["from_peak"] <= -0.5)
+        s = c.get("s_pump")
+        if not s:
+            return None
+        return bool(s["move_prior"] >= 3 and -15 <= s["pull"] <= -4 and s["vs_prior"] >= -3)
     if c.get("rule") == "dump":
         return None if c.get("rise_before") is None else bool(c["rise_before"] >= 15)
     return None
@@ -519,7 +574,8 @@ def scan(state, dry):
             state["alerts"].append({"sym": sym, "ts": now, "price": c["price"], "b4h": c["b4h"], "run_h": c["run_h"],
                                     "funding": (c["funding"] or {}).get("rate"), "lsr": c["lsr"], "rule": rule,
                                     "br": _num(c["info"][2]), "from_peak": c.get("from_peak"), "from_low": c.get("from_low"),
-                                    "rise_before": c.get("rise_before"), "pattern": pattern_ok(c)})
+                                    "rise_before": c.get("rise_before"), "pattern": pattern_ok(c),
+                                    "s_pump": c.get("s_pump"), "s_dump": c.get("s_dump")})
             try:
                 msg = trader.on_signal(state, sym, c["price"], lsr=c["lsr"], rule=rule)
             except Exception as e:
