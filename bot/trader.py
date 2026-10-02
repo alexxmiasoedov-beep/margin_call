@@ -407,32 +407,99 @@ def live_open_short(sym, price):
     return res, None
 
 
+def place_sl(sym, sl, pside):
+    """Стоп: условный рыночный по марк-цене (Algo API, closePosition). Возвращает (algoId, ошибка)."""
+    j = _request("POST", "/fapi/v1/algoOrder",
+                 {"algoType": "CONDITIONAL", "symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside,
+                  "closePosition": "true", "type": "STOP_MARKET", "triggerPrice": sl, "workingType": "MARK_PRICE"})
+    return j.get("algoId") if isinstance(j, dict) else None, _err(j)
+
+
+def place_tp(sym, tp, pside, qty):
+    """Тейк: лимитный ордер в стакане на весь объём (без проскальзывания, комиссия мейкера);
+    если биржа его не принимает — условный рыночный тейк. Возвращает (id, предупреждение или '')."""
+    params = {"symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside, "type": "LIMIT", "timeInForce": "GTC",
+              "price": tp, "quantity": qty}
+    if pside == "BOTH":
+        params["reduceOnly"] = "true"
+    j = _request("POST", "/fapi/v1/order", params)
+    if not _err(j):
+        return j.get("orderId"), ""
+    why = _err(j)
+    ja = _request("POST", "/fapi/v1/algoOrder",
+                  {"algoType": "CONDITIONAL", "symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside,
+                   "closePosition": "true", "type": "TAKE_PROFIT_MARKET", "triggerPrice": tp, "workingType": "CONTRACT_PRICE"})
+    if not _err(ja):
+        return ja.get("algoId"), f"лимитный тейк биржа не приняла ({why}), поставлен рыночный"
+    return None, f"тейк НЕ установлен: лимитный — {why}; рыночный — {_err(ja)}"
+
+
 def place_protection(sym, entry, pside, qty):
-    """Ставит стоп и тейк от цены entry по текущим SL_PCT/TP_PCT. Возвращает {sl, tp, sl_order_id, tp_order_id, warn}.
-    Стоп — условный рыночный по марк-цене (Algo API, closePosition). Тейк — ЛИМИТНЫЙ ордер в стакане на весь объём:
-    исполняется ровно по своей цене (без проскальзывания рыночного тейка) и с комиссией мейкера."""
+    """Ставит стоп и тейк от цены entry по текущим SL_PCT/TP_PCT. Возвращает {sl, tp, sl_order_id, tp_order_id, warn}."""
     c = contract(sym)
     sl = _round_price(c, entry * (1 + SL_PCT / 100))
     tp = _round_price(c, entry * (1 - TP_PCT / 100))
-    js = _request("POST", "/fapi/v1/algoOrder",
-                  {"algoType": "CONDITIONAL", "symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside,
-                   "closePosition": "true", "type": "STOP_MARKET", "triggerPrice": sl, "workingType": "MARK_PRICE"})
-    tp_params = {"symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside, "type": "LIMIT", "timeInForce": "GTC",
-                 "price": tp, "quantity": qty}
-    if pside == "BOTH":
-        tp_params["reduceOnly"] = "true"
-    jt = _request("POST", "/fapi/v1/order", tp_params)
-    warn = []
-    if _err(js):
-        warn.append(f"стоп не установлен: {_err(js)}")
-    if _err(jt):
-        # запасной вариант — условный рыночный тейк, как раньше
-        jt = _request("POST", "/fapi/v1/algoOrder",
-                      {"algoType": "CONDITIONAL", "symbol": f"{sym}USDT", "side": "BUY", "positionSide": pside,
-                       "closePosition": "true", "type": "TAKE_PROFIT_MARKET", "triggerPrice": tp, "workingType": "CONTRACT_PRICE"})
-        warn.append("лимитный тейк не принят, поставлен рыночный" if not _err(jt) else f"тейк не установлен: {_err(jt)}")
-    return {"sl": sl, "tp": tp, "sl_order_id": js.get("algoId"), "tp_order_id": jt.get("orderId") or jt.get("algoId"),
-            "warn": "; ".join(warn)}
+    sl_id, sl_err = place_sl(sym, sl, pside)
+    tp_id, tp_warn = place_tp(sym, tp, pside, qty)
+    warn = ([f"стоп НЕ установлен: {sl_err}"] if sl_err else []) + ([tp_warn] if tp_warn else [])
+    return {"sl": sl, "tp": tp, "sl_order_id": sl_id, "tp_order_id": tp_id, "warn": "; ".join(warn)}
+
+
+_ACTIVE_ALGO = {"NEW", "WORKING", "TRIGGERING", "ACTIVE", "PENDING"}
+
+
+def protection_state(sym, entry, since):
+    """Какие защитные ордера реально стоят на бирже: {"tp": bool, "sl": bool} или None, если не удалось узнать.
+    Тейк — лимитный BUY в открытых ордерах или активный условный ордер с триггером ниже входа;
+    стоп — активный условный ордер с триггером выше входа."""
+    oo = _request("GET", "/fapi/v1/openOrders", {"symbol": f"{sym}USDT"})
+    ja = _request("GET", "/fapi/v1/allAlgoOrders", {"symbol": f"{sym}USDT", "startTime": int((since - 600) * 1000)})
+    algo = ja.get("orders") if isinstance(ja, dict) and "orders" in ja else ja
+    if not isinstance(oo, list) or not isinstance(algo, list):
+        return None
+    tp = any(str(o.get("type")) == "LIMIT" and str(o.get("side")) == "BUY" for o in oo)
+    sl = False
+    for o in algo:
+        if str(o.get("algoStatus", o.get("status", ""))).upper() not in _ACTIVE_ALGO or str(o.get("side")) != "BUY":
+            continue
+        try:
+            trig = float(o.get("triggerPrice") or 0)
+        except (TypeError, ValueError):
+            continue
+        if trig > entry:
+            sl = True
+        elif trig > 0:
+            tp = True
+    return {"tp": tp, "sl": sl}
+
+
+def ensure_protection(t, pos):
+    """Если у открытой позиции на бирже нет тейка или стопа — переставляет. Возвращает сообщение или None."""
+    st = protection_state(t["sym"], t["entry"], t["opened"])
+    if st is None or (st["tp"] and st["sl"]):
+        return None
+    pside = t.get("pside", "SHORT")
+    try:
+        qty = abs(float(pos.get("positionAmt"))) or t["qty"]
+    except (TypeError, ValueError, AttributeError):
+        qty = t["qty"]
+    done = []
+    if not st["sl"]:
+        sl_id, err = place_sl(t["sym"], t["sl"], pside)
+        if err and "exist" in err.lower():
+            # биржа говорит, что стоп с closePosition уже стоит — значит, мы не распознали его статус; не шумим
+            log(t["sym"], "стоп уже есть на бирже (статус условного ордера не распознан):", err)
+        else:
+            done.append(f"стоп {t['sl']:.6g} — " + ("переставлен" if not err else f"НЕ удалось: {err}"))
+    if not st["tp"]:
+        tp_id, warn = place_tp(t["sym"], t["tp"], pside, qty)
+        done.append(f"тейк {t['tp']:.6g} — " + (warn or "переставлен лимитным ордером"))
+    if not done:
+        return None
+    t["protection_fixes"] = t.get("protection_fixes", 0) + 1
+    if t["protection_fixes"] > 3 and all("НЕ" in d for d in done):
+        return None          # не спамим одной и той же ошибкой каждые 5 минут — она уже была в чате
+    return f"🛠 {t['sym']}: на бирже не хватало защитных ордеров. " + "; ".join(done)
 
 
 def adopt_positions(state, allpos):
@@ -614,6 +681,10 @@ def manage(state):
                     msgs.append(_close(state, t, price, "закрыта биржей ДО стопа/тейка — вероятно, авто-делеверидж (ADL) "
                                                         "или ручное закрытие; проверьте историю ордеров"))
                 continue
+            if now - t["opened"] < HOLD_H * 3600 and now - t["opened"] > 120:
+                fix = ensure_protection(t, pos)
+                if fix:
+                    msgs.append(fix)
             if now - t["opened"] >= HOLD_H * 3600:
                 ok, msg = live_close_short(sym, t["qty"], t.get("pside", "SHORT"))
                 if ok:
