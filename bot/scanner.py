@@ -85,7 +85,7 @@ WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
     "/positions — открытые позиции на Binance, /virtual — виртуальный журнал (без тейка, стоп 25), /params — параметры сделок, /set <параметр> <число> — изменить "
-    "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause), /pause и /resume — пауза торговли, /stop — отписаться."
+    "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause, fexit), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
 

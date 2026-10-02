@@ -23,6 +23,7 @@ LSR_MAX = float(os.environ.get("LSR_MAX", "1.1"))            # не входит
 DUMP_RULE = int(os.environ.get("DUMP_RULE", "1"))            # правило 2: шорт после падения 8–17% за 4 ч в серии (1 = вкл.)
 DUMP_BR_MIN = float(os.environ.get("DUMP_BR_MIN", "5"))      # правило 2 только при B/R >= этого
 STOP_PAUSE_H = float(os.environ.get("STOP_PAUSE_H", "48"))    # после стопа по монете не входить в неё N часов (0 = выкл.)
+FUND_EXIT = float(os.environ.get("FUND_EXIT", "0"))          # выйти, если фандинг ≤ −N % в час (0 = выкл.; по бэктесту 0,4)
 
 
 def log(*a):
@@ -42,6 +43,7 @@ PARAMS = {
     "dump": ("DUMP_RULE", int, 0, 1, "правило 2 — шорт после падения 8–17% (1 = вкл., 0 = выкл.)"),
     "br": ("DUMP_BR_MIN", float, 0, 1000000, "мин. B/R для правила 2"),
     "pause": ("STOP_PAUSE_H", float, 0, 720, "пауза по монете после стопа, часов (0 = выкл.)"),
+    "fexit": ("FUND_EXIT", float, 0, 5, "выход при фандинге ≤ −N %/ч (0 = выкл.)"),
 }
 
 
@@ -82,6 +84,7 @@ def params_text():
             f"  dump — правило 2 (шорт после падения 8–17% в серии): {'включено' if DUMP_RULE else 'выключено'}\n"
             f"  br — правило 2 только при B/R ≥ {DUMP_BR_MIN:g}\n"
             f"  pause — после стопа не входить в ту же монету: {STOP_PAUSE_H:g} ч" + (" (выключено)" if STOP_PAUSE_H <= 0 else "") + "\n"
+            f"  fexit — досрочный выход при фандинге ≤ −{FUND_EXIT:g}%/ч" + (" (выключено)" if FUND_EXIT <= 0 else "") + "\n"
             "Изменить: /set margin 7, /set lev 10, /set tp 8, /set sl 18, /set lsr 1.1, /set dump 0, /set br 5, /set pause 48")
 
 
@@ -162,6 +165,42 @@ def mark_price(sym):
     try:
         return float(j["markPrice"])
     except Exception:
+        return None
+
+
+_fund_iv = {"ts": 0, "map": {}}
+
+
+def funding_interval_h(sym):
+    """Интервал начисления фандинга, часов (Binance /fapi/v1/fundingInfo; кого там нет — 8 ч). Кэш на час."""
+    if time.time() - _fund_iv["ts"] > 3600:
+        j = _request("GET", "/fapi/v1/fundingInfo", signed=False)
+        if isinstance(j, list):
+            _fund_iv["map"] = {str(x.get("symbol")): float(x.get("fundingIntervalHours") or 8) for x in j}
+            _fund_iv["ts"] = time.time()
+    return _fund_iv["map"].get(f"{sym}USDT", 8.0)
+
+
+def funding_hourly(sym):
+    """Текущая (прогнозная) ставка фандинга в пересчёте на час, доля. Минус — шорт платит. None, если нет данных."""
+    j = _request("GET", "/fapi/v1/premiumIndex", {"symbol": f"{sym}USDT"}, signed=False)
+    try:
+        return float(j["lastFundingRate"]) / funding_interval_h(sym)
+    except Exception:
+        return None
+
+
+def funding_paid(sym, since, until=None):
+    """Фандинг для шорта на 1 USDT номинала за период (сумма начислений): >0 — получили, <0 — заплатили. None — нет данных."""
+    p = {"symbol": f"{sym}USDT", "startTime": int(since * 1000), "limit": 1000}
+    if until:
+        p["endTime"] = int(until * 1000)
+    j = _request("GET", "/fapi/v1/fundingRate", p, signed=False)
+    if not isinstance(j, list):
+        return None
+    try:
+        return sum(float(x["fundingRate"]) for x in j)
+    except (KeyError, TypeError, ValueError):
         return None
 
 
@@ -681,6 +720,15 @@ def manage(state):
                     msgs.append(_close(state, t, price, "закрыта биржей ДО стопа/тейка — вероятно, авто-делеверидж (ADL) "
                                                         "или ручное закрытие; проверьте историю ордеров"))
                 continue
+            if FUND_EXIT > 0 and now - t["opened"] < HOLD_H * 3600:
+                fh = funding_hourly(sym)
+                if fh is not None and fh * 100 <= -FUND_EXIT:
+                    ok, msg = live_close_short(sym, t["qty"], t.get("pside", "SHORT"))
+                    if ok:
+                        msgs.append(_close(state, t, price, f"досрочный выход: фандинг {fh * 100:+.2f}%/ч (порог −{FUND_EXIT:g}%)"))
+                    else:
+                        msgs.append(f"❌ {sym}: не удалось закрыть по фандингу: {msg}")
+                    continue
             if now - t["opened"] < HOLD_H * 3600 and now - t["opened"] > 120:
                 fix = ensure_protection(t, pos)
                 if fix:
@@ -698,6 +746,10 @@ def manage(state):
                 msgs.append(_close(state, t, t["tp"], "тейк-профит"))
             elif now - t["opened"] >= HOLD_H * 3600:
                 msgs.append(_close(state, t, price, f"выход по времени ({HOLD_H:g} ч)"))
+            elif FUND_EXIT > 0:
+                fh = funding_hourly(sym)
+                if fh is not None and fh * 100 <= -FUND_EXIT:
+                    msgs.append(_close(state, t, price, f"досрочный выход: фандинг {fh * 100:+.2f}%/ч (порог −{FUND_EXIT:g}%)"))
     if _today_pnl(state) <= -DAILY_LOSS_LIMIT_USDT and not state.get("trading_paused"):
         state["trading_paused"] = True
         msgs.append(f"⏸ Дневной убыток {_today_pnl(state):+.2f} USDT достиг лимита {DAILY_LOSS_LIMIT_USDT:g} USDT — "
@@ -787,11 +839,16 @@ def virt_on_signal(state, sym, price, rule):
 
 def _virt_close(t, px, reason):
     t["closed"] = time.time(); t["exit"] = px; t["reason"] = reason
+    notional = t["margin"] * t["lev"]
     pct = (1 - px / t["entry"]) * 100 * t["lev"]          # шорт: прибыль = (вход − выход) / вход
-    t["pnl_usdt"] = round(t["margin"] * pct / 100 - t["margin"] * t["lev"] * 0.0005 * 2, 4); t["pnl_pct"] = round(pct, 2)
+    fr = funding_paid(t["sym"], t["opened"], t["closed"])
+    t["fund_usdt"] = round(fr * notional, 4) if fr is not None else 0.0
+    t["pnl_usdt"] = round(t["margin"] * pct / 100 + t["fund_usdt"] - notional * 0.0005 * 2, 4)
+    t["pnl_pct"] = round(t["pnl_usdt"] / t["margin"] * 100, 2)
     mark = "✅" if t["pnl_usdt"] > 0 else "❌"
+    fnote = f", фандинг {t['fund_usdt']:+.2f}" if fr is not None else ", фандинг: нет данных"
     return (f"📓 {mark} виртуально закрыт шорт {t['sym']}: {reason}, вход {t['entry']:.6g} → выход {px:.6g}, "
-            f"{pct:+.1f}% к марже ({t['pnl_usdt']:+.2f} USDT), держали {(t['closed'] - t['opened']) / 3600:.1f} ч")
+            f"цена {pct:+.1f}% к марже{fnote} → итого {t['pnl_usdt']:+.2f} USDT, держали {(t['closed'] - t['opened']) / 3600:.1f} ч")
 
 
 def virt_manage(state):
@@ -821,13 +878,16 @@ def virt_text(state):
         lines.append("Открытые виртуальные:")
         for t in op:
             px = mark_price(t["sym"]); cur = f", сейчас {px:.6g} ({(1 - px / t['entry']) * 100 * t['lev']:+.1f}% к марже)" if px else ""
-            lines.append(f"  {t['sym']} по {t['entry']:.6g}, {(now - t['opened']) / 3600:.1f} ч{cur}")
+            fr = funding_paid(t["sym"], t["opened"]); fh = funding_hourly(t["sym"])
+            fund = f", фандинг {fr * t['margin'] * t['lev']:+.2f} USDT" if fr is not None else ""
+            rate = f", ставка {fh * 100:+.3f}%/ч" if fh is not None else ""
+            lines.append(f"  {t['sym']} по {t['entry']:.6g}, {(now - t['opened']) / 3600:.1f} ч{cur}{fund}{rate}")
     else:
         lines.append("Открытых виртуальных нет.")
     if cl:
-        st = sum(1 for t in cl if t["reason"] == "стоп"); tot = sum(t["pnl_usdt"] for t in cl)
+        st = sum(1 for t in cl if t["reason"] == "стоп"); tot = sum(t["pnl_usdt"] for t in cl); ftot = sum(t.get("fund_usdt", 0) for t in cl)
         wins = sum(1 for t in cl if t["pnl_usdt"] > 0)
-        lines.append(f"Закрытых {len(cl)}: стопов {st}, по времени {len(cl) - st}, в плюс {wins}; итого {tot:+.2f} USDT ({tot / len(cl):+.3f} на сделку)")
+        lines.append(f"Закрытых {len(cl)}: стопов {st}, по времени {len(cl) - st}, в плюс {wins}; итого {tot:+.2f} USDT ({tot / len(cl):+.3f} на сделку), из них фандинг {ftot:+.2f}")
         for t in cl[-8:]:
             lines.append(f"  {time.strftime('%d.%m', time.gmtime(t['closed']))} {t['sym']}: {t['reason']}, {t['pnl_pct']:+.1f}% ({t['pnl_usdt']:+.2f})")
     real = [t for t in state.get("trades", []) if t.get("closed") and t["closed"] >= v["started"]]
