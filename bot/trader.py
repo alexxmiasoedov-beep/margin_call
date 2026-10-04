@@ -826,6 +826,8 @@ VIRTUALS = {
                 "params": lambda fh: (None, 25.0)},
     "virtual_fund": {"title": "по фандингу: фандинг < −0,03%/ч → тейк 15 / стоп 25, иначе тейк 6 / стоп 20", "icon": "📗",
                      "params": lambda fh: (15.0, 25.0) if fh is not None and fh * 100 < -0.03 else (6.0, 20.0)},
+    "virtual_1525": {"title": "тейк 15 / стоп 25 (лучший вариант бэктеста на фьючерсах)", "icon": "📘",
+                     "params": lambda fh: (15.0, 25.0)},
 }
 VIRT = {"hold_h": 48.0, "pause_h": 48.0, "start_balance": 20.0}   # стартовый капитал журнала, USDT
 
