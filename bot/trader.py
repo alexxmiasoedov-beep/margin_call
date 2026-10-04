@@ -270,6 +270,22 @@ def all_short_positions():
     return out
 
 
+def close_fills(sym, since_ts):
+    """Фактическое закрытие шорта по исполнениям Binance (покупки после since_ts): (средняя цена, был ли лимитный maker) или None."""
+    j = _request("GET", "/fapi/v1/userTrades", {"symbol": f"{sym}USDT", "startTime": int(since_ts * 1000), "limit": 1000})
+    if not isinstance(j, list):
+        return None
+    q = v = 0.0; maker = False
+    for f in j:
+        try:
+            if str(f.get("side")).upper() != "BUY":
+                continue
+            q += float(f["qty"]); v += float(f["qty"]) * float(f["price"]); maker = maker or bool(f.get("maker"))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return (v / q, maker) if q > 0 else None
+
+
 def realized(sym, since_ts):
     """Фактический результат по контракту с момента since_ts по данным Binance:
     {"pnl": реализованный PnL, "fee": комиссии, "funding": фандинг} в USDT или None."""
@@ -663,7 +679,7 @@ def _close(state, t, price, reason):
     t["closed"] = time.time()
     t["exit"] = price
     t["reason"] = reason
-    pnl_pct = (t["entry"] / price - 1) * 100 * t["lev"]      # шорт: прибыль при падении, к марже с плечом
+    pnl_pct = (1 - price / t["entry"]) * 100 * t["lev"]      # шорт: (вход − выход) / вход, к марже с плечом
     t["pnl_pct"] = pnl_pct
     t["pnl_usdt"] = t["margin"] * pnl_pct / 100
     extra = ""
@@ -712,13 +728,16 @@ def manage(state):
             if pos is None:
                 # позицию закрыла биржа (стоп, тейк или ликвидация) — снимаем оставшийся условный ордер
                 cancel_orders(sym)
-                if price >= t["sl"] * 0.99:
-                    msgs.append(_close(state, t, min(price, t["sl"]), "стоп-лосс / ликвидация на бирже"))
-                elif price <= t["tp"] * 1.01:
-                    msgs.append(_close(state, t, max(price, t["tp"]), "тейк-профит на бирже"))
+                # причина — по фактическим исполнениям, а не по текущей цене: к проверке цена могла уже откатиться
+                cf = close_fills(sym, t["opened"] + 1)
+                xp = cf[0] if cf else price
+                if xp >= t["sl"] * 0.99:
+                    msgs.append(_close(state, t, xp, "стоп-лосс на бирже" + ("" if cf else " (по текущей цене — исполнения не получены)")))
+                elif (cf and cf[1]) or xp <= t["tp"] * 1.01:
+                    msgs.append(_close(state, t, xp, "тейк-профит на бирже" + ("" if cf else " (по текущей цене — исполнения не получены)")))
                 else:
-                    msgs.append(_close(state, t, price, "закрыта биржей ДО стопа/тейка — вероятно, авто-делеверидж (ADL) "
-                                                        "или ручное закрытие; проверьте историю ордеров"))
+                    msgs.append(_close(state, t, xp, "закрыта не стопом и не тейком — вручную или авто-делеверидж (ADL); "
+                                                     "проверьте /history " + sym))
                 continue
             if FUND_EXIT > 0 and now - t["opened"] < HOLD_H * 3600:
                 fh = funding_hourly(sym)
