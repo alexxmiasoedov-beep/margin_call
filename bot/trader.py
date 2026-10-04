@@ -24,6 +24,8 @@ DUMP_RULE = int(os.environ.get("DUMP_RULE", "1"))            # правило 2:
 DUMP_BR_MIN = float(os.environ.get("DUMP_BR_MIN", "5"))      # правило 2 только при B/R >= этого
 STOP_PAUSE_H = float(os.environ.get("STOP_PAUSE_H", "48"))    # после стопа по монете не входить в неё N часов (0 = выкл.)
 FUND_EXIT = float(os.environ.get("FUND_EXIT", "0"))          # выйти, если фандинг ≤ −N % в час (0 = выкл.; по бэктесту 0,4)
+POLL_SEC = float(os.environ.get("POLL_SEC", "60"))            # опрос канала раз в N секунд (меньше — меньше задержка входа)
+PROT_CHECK_SEC = 300                                          # проверка стоп/тейк-ордеров открытых позиций не чаще раза в 5 мин
 
 
 def log(*a):
@@ -44,6 +46,7 @@ PARAMS = {
     "br": ("DUMP_BR_MIN", float, 0, 1000000, "мин. B/R для правила 2"),
     "pause": ("STOP_PAUSE_H", float, 0, 720, "пауза по монете после стопа, часов (0 = выкл.)"),
     "fexit": ("FUND_EXIT", float, 0, 5, "выход при фандинге ≤ −N %/ч (0 = выкл.)"),
+    "poll": ("POLL_SEC", float, 30, 900, "опрос канала, секунд"),
 }
 
 
@@ -85,6 +88,7 @@ def params_text():
             f"  br — правило 2 только при B/R ≥ {DUMP_BR_MIN:g}\n"
             f"  pause — после стопа не входить в ту же монету: {STOP_PAUSE_H:g} ч" + (" (выключено)" if STOP_PAUSE_H <= 0 else "") + "\n"
             f"  fexit — досрочный выход при фандинге ≤ −{FUND_EXIT:g}%/ч" + (" (выключено)" if FUND_EXIT <= 0 else "") + "\n"
+            f"  poll — опрос канала раз в {POLL_SEC:g} с\n"
             "Изменить: /set margin 7, /set lev 10, /set tp 8, /set sl 18, /set lsr 1.1, /set dump 0, /set br 5, /set pause 48")
 
 
@@ -748,7 +752,8 @@ def manage(state):
                     else:
                         msgs.append(f"❌ {sym}: не удалось закрыть по фандингу: {msg}")
                     continue
-            if now - t["opened"] < HOLD_H * 3600 and now - t["opened"] > 120:
+            if now - t["opened"] < HOLD_H * 3600 and now - t["opened"] > 120 and now - t.get("prot_chk", 0) >= PROT_CHECK_SEC:
+                t["prot_chk"] = now
                 fix = ensure_protection(t, pos)
                 if fix:
                     msgs.append(fix)

@@ -2,7 +2,7 @@
 """Сканер Telegram-канала с уведомлениями подписчикам бота.
 
 Запуск:  python3 scanner.py --once        один проход (для cron / GitHub Actions)
-         python3 scanner.py --loop        бесконечный цикл, POLL_SEC между проходами
+         python3 scanner.py --loop        бесконечный цикл, проход раз в trader.POLL_SEC (/set poll)
          добавьте --dry-run, чтобы ничего не отправлять, а только печатать.
 Все настройки — через переменные окружения (см. .env.example). Зависимостей нет.
 """
@@ -14,6 +14,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import trader
@@ -26,7 +27,6 @@ GAP_MIN = float(os.environ.get("GAP_MIN", "30"))
 PUMP_MIN = float(os.environ.get("PUMP_MIN", "8"))
 PUMP_MAX = float(os.environ.get("PUMP_MAX", "17"))
 COOLDOWN_H = float(os.environ.get("COOLDOWN_H", "24"))
-POLL_SEC = int(os.environ.get("POLL_SEC", "300"))
 MAX_RUNTIME_SEC = int(os.environ.get("MAX_RUNTIME_SEC", "0"))  # --loop: выйти через N секунд (0 = бесконечно)
 LOOKBACK_H = MIN_RUN_H + 1.5  # сколько часов постов тянуть из канала
 UA = "Mozilla/5.0 (margin-call scanner)"
@@ -626,14 +626,18 @@ def scan(state, dry):
         f"висят ≥{MIN_RUN_H:g}ч: {sum(1 for r in runs.values() if r['run_h'] >= MIN_RUN_H)}")
     now = time.time()
     cands = []
+    long_runs = [sym for sym, r in runs.items() if r["run_h"] >= MIN_RUN_H]
+    with ThreadPoolExecutor(8) as ex:                       # цены и фандинг параллельно — проход короче, вход раньше
+        pcs = dict(zip(long_runs, ex.map(price_and_change, long_runs)))
+        fds = dict(zip(long_runs, ex.map(funding, long_runs)))
     for sym, r in runs.items():
         if r["run_h"] < MIN_RUN_H:
             continue
-        pc = price_and_change(sym)
+        pc = pcs.get(sym)
         if not pc:
             log("нет цены для", sym)
             continue
-        c = {"sym": sym, "run_h": r["run_h"], "capped": r["capped"], "info": r["info"], "funding": funding(sym), **pc}
+        c = {"sym": sym, "run_h": r["run_h"], "capped": r["capped"], "info": r["info"], "funding": fds.get(sym), **pc}
         cands.append(c)
         recent = [a for a in state["alerts"] if a["sym"] == sym and now - a["ts"] < COOLDOWN_H * 3600]
         rule = rule_for(c)
@@ -713,8 +717,12 @@ def cycle(dry, state=None):
 
 
 def run_loop(dry):
-    """Сканирование раз в POLL_SEC, а между ними — длинный опрос Telegram, чтобы кнопки отвечали сразу."""
+    """Сканирование раз в trader.POLL_SEC (от начала прохода), а между ними — длинный опрос Telegram, чтобы кнопки отвечали сразу."""
     state = load_state()
+    if "poll" not in (state.get("params") or {}):           # разовый переход на опрос раз в минуту (задержка входа, 04.10.2026)
+        state.setdefault("params", {})["poll"] = 60.0
+        save_state(state)
+    trader.configure(state)
     cands = []
     started = time.time()
     next_scan = 0
@@ -725,8 +733,11 @@ def run_loop(dry):
                 cands = cycle(dry, state)
             except Exception as e:
                 log("ошибка цикла:", repr(e))
-            next_scan = time.time() + POLL_SEC
-            if MAX_RUNTIME_SEC and time.time() - started + POLL_SEC > MAX_RUNTIME_SEC:
+            took = time.time() - now
+            if took > trader.POLL_SEC * 0.8:
+                log(f"проход занял {took:.0f} с — дольше периода опроса {trader.POLL_SEC:g} с")
+            next_scan = max(now + trader.POLL_SEC, time.time() + 5)
+            if MAX_RUNTIME_SEC and time.time() - started + trader.POLL_SEC > MAX_RUNTIME_SEC:
                 log("достигнут MAX_RUNTIME_SEC, выхожу")
                 break
         wait = max(1, min(25, int(next_scan - time.time())))
