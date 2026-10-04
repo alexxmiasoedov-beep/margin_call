@@ -819,16 +819,37 @@ def _virt(state, key):
     return v
 
 
-def _virt_range_since(sym, since):
-    """(максимум, минимум) цены с момента since по 15-мин свечам Binance — стоп и тейк по хвостам, как в бэктесте."""
-    j = _request("GET", "/fapi/v1/klines", {"symbol": f"{sym}USDT", "interval": "15m", "startTime": int((since - 900) * 1000), "limit": 250},
-                 signed=False)
-    try:
-        if isinstance(j, list) and j:
-            return max(float(k[2]) for k in j), min(float(k[3]) for k in j)
-    except (TypeError, ValueError, IndexError):
-        pass
-    return None, None
+def _virt_scan(t):
+    """Проходит минутные свечи Binance после входа по порядку и возвращает первое событие: "стоп" (марк-цена ≥ стопа —
+    так срабатывает реальный стоп), "тейк" (цена сделок ниже тейка — так исполняется лимитный тейк) или None.
+    Стоп и тейк в одной минуте — стоп. Свечи после выхода по времени не смотрим; докачка с места прошлой проверки."""
+    start = int(t.get("v_next") or (t["opened"] // 60 + 1) * 60 * 1000)
+    end = int((t["opened"] + VIRT["hold_h"] * 3600) * 1000)
+    for _ in range(4):
+        if start > min(time.time() * 1000 - 60000, end):
+            break
+        m = _request("GET", "/fapi/v1/markPriceKlines", {"symbol": f"{t['sym']}USDT", "interval": "1m", "startTime": start, "limit": 1500}, signed=False)
+        k = _request("GET", "/fapi/v1/klines", {"symbol": f"{t['sym']}USDT", "interval": "1m", "startTime": start, "limit": 1500}, signed=False)
+        if not isinstance(m, list) or not isinstance(k, list) or not m or not k:
+            break
+        now_ms = time.time() * 1000
+        try:
+            mh = {int(x[0]): float(x[2]) for x in m if int(x[6]) < now_ms and int(x[0]) < end}
+            kl = {int(x[0]): float(x[3]) for x in k if int(x[6]) < now_ms and int(x[0]) < end}
+        except (TypeError, ValueError, IndexError):
+            break
+        mins = sorted(set(mh) & set(kl))
+        if not mins:
+            break
+        for ts in mins:
+            if mh[ts] >= t["sl"]:
+                t["v_next"] = ts + 60000; return "стоп"
+            if t.get("tp") and kl[ts] < t["tp"]:
+                t["v_next"] = ts + 60000; return "тейк"
+        start = t["v_next"] = mins[-1] + 60000
+        if len(m) < 1500 or len(k) < 1500:
+            break
+    return None
 
 
 def virt_on_signal(state, sym, price, rule):
@@ -885,22 +906,20 @@ def _virt_close(v, t, px, reason, icon):
 
 
 def virt_manage(state):
-    """Каждый цикл: виртуальные стоп, тейк (по хвостам свечей) и выход по времени во всех журналах."""
+    """Каждый цикл: виртуальные стоп (марк-цена), тейк (цена сделок) по минутным свечам после входа и выход по времени."""
     msgs = []; now = time.time(); cache = {}
     for key, cfg in VIRTUALS.items():
         v = _virt(state, key)
         for t in v["trades"]:
             if t.get("closed"):
                 continue
-            ck = (t["sym"], t["opened"])
-            if ck not in cache:
-                cache[ck] = _virt_range_since(t["sym"], t["opened"]) + (mark_price(t["sym"]),)
-            hi, lo, px = cache[ck]
-            if hi is None and px:
-                hi = lo = px
-            if hi is not None and hi >= t["sl"]:
+            if t["sym"] not in cache:
+                cache[t["sym"]] = mark_price(t["sym"])
+            px = cache[t["sym"]]
+            ev = _virt_scan(t)
+            if ev == "стоп":
                 msgs.append(_virt_close(v, t, t["sl"], "стоп", cfg["icon"]))
-            elif t.get("tp") and lo is not None and lo <= t["tp"]:
+            elif ev == "тейк":
                 msgs.append(_virt_close(v, t, t["tp"], "тейк", cfg["icon"]))
             elif now - t["opened"] >= VIRT["hold_h"] * 3600 and px:
                 msgs.append(_virt_close(v, t, px, f"выход по времени ({VIRT['hold_h']:g} ч)", cfg["icon"]))

@@ -18,7 +18,9 @@ def fetch(path):
     return None
 def rows(data):
     if not data: return []
-    z = zipfile.ZipFile(io.BytesIO(data)); out = []
+    try: z = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile: return []
+    out = []
     for ln in z.read(z.namelist()[0]).decode().splitlines():
         p = ln.split(",")
         if p and p[0][:1].isdigit(): out.append(p)
