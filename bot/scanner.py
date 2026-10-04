@@ -442,6 +442,75 @@ def pattern_ok(c):
     return None
 
 
+def _ratio_change(path, sym, bars=3):
+    """Изменение отношения лонг/шорт Binance за bars 5-минутных баров (доля): последнее / bars назад − 1."""
+    j = http_json(f"https://fapi.binance.com/futures/data/{path}?symbol={sym}USDT&period=5m&limit={bars + 2}", 15)
+    try:
+        v = [float(x["longShortRatio"]) for x in sorted(j, key=lambda x: int(x["timestamp"]))]
+        return v[-1] / v[-1 - bars] - 1 if len(v) > bars and v[-1 - bars] else None
+    except (TypeError, KeyError, ValueError):
+        return None
+
+
+def _efficiency_4h(sym):
+    """Ровность хода за 4 ч по минутным закрытиям: |итог| / сумма |шагов| (1 — ровно, около 0 — пила)."""
+    import math
+    j = http_json(f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}USDT&interval=1m&limit=241", 15)
+    try:
+        c = [float(k[4]) for k in j[:-1]]
+        lr = [math.log(x) for x in c]
+        path = sum(abs(b - a) for a, b in zip(lr, lr[1:]))
+        return abs(lr[-1] - lr[0]) / path if len(c) > 60 and path else None
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def _kimchi(sym, price):
+    """Кимчи-премия, %: цена на Upbit (KRW → USDT по курсу KRW-USDT) против нашей цены. None — монеты нет на Upbit."""
+    j = http_json(f"https://api.upbit.com/v1/ticker?markets=KRW-{sym},KRW-USDT", 15)
+    try:
+        t = {x["market"]: float(x["trade_price"]) for x in j}
+        return (t[f"KRW-{sym}"] / t["KRW-USDT"] / price - 1) * 100 if price else None
+    except (TypeError, KeyError, ValueError):
+        return None
+
+
+def risk_marks(c):
+    """Пометки-кандидаты в признаки стопов (бэктест на фьючерсах, research/futures/ВЫВОДЫ.md). Только пометка, в торговлю не входит.
+    Возвращает (текст, данные для журнала)."""
+    rule = c.get("rule"); d = {}; out = []
+    if rule == "dump":
+        d["toppos15"] = x = _ratio_change("topLongShortPositionRatio", c["sym"])
+        if x is None:
+            out.append("топ-трейдеры: нет данных")
+        elif x > 0.009:
+            out.append(f"⚠️ топ-трейдеры за 15 мин нарастили лонги {x * 100:+.1f}% (по истории стопов 22% против 5%)")
+        else:
+            out.append(f"топ-трейдеры за 15 мин {x * 100:+.1f}% — ок")
+    elif rule == "pump":
+        d["br"] = br = _num(c["info"][2])
+        d["lsr15"] = lsr = _ratio_change("globalLongShortAccountRatio", c["sym"])
+        d["eff4h"] = eff = _efficiency_4h(c["sym"])
+        d["kimchi"] = km = _kimchi(c["sym"], c.get("price"))
+        bad = []; ok = []
+        if br is not None:
+            (bad if br > 30 else ok).append(f"B/R {br:g}" + (" > 30 (стопов 21% против 14%)" if br > 30 else ""))
+        if lsr is not None:
+            (bad if lsr < -0.015 else ok).append(f"LSR за 15 мин {lsr * 100:+.1f}%" + (" — набегают шортисты (стопов 23% против 14%)" if lsr < -0.015 else ""))
+        if eff is not None:
+            (bad if eff < 0.08 else ok).append(f"ровность хода 4 ч {eff:.2f}" + (" — рваный рост (стопов 24% против 15%)" if eff < 0.08 else ""))
+        if km is not None:
+            (bad if km > 3 else ok).append(f"кимчи-премия {km:+.1f}%" + (" — корейский памп (стопов 24% против 16%)" if km > 3 else ""))
+        out += [f"⚠️ {x}" for x in bad]
+        if ok:
+            out.append("ок: " + ", ".join(ok))
+    else:
+        return "", d
+    d["flags"] = sum(1 for x in out if x.startswith("⚠️"))
+    head = f"Риск-пометки ({d['flags']} ⚠️, кандидаты — проверяем вперёд):" if d["flags"] else "Риск-пометки: нет ✅ (кандидаты — проверяем вперёд)"
+    return head + "\n" + "\n".join("  " + x for x in out) + "\n", d
+
+
 def fmt_price(p):
     return f"{p:.6g}"
 
@@ -526,6 +595,7 @@ def signal_text(c):
         f"Цена: {fmt_price(c['price'])} USDT ({c['src']})\n"
         f"Движение за 4 ч: <b>{c['b4h']:+.1f}%</b>\n"
         f"{pattern_line(c)}"
+        f"{c.get('risk_text', '')}"
         f"Фандинг: {fmt_funding(c.get('funding'))}\n"
         f"{lsr_line}"
         f"В канале непрерывно: {fmt_run(c)} (BOR {bor}, REP {rep}, B/R {br})"
@@ -573,14 +643,18 @@ def scan(state, dry):
                 c["lsr"] = trader.taker_lsr(sym)
             except Exception:
                 c["lsr"] = None
+            try:
+                c["risk_text"], c["risk"] = risk_marks(c)
+            except Exception as e:
+                c["risk_text"], c["risk"] = "", {}; log("ошибка риск-пометок:", repr(e))
             log("СИГНАЛ", rule, sym, f"{c['b4h']:+.1f}%", f"{c['run_h']:.1f}ч", f"B/R {c['info'][2]}", f"LSR {c['lsr']}",
-                f"от пика {c.get('from_peak')}", f"паттерн {pattern_ok(c)}")
+                f"от пика {c.get('from_peak')}", f"паттерн {pattern_ok(c)}", f"риск {c.get('risk')}")
             broadcast(state, signal_text(c), dry)
             state["alerts"].append({"sym": sym, "ts": now, "price": c["price"], "b4h": c["b4h"], "run_h": c["run_h"],
                                     "funding": (c["funding"] or {}).get("rate"), "lsr": c["lsr"], "rule": rule,
                                     "br": _num(c["info"][2]), "from_peak": c.get("from_peak"), "from_low": c.get("from_low"),
                                     "rise_before": c.get("rise_before"), "pattern": pattern_ok(c),
-                                    "s_pump": c.get("s_pump"), "s_dump": c.get("s_dump")})
+                                    "s_pump": c.get("s_pump"), "s_dump": c.get("s_dump"), "risk": c.get("risk")})
             try:
                 msg = trader.on_signal(state, sym, c["price"], lsr=c["lsr"], rule=rule)
             except Exception as e:
