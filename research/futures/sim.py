@@ -3,10 +3,10 @@
 Тейк: лимитный, исполнен, если цена сделок ушла НИЖЕ уровня (maker 0,02%). Стоп и тейк в одной минуте — стоп.
 Выход по времени — close минуты (taker). Фандинг Binance по факту. Маржа 1, плечо 10 (номинал 10).
 Портфель: одна позиция на монету, пауза после стопа по монете."""
-import pickle, bisect, datetime
+import pickle, bisect, datetime, os
 import numpy as np, pandas as pd
 pd.set_option("display.width", 250); pd.set_option("display.max_columns", 30)
-D = pickle.load(open("signals.pkl", "rb")); SIG = sorted(D["sig"], key=lambda s: s["ep"]); FUND = D["fund"]
+D = pickle.load(open(os.environ.get("SIGFILE", "signals.pkl"), "rb")); SIG = sorted(D["sig"], key=lambda s: s["ep"]); FUND = D["fund"]
 N, TAKER, MAKER, SLIP = 10.0, 0.0005, 0.0002, 0.001
 
 def fh_entry(s):

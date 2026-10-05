@@ -35,13 +35,14 @@ def run2(tp, sl, pause_h=48, day_limit=None, **kw):
         if r["kind"] == "стоп": last_stop[s["sym"]] = r["xt"]
         rows.append(dict(ep=s["ep"], sym=s["sym"], rule=s["rule"], **r))
     return pd.DataFrame(rows)
-for tp, sl in ((6, 20), (15, 25)):
-    print(f"\n===== {tp}/{sl} =====")
-    print(summ(run2(tp, sl, fund_mark=False), "как в бэктесте"))
-    print(summ(run2(tp, sl), "фандинг от тек. стоимости"))
-    for d in (2, 3, 5): print(summ(run2(tp, sl, delay=d), f"задержка входа {d} мин"))
-    print(summ(run2(tp, sl, slip_in=0.001), "вход −0,1% проскальз."))
-    print(summ(run2(tp, sl, slip_in=0.003), "вход −0,3% проскальз."))
-    for x in (0.005, 0.01, 0.02): print(summ(run2(tp, sl, slip_sl=x), f"стоп +{x*100:g}% проскальз."))
-    print(summ(run2(tp, sl, day_limit=16), "дневной лимит 16"))
-    print(summ(run2(tp, sl, delay=5, slip_in=0.003, slip_sl=0.01, day_limit=16), "всё плохое сразу"))
+if __name__ == "__main__":
+  for tp, sl in ((6, 20), (15, 25)):
+      print(f"\n===== {tp}/{sl} =====")
+      print(summ(run2(tp, sl, fund_mark=False), "как в бэктесте"))
+      print(summ(run2(tp, sl), "фандинг от тек. стоимости"))
+      for d in (2, 3, 5): print(summ(run2(tp, sl, delay=d), f"задержка входа {d} мин"))
+      print(summ(run2(tp, sl, slip_in=0.001), "вход −0,1% проскальз."))
+      print(summ(run2(tp, sl, slip_in=0.003), "вход −0,3% проскальз."))
+      for x in (0.005, 0.01, 0.02): print(summ(run2(tp, sl, slip_sl=x), f"стоп +{x*100:g}% проскальз."))
+      print(summ(run2(tp, sl, day_limit=16), "дневной лимит 16"))
+      print(summ(run2(tp, sl, delay=5, slip_in=0.003, slip_sl=0.01, day_limit=16), "всё плохое сразу"))
