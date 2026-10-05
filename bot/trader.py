@@ -835,6 +835,11 @@ VIRTUALS = {
                      "params": lambda fh: (15.0, 25.0)},
     "virtual_620": {"title": "тейк 6 / стоп 20 (прежние настройки реальной торговли)", "icon": "📙",
                     "params": lambda fh: (6.0, 20.0)},
+    # новые правила по бэктесту за 19 месяцев (research/futures/ВЫВОДЫ.md): свои сигналы на закрытии 15-мин свечи (scanner.new_rules)
+    "virtual_D": {"title": "D*: слив за 12 ч ≥ 4%, серия ≥ 2 ч, B/R ≥ 30, объём 24 ч ≥ 20 млн $, BTC за сутки в плюсе; тейк 10 / стоп 20",
+                  "icon": "🟦", "params": lambda fh: (10.0, 20.0), "own": True, "cooldown_h": 24},
+    "virtual_P": {"title": "P*: памп за 12 ч ≥ 2%, серия ≥ 1 ч, объём 24 ч ≥ 20 млн $, BTC за 30 дней в минусе; тейк 10 / стоп 20",
+                  "icon": "🟧", "params": lambda fh: (10.0, 20.0), "own": True, "cooldown_h": 24},
 }
 VIRT = {"hold_h": 48.0, "pause_h": 48.0, "start_balance": 20.0}   # стартовый капитал журнала, USDT
 
@@ -884,6 +889,8 @@ def virt_on_signal(state, sym, price, rule):
     """Открывает виртуальные сделки по сигналу во всех журналах. Возвращает строку для чата или None."""
     now = time.time(); px = None; fh = None; out = []
     for key, cfg in VIRTUALS.items():
+        if cfg.get("own"):
+            continue                                   # у журналов со своими правилами — свои сигналы
         v = _virt(state, key)
         if any(t["sym"] == sym and not t.get("closed") for t in v["trades"]):
             continue
@@ -909,6 +916,29 @@ def virt_on_signal(state, sym, price, rule):
         return None
     fnote = f" (фандинг сейчас {fh * 100:+.3f}%/ч)" if fh is not None else ""
     return "\n".join(out) + fnote
+
+
+def virt_open(state, key, sym, rule, note, price=None):
+    """Открывает виртуальный шорт в журнале key по его собственному сигналу. Возвращает строку для чата или None."""
+    cfg = VIRTUALS[key]; v = _virt(state, key); now = time.time()
+    mine = [t for t in v["trades"] if t["sym"] == sym]
+    if any(not t.get("closed") for t in mine):
+        return None
+    if any(now - t["opened"] < cfg.get("cooldown_h", 0) * 3600 for t in mine):
+        return None
+    if any(t.get("reason") == "стоп" and now - t["closed"] < VIRT["pause_h"] * 3600 for t in mine if t.get("closed")):
+        return f"{cfg['icon']} {sym}: сигнал {rule}, но пропуск — виртуальный стоп меньше {VIRT['pause_h']:g} ч назад"
+    if v["balance"] < MARGIN_USDT:
+        return f"{cfg['icon']} {sym}: сигнал {rule}, но на виртуальном балансе {v['balance']:.2f} USDT — меньше маржи {MARGIN_USDT:g}"
+    px = mark_price(sym) or price
+    if not px:
+        return None
+    fh = funding_hourly(sym); tp, sl = cfg["params"](fh)
+    v["trades"].append({"sym": sym, "opened": now, "entry": px, "rule": rule, "margin": MARGIN_USDT, "lev": LEVERAGE, "bal": True,
+                        "sl": px * (1 + sl / 100), "tp": px * (1 - tp / 100) if tp else None, "tp_pct": tp, "sl_pct": sl, "fh_entry": fh,
+                        "note": note})
+    return (f"{cfg['icon']} сигнал {rule}: виртуально шорт {sym} по {px:.6g}, тейк {tp:g}% / стоп {sl:g}%\n"
+            f"{cfg['icon']} {note}")
 
 
 def _virt_close(v, t, px, reason, icon):

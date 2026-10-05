@@ -84,7 +84,7 @@ def broadcast(state, text, dry):
 WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
-    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 6/20), /params — параметры сделок, /set <параметр> <число> — изменить "
+    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 6/20; новые правила D* и P*), /params — параметры сделок, /set <параметр> <число> — изменить "
     "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause, fexit), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
@@ -99,7 +99,7 @@ def main_menu(state):
     return kb([
         [("⚙️ Параметры сделок", "params"), ("📊 Позиции на Binance", "positions")],
         [("📒 Журнал сделок", "trades"), ("🔍 Кандидаты в канале", "status")],
-        [("📓📗📘📙 Виртуальные журналы", "virtual")],
+        [("📓📗📘📙🟦🟧 Виртуальные журналы", "virtual")],
         [pause],
     ])
 
@@ -575,6 +575,66 @@ def rule_for(c):
     return None
 
 
+def _closed_15m(sym, T, n=99):
+    """Закрытые к моменту T 15-мин свечи фьючерса Binance (последняя — закончилась ровно в T) или None."""
+    j = http_json(f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}USDT&interval=15m&limit={n}", 15)
+    if not isinstance(j, list):
+        return None
+    k = [x for x in j if int(x[0]) // 1000 + 900 <= T]
+    return k if k and int(k[-1][0]) // 1000 + 900 == T else None
+
+
+def new_rules(state, posts):
+    """Правила D* и P* (журналы 🟦 🟧, research/futures/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по монетам,
+    которые были в постах канала за эту свечу. Только виртуальные сделки. Возвращает сообщения для чата."""
+    T = int(time.time() // 900 * 900)
+    if state.get("nr_last_T") == T or time.time() - T > 600:
+        return []
+    state["nr_last_T"] = T
+    gap = GAP_MIN * 60; in_bar = {}
+    for p in posts:                                            # посты — от новых к старым
+        if T - 900 <= p["ts"] < T:
+            for s in p["rows"]:
+                in_bar.setdefault(s, p)                        # последний пост с монетой внутри свечи
+    if not in_bar:
+        return []
+    b = _closed_15m("BTC", T)
+    btc_now = float(b[-1][4]) if b else None
+    btc24 = btc_now / float(b[-97][4]) - 1 if b and len(b) >= 97 else None
+    j = http_json(f"https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=15m&startTime={(T - 30 * 86400 - 900) * 1000}&limit=1", 15)
+    btc30 = btc_now / float(j[0][4]) - 1 if btc_now and isinstance(j, list) and j else None
+    msgs = []
+    for s, p in in_bar.items():
+        times = [q["ts"] for q in posts if s in q["rows"] and q["ts"] <= p["ts"]]
+        start = times[0]
+        for a, c2 in zip(times, times[1:]):
+            if a - c2 > gap:
+                break
+            start = c2
+        run_h = (p["ts"] - start) / 3600
+        if run_h < 1:
+            continue
+        k = _closed_15m(s, T)
+        if not k or len(k) < 97:
+            continue
+        c = float(k[-1][4]); ch12 = (c / float(k[-49][4]) - 1) * 100; qv = sum(float(x[7]) for x in k[-96:])
+        br = _num(p["rows"][s][2])
+        is_d = run_h >= 2 and ch12 <= -4 and br is not None and br >= 30 and qv >= 20e6 and btc24 is not None and btc24 > 0
+        is_p = run_h >= 1 and ch12 >= 2 and qv >= 20e6 and btc30 is not None and btc30 < 0
+        if not (is_d or is_p):
+            continue
+        note = (f"за 12 ч {ch12:+.1f}%, в канале {run_h:.1f} ч, B/R {p['rows'][s][2]}, объём 24 ч {qv / 1e6:.0f} млн $, "
+                + (f"BTC за сутки {btc24 * 100:+.1f}%" if btc24 is not None else "BTC за сутки: нет данных")
+                + (f", за 30 дней {btc30 * 100:+.1f}%" if btc30 is not None else ""))
+        for key, ok, rule in (("virtual_D", is_d, "D*"), ("virtual_P", is_p, "P*")):
+            if ok:
+                log("НОВОЕ ПРАВИЛО", rule, s, note)
+                m = trader.virt_open(state, key, s, rule, note, price=c)
+                if m:
+                    msgs.append(m)
+    return msgs
+
+
 def status_text(cands):
     if not cands:
         return "Сейчас в канале нет монет, которые висят ≥%g ч." % MIN_RUN_H
@@ -672,6 +732,11 @@ def scan(state, dry):
                 vmsg = None; log("ошибка виртуального журнала:", repr(e))
             if vmsg:
                 log(vmsg); broadcast(state, vmsg, dry)
+    try:
+        for msg in new_rules(state, posts):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка новых правил:", repr(e))
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
