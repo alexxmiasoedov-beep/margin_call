@@ -84,7 +84,7 @@ def broadcast(state, text, dry):
 WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
-    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25), /params — параметры сделок, /set <параметр> <число> — изменить "
+    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 6/20), /params — параметры сделок, /set <параметр> <число> — изменить "
     "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause, fexit), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
@@ -99,7 +99,7 @@ def main_menu(state):
     return kb([
         [("⚙️ Параметры сделок", "params"), ("📊 Позиции на Binance", "positions")],
         [("📒 Журнал сделок", "trades"), ("🔍 Кандидаты в канале", "status")],
-        [("📓📗📘 Виртуальные журналы", "virtual")],
+        [("📓📗📘📙 Виртуальные журналы", "virtual")],
         [pause],
     ])
 
