@@ -543,6 +543,61 @@ def funding(sym):
     return None
 
 
+def _msk(ts):
+    return datetime.fromtimestamp(ts + 3 * 3600, timezone.utc).strftime("%d.%m %H:%M")
+
+
+def funding_switch_watch(state, every=120):
+    """Все фьючерсы USDT-M Binance (не только из канала): уведомление, когда начисление фандинга сменилось
+    с раз в 8/4 ч на раз в 1 ч, а ставка и на последней выплате, и сейчас отрицательная. Возвращает сообщения."""
+    now = time.time()
+    if now - state.get("fsw_ts", 0) < every:
+        return []
+    state["fsw_ts"] = now
+    fi = http_json("https://fapi.binance.com/fapi/v1/fundingInfo", 15)
+    pi = http_json("https://fapi.binance.com/fapi/v1/premiumIndex", 15)
+    if not isinstance(fi, list) or not isinstance(pi, list) or not pi:
+        return []
+    iv = {x.get("symbol"): int(float(x.get("fundingIntervalHours") or 8)) for x in fi if x.get("symbol")}
+    cur = {}
+    for x in pi:
+        s = str(x.get("symbol", ""))
+        if s.endswith("USDT"):
+            try:
+                cur[s] = (iv.get(s, 8), float(x.get("lastFundingRate") or 0) * 100, int(x.get("nextFundingTime") or 0) // 1000, float(x.get("markPrice") or 0))
+            except (TypeError, ValueError):
+                continue
+    # свежие интервалы — и для остального бота (ставка в час, фандинг в сигналах)
+    _funding_hours.clear(); _funding_hours.update({s: v[0] for s, v in cur.items()}); _funding_hours["_loaded"] = 8
+    trader._fund_iv["map"] = {s: float(v[0]) for s, v in cur.items()}; trader._fund_iv["ts"] = now
+    prev = state.get("fund_iv") or {}
+    state["fund_iv"] = {s: v[0] for s, v in cur.items()}
+    if not prev:
+        return []                                             # первый запуск — только запоминаем интервалы
+    msgs = []
+    for s, (h, rate, nxt, mp) in sorted(cur.items()):
+        if not (prev.get(s) in (4, 8) and h == 1 and rate < 0):
+            continue
+        hist = http_json(f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={s}&limit=4", 15)
+        last = []
+        if isinstance(hist, list):
+            try:
+                last = sorted((int(r["fundingTime"]) // 1000, float(r["fundingRate"]) * 100) for r in hist)
+            except (KeyError, TypeError, ValueError):
+                last = []
+        if last and last[-1][1] >= 0:
+            continue                                          # последняя выплата не отрицательная — не наш случай
+        t24 = http_json(f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={s}", 15)
+        ch = f", за 24 ч {float(t24['priceChangePercent']):+.1f}%" if isinstance(t24, dict) and t24.get("priceChangePercent") else ""
+        base = s[:-4]
+        msgs.append(f"⏱ <b>{base}</b> ({s}): фандинг теперь раз в 1 ч (было раз в {prev[s]} ч)\n"
+                    + ("Последние выплаты (МСК): " + ", ".join(f"{_msk(t)} {r:+.3f}%" for t, r in last) + "\n" if last else "")
+                    + f"Сейчас ставка {rate:+.3f}% за час" + (f", следующая выплата {_msk(nxt)} МСК" if nxt else "") + "\n"
+                    + f"Цена {mp:.6g}{ch}")
+        log("СМЕНА ИНТЕРВАЛА ФАНДИНГА", s, prev[s], "→ 1 ч, ставка", rate)
+    return msgs
+
+
 def fmt_funding(f):
     if not f:
         return "нет бессрочного контракта"
@@ -765,6 +820,11 @@ def cycle(dry, state=None):
     trader.configure(state)
     cands = scan(state, dry)
     followups(state, dry)
+    try:
+        for msg in funding_switch_watch(state):
+            broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка наблюдения за фандингом:", repr(e))
     try:
         for msg in trader.manage(state):
             log(msg)
