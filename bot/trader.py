@@ -1,5 +1,6 @@
 """Исполнитель ордеров (Binance USDT-M perpetual). Ключи только из окружения."""
 import hashlib
+import math
 import hmac
 import json
 import os
@@ -159,6 +160,8 @@ def contract(sym):
                     "pricePrecision": int(c.get("pricePrecision", 4)),
                     "tickSize": float(f.get("PRICE_FILTER", {}).get("tickSize", 0) or 0),
                     "minQty": float(f.get("LOT_SIZE", {}).get("minQty", 0) or 0),
+                    "stepSize": float(f.get("MARKET_LOT_SIZE", {}).get("stepSize", 0) or f.get("LOT_SIZE", {}).get("stepSize", 0) or 0),
+                    "maxQty": float(f.get("MARKET_LOT_SIZE", {}).get("maxQty", 0) or 0),
                     "minNotional": float(f.get("MIN_NOTIONAL", {}).get("notional", 0) or 0),
                 }
     return _contracts.get(f"{sym}USDT")
@@ -399,16 +402,26 @@ def _round_price(c, price):
 
 
 def qty_for(sym, price):
+    """Количество монет, чья стоимость ближе всего к марже × плечо: из двух соседних шагов лота (вниз и вверх)
+    берётся ближайший, но не дороже 1,5 × цели. Раньше всегда вниз — на монетах с крупным шагом позиция
+    получалась сильно меньше (например, 7,7 $ вместо 10 $)."""
     c = contract(sym)
     if not c or not price:
         return None
-    notional = MARGIN_USDT * LEVERAGE
-    q = notional / price
-    step = 10 ** c["quantityPrecision"]
-    q = int(q * step) / step  # вниз, чтобы номинал не превысил маржу × плечо
-    if q < c["minQty"] or q * price < c["minNotional"]:
-        return None
-    return q
+    target = MARGIN_USDT * LEVERAGE
+    prec = c["quantityPrecision"]
+    step = c.get("stepSize") or 10 ** -prec
+    n = math.floor(target / price / step + 1e-9)
+    best = None
+    for k in (n, n + 1):
+        q = round(k * step, prec)
+        if q <= 0 or q < c["minQty"] or q * price < c["minNotional"] or q * price > target * 1.5:
+            continue
+        if c.get("maxQty") and q > c["maxQty"]:
+            continue
+        if best is None or abs(q * price - target) < abs(best * price - target):
+            best = q
+    return best
 
 
 def fill_price(sym, order_id, fallback):
@@ -449,7 +462,8 @@ def live_open_short(sym, price):
     _request("POST", "/fapi/v1/leverage", {"symbol": f"{sym}USDT", "leverage": LEVERAGE})
     q = qty_for(sym, price)
     if not q:
-        return None, "объём меньше минимального для контракта"
+        return None, (f"не удалось подобрать объём около {MARGIN_USDT * LEVERAGE:g} $: шаг лота или минимальный объём контракта "
+                      f"не позволяют (цена {price:.6g})")
     j = _request("POST", "/fapi/v1/order",
                  {"symbol": f"{sym}USDT", "side": "SELL", "positionSide": pside, "type": "MARKET",
                   "quantity": q, "newOrderRespType": "RESULT"})
