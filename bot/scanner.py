@@ -63,8 +63,27 @@ def tg(method, _timeout=30, **params):
         return None
 
 
+def chunks(text, limit=4000):
+    """Делит текст на сообщения не длиннее limit (у Telegram лимит 4096): по абзацам, слишком длинный абзац — по строкам."""
+    out, cur = [], ""
+    for block in text.split("\n\n"):
+        for i, piece in enumerate([block] if len(block) <= limit else block.split("\n")):
+            sep = "\n\n" if i == 0 else "\n"
+            if cur and len(cur) + len(sep) + len(piece) > limit:
+                out.append(cur); cur = ""
+            cur = cur + sep + piece if cur else piece
+            while len(cur) > limit:                    # одна строка длиннее лимита
+                out.append(cur[:limit]); cur = cur[limit:]
+    if cur:
+        out.append(cur)
+    return out or [text]
+
+
 def send(chat_id, text):
-    return tg("sendMessage", chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview="true")
+    r = None
+    for part in chunks(text):
+        r = tg("sendMessage", chat_id=chat_id, text=part, parse_mode="HTML", disable_web_page_preview="true")
+    return r
 
 
 def broadcast(state, text, dry):
@@ -124,8 +143,8 @@ def setup_commands():
     """Регистрирует команды в меню Telegram (кнопка «/» у поля ввода)."""
     cmds = [("menu", "Меню с кнопками"), ("params", "Параметры сделок"), ("positions", "Открытые позиции на Binance"),
             ("history", "Ордера по монете за 24 ч: /history LSK"),
-            ("trades", "Журнал сделок, баланс"), ("status", "Кандидаты в канале"), ("pause", "Пауза торговли"),
-            ("resume", "Возобновить торговлю"), ("stop", "Отписаться")]
+            ("trades", "Журнал сделок, баланс"), ("virtual", "Виртуальные журналы"), ("status", "Кандидаты в канале"),
+            ("pause", "Пауза торговли"), ("resume", "Возобновить торговлю"), ("stop", "Отписаться")]
     tg("setMyCommands", commands=json.dumps([{"command": c, "description": d} for c, d in cmds]))
 
 

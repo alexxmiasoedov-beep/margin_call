@@ -1029,9 +1029,11 @@ def virt_text(state):
     lines = ["Виртуальные журналы (маржа и плечо как у реальных, фандинг учтён):"]; starts = []
     for key, cfg in VIRTUALS.items():
         bl, st = _virt_block(state, key, cfg); lines += [""] + bl; starts.append((st, cfg["icon"]))
+    real_lines = []
     for st, icon in starts:
         real = [t for t in state.get("trades", []) if t.get("closed") and t["closed"] >= st]
         if real:
-            lines.append(f"Реальные сделки с начала журнала {icon}: {len(real)}, итого {sum(t.get('pnl_usdt', 0) for t in real):+.2f} USDT")
-    text = "\n".join(lines)
-    return text if len(text) < 3900 else text[:3850] + "\n…(обрезано)"
+            real_lines.append(f"Реальные сделки с начала журнала {icon}: {len(real)}, итого {sum(t.get('pnl_usdt', 0) for t in real):+.2f} USDT")
+    if real_lines:
+        lines += [""] + real_lines
+    return "\n".join(lines)             # длинный ответ бот отправит несколькими сообщениями (scanner.send)
