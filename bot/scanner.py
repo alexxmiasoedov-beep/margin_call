@@ -79,10 +79,14 @@ def chunks(text, limit=4000):
     return out or [text]
 
 
+# «<», который не открывает тег (например «фандинг < −0,03%»), Telegram в режиме HTML не принимает — и сообщение не уходит целиком
+STRAY_LT = re.compile(r"<(?!/?(?:b|strong|i|em|u|ins|s|strike|del|a|code|pre|tg-spoiler|blockquote)[\s>])")
+
+
 def send(chat_id, text):
     r = None
     for part in chunks(text):
-        r = tg("sendMessage", chat_id=chat_id, text=part, parse_mode="HTML", disable_web_page_preview="true")
+        r = tg("sendMessage", chat_id=chat_id, text=STRAY_LT.sub("&lt;", part), parse_mode="HTML", disable_web_page_preview="true")
     return r
 
 
