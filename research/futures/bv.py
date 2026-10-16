@@ -10,12 +10,16 @@ def fetch(path):
     for i in range(4):
         r = subprocess.run(["curl", "-sS", "-m", "60", "-w", "%{http_code}", "-o", tmp, f"{BASE}/{path}"], capture_output=True, text=True)
         if r.stdout == "404":
-            open(fn, "wb").close()
+            if not _fresh(path): open(fn, "wb").close()      # свежий день мог ещё не выйти — 404 не запоминаем
             if os.path.exists(tmp): os.remove(tmp)
             return None
         if r.stdout == "200": os.replace(tmp, fn); return open(fn, "rb").read()
         time.sleep(2 + 2 * i)
     return None
+def _fresh(path, days=3):
+    import re, datetime
+    m = re.search(r"(\d{4}-\d{2}-\d{2})\.zip$", path)
+    return bool(m) and (datetime.datetime.utcnow() - datetime.datetime.strptime(m.group(1), "%Y-%m-%d")).days < days
 def rows(data):
     if not data: return []
     try: z = zipfile.ZipFile(io.BytesIO(data))

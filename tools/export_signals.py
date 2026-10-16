@@ -13,6 +13,7 @@ import json
 import os
 import re
 import subprocess
+import time
 
 home = os.path.expanduser("~")
 SINCE = "2026-09-29"
@@ -122,16 +123,44 @@ for key, icon in OWN:
                if t.get("closed") else "открыта")
         p(f"{icon} {fmt(t['opened'])} {t['sym']} вход {t['entry']:.6g} {t.get('tp_pct', 0):g}/{t.get('sl_pct', 0):g} {res} | {t.get('note', '')}")
 
+# ---------------------------------------------------------------- реальные сделки
+p()
+p("# РЕАЛЬНЫЕ СДЕЛКИ (бот хранит 30 дней)")
+for t in sorted(state.get("trades", []), key=lambda t: t["opened"]):
+    res = f"{fmt(t['closed'], False)} {short(t.get('reason'))} {t.get('pnl_usdt', 0):+.2f}" if t.get("closed") else "открыта"
+    p(f"{fmt(t['opened'])} {t['sym']} {t.get('rule', '')} {t.get('mode', '')} вход {t['entry']:.6g} маржа {t.get('margin', 0):g} → {res}")
+
 # ---------------------------------------------------------------- журнал службы: сигналы, пропуски, перезапуски
 p()
 p(f"# ЖУРНАЛ СЛУЖБЫ с {SINCE}")
-lines = []
+lines, scans, partial, deadline = [], [], False, time.time() + 150
+pat = LOG_PAT.pattern + "|постов"
+print("читаю журнал службы — до 2–3 минут…", flush=True)
 for cmd in (["journalctl", "--user", "-u", "margin-scanner"], ["journalctl", "--user-unit", "margin-scanner"],
             ["journalctl", "-u", "margin-scanner"]):
-    raw = run(cmd + ["--since", SINCE, "--utc", "-o", "short-iso", "--no-pager", "-q"], 300)
-    lines = [ln for ln in raw.splitlines() if LOG_PAT.search(ln) and "виртуально" not in ln]
-    if lines:
+    for grep in (["-g", pat], []):                   # -g фильтрует внутри journalctl; старые версии его не знают
+        left = int(deadline - time.time())
+        if left <= 5:
+            break
+        try:                                         # timeout обрывает journalctl, если журнал огромный или он завис
+            pr = subprocess.Popen(["timeout", str(left)] + cmd + ["--since", SINCE, "--utc", "-o", "short-iso", "--no-pager", "-q"] + grep,
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, errors="replace")
+        except OSError:
+            break
+        got, sc = [], []
+        for ln in pr.stdout:
+            if "постов" in ln:
+                sc.append(ln[:19])                   # только время прохода — для поиска простоев
+            elif LOG_PAT.search(ln) and "виртуально" not in ln:
+                got.append(ln)
+        partial = pr.wait() == 124                   # 124 — journalctl остановлен по времени
+        if got or sc:
+            lines, scans = got, sc
+            break
+    if lines or scans:
         break
+if partial:
+    p("⚠️ журнал прочитан не полностью — не уложился в 2,5 мин")
 for ln in lines:
     m = re.match(r"^\d{4}-(\d\d)-(\d\d)T(\d\d:\d\d:\d\d)\S*\s+\S+\s+[^:]+:\s?(.*)$", ln)
     if not m:
@@ -140,18 +169,21 @@ for ln in lines:
     if "Binance OK" in msg or "торговля выключена" in msg:
         msg = "старт бота"
     p(f"{m.group(2)}.{m.group(1)} {m.group(3)} {msg[:400]}")
+gaps = []
+for a, b in zip(scans, scans[1:]):
+    try:
+        ta, tb = (datetime.datetime.strptime(x, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc).timestamp() for x in (a, b))
+    except ValueError:
+        continue
+    if tb - ta > 600:
+        gaps.append(f"{fmt(ta, False)} → {fmt(tb, False)} ({(tb - ta) / 3600:.1f} ч)")
+if scans:
+    p(f"проходов сканера: {len(scans)}; простои дольше 10 мин: " + ("; ".join(gaps) if gaps else "нет"))
 if not lines:
     p("журнал службы недоступен или пуст — ниже сигналы из state.json (бот хранит их 72 ч)")
     for a in sorted(state.get("alerts", []), key=lambda a: a["ts"]):
         p(f"{fmt(a['ts'])} {a.get('rule')} {a['sym']} цена {a.get('price')} 4ч {a.get('b4h')} серия {a.get('run_h')} B/R {a.get('br')} "
           f"LSR {a.get('lsr')} от пика {a.get('from_peak')} риск {a.get('risk')}")
-
-# ---------------------------------------------------------------- реальные сделки
-p()
-p("# РЕАЛЬНЫЕ СДЕЛКИ (бот хранит 30 дней)")
-for t in sorted(state.get("trades", []), key=lambda t: t["opened"]):
-    res = f"{fmt(t['closed'], False)} {short(t.get('reason'))} {t.get('pnl_usdt', 0):+.2f}" if t.get("closed") else "открыта"
-    p(f"{fmt(t['opened'])} {t['sym']} {t.get('rule', '')} {t.get('mode', '')} вход {t['entry']:.6g} маржа {t.get('margin', 0):g} → {res}")
 
 dest = os.path.join(home, "margin_export_signals.txt")
 with open(dest, "w") as f:

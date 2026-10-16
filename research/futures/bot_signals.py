@@ -1,0 +1,41 @@
+import datetime
+UTC = datetime.timezone.utc
+RAW = """29.09 21:47:06 BERA pump 0.249214
+30.09 09:59:41 SAGA pump 0.0277478
+30.09 21:06:12 ARK pump 0.23046
+01.10 19:00:37 ALICE dump 0.206078
+02.10 02:10:08 RESOLV pump 0.02147
+02.10 02:20:33 SCR pump 0.030412
+02.10 11:13:22 MANA pump 0.103134
+02.10 12:16:22 SAND pump 0.06839
+02.10 18:42:41 LPT dump 1.62208
+04.10 13:30:57 SAND pump 0.07914
+04.10 16:35:22 GTC pump 0.134403
+05.10 14:45:35 RLC pump 0.534313
+05.10 17:15:36 RVN dump 0.00243402
+06.10 15:53:55 NMR pump 16.9138
+07.10 15:54:49 NMR dump 14.4464
+07.10 16:35:26 HEMI pump 0.00608342
+07.10 16:45:36 GTC dump 0.17291
+08.10 06:48:13 MET pump 0.496981
+08.10 17:56:23 CTSI dump 0.03362
+09.10 10:58:30 RLC dump 1.0626
+09.10 12:16:15 KAIA pump 0.05179
+09.10 23:22:21 GMT pump 0.009658
+10.10 06:12:04 MAGIC pump 0.15794
+10.10 12:34:04 LUMIA pump 0.121954
+10.10 14:01:52 ARPA dump 0.0121763
+11.10 17:31:19 MAGIC pump 0.136
+12.10 10:02:02 RSR dump 0.00216579
+12.10 10:32:24 RED pump 0.176854
+12.10 16:30:54 GTC pump 0.29958
+12.10 17:06:25 SXT dump 0.00938972
+13.10 21:37:04 RSR pump 0.0021591
+14.10 10:31:07 CTK dump 0.1198
+14.10 16:31:13 WAL pump 0.0577874
+15.10 12:05:21 BLUR pump 0.011913
+15.10 20:57:25 ANIME pump 0.00337"""
+BOT = []
+for ln in RAW.splitlines():
+    d, t, s, r, px = ln.split()
+    BOT.append(dict(sym=s, ep=int(datetime.datetime.strptime(f"2026.{d} {t}", "%Y.%d.%m %H:%M:%S").replace(tzinfo=UTC).timestamp()), rule=r, entry=float(px)))
