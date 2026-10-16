@@ -902,6 +902,8 @@ def _virt_scan(t):
 def virt_on_signal(state, sym, price, rule):
     """Открывает виртуальные сделки по сигналу во всех журналах. Возвращает строку для чата или None."""
     now = time.time(); px = None; fh = None; out = []
+    if contract(sym) is None and _contracts:
+        return None                    # монеты нет на фьючерсах Binance: цены не будет — виртуальную сделку не закрыть
     for key, cfg in VIRTUALS.items():
         if cfg.get("own"):
             continue                                   # у журналов со своими правилами — свои сигналы
@@ -979,7 +981,7 @@ def _virt_close(v, t, px, reason, icon):
 
 def virt_manage(state):
     """Каждый цикл: виртуальные стоп (марк-цена), тейк (цена сделок) по минутным свечам после входа и выход по времени."""
-    msgs = []; now = time.time(); cache = {}
+    msgs = []; now = time.time(); cache = {}; dropped = {}
     for key, cfg in VIRTUALS.items():
         v = _virt(state, key)
         for t in v["trades"]:
@@ -993,9 +995,16 @@ def virt_manage(state):
                 msgs.append(_virt_close(v, t, t["sl"], "стоп", cfg["icon"]))
             elif ev == "тейк":
                 msgs.append(_virt_close(v, t, t["tp"], "тейк", cfg["icon"]))
-            elif now - t["opened"] >= VIRT["hold_h"] * 3600 and px:
-                msgs.append(_virt_close(v, t, px, f"выход по времени ({VIRT['hold_h']:g} ч)", cfg["icon"]))
-        v["trades"] = [t for t in v["trades"] if not t.get("closed") or now - t["closed"] < 90 * 86400]
+            elif now - t["opened"] >= VIRT["hold_h"] * 3600:
+                if px:
+                    msgs.append(_virt_close(v, t, px, f"выход по времени ({VIRT['hold_h']:g} ч)", cfg["icon"]))
+                elif contract(t["sym"]) is None and _contracts:
+                    # монеты нет на фьючерсах Binance (вход был по цене из канала): закрыть не по чему — убираем из журнала
+                    t["drop"] = True; dropped.setdefault(t["sym"], []).append(cfg["icon"])
+        v["trades"] = [t for t in v["trades"] if not t.get("drop") and (not t.get("closed") or now - t["closed"] < 90 * 86400)]
+    if dropped:
+        msgs.append("Убраны виртуальные сделки по монетам без фьючерса на Binance — цены нет, закрыть их нельзя, "
+                    "в статистику они не входят: " + ", ".join(f"{s} {''.join(i)}" for s, i in dropped.items()))
     return msgs
 
 
