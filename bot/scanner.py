@@ -906,6 +906,55 @@ def turkey_rule(state):
     return msgs
 
 
+UPBIT_FLAGS = ("warning", "PRICE_FLUCTUATIONS", "TRADING_VOLUME_SOARING", "DEPOSIT_AMOUNT_SOARING",
+               "GLOBAL_PRICE_DIFFERENCES", "CONCENTRATION_OF_SMALL_ACCOUNTS")   # warning — «предупреждение», остальные — «внимание»
+
+
+def upbit_flags_watch(state, every=300):
+    """Флаги Upbit по KRW-рынкам (research/s3/ВЫВОДЫ.md): предупреждение, скачки цены, всплеск объёма, всплеск депозитов,
+    разница с мировой ценой, концентрация мелких счетов. Раз в 5 мин — /v1/market/all?is_details=true; в журнал службы —
+    строки «UPBIT»: появление (+) и снятие (−) флага с ценой фьючерса Binance; если прошлых флагов нет — снимок (=).
+    Только запись для будущей проверки: сделок и сообщений в чат нет."""
+    now = time.time()
+    if now - state.get("upf_try", 0) < every:
+        return
+    state["upf_try"] = now
+    j = http_json("https://api.upbit.com/v1/market/all?is_details=true", 15)
+    if not isinstance(j, list) or not j:
+        return
+    cur = {}
+    for x in j:
+        m = str(x.get("market", ""))
+        ev = x.get("market_event") or {}
+        on = [f for f in UPBIT_FLAGS if (ev.get("warning") if f == "warning" else (ev.get("caution") or {}).get(f))]
+        if m.startswith("KRW-") and on:
+            cur[m[4:]] = on
+    old, last = state.get("upbit_flags"), state.get("upf_ok", 0)
+    state["upf_ok"] = now
+    if old is None:                                           # прошлых флагов нет — снимок того, что уже стоит
+        ch = [("=", c, f, None) for c, fl in sorted(cur.items()) for f in fl]
+        state["upbit_flags"] = {c: {f: None for f in fl} for c, fl in cur.items()}
+    else:                                                     # {монета: {флаг: когда появился}}
+        ch, new = [], {}
+        for c in sorted(set(old) | set(cur)):
+            was, on = old.get(c, {}), cur.get(c, [])
+            ch += [("+", c, f, None) for f in on if f not in was] + [("−", c, f, t) for f, t in was.items() if f not in on]
+            if on:
+                new[c] = {f: was.get(f, now) for f in on}
+        state["upbit_flags"] = new
+    if not ch:
+        return
+    trader.contract("BTC")                                     # загружает список бессрочных контрактов USDT
+    perp = {re.sub(r"^(1000000|100000|10000|1000)", "", s[:-4]): s for s in trader._contracts if s.endswith("USDT")}
+    px = http_json("https://fapi.binance.com/fapi/v1/ticker/price", 15)
+    price = {x.get("symbol"): x.get("price") for x in px} if isinstance(px, list) else {}
+    gap = f", прошлый опрос {(now - last) / 60:.0f} мин назад" if old is not None and now - last > 900 else ""
+    for sign, c, f, since in ch:
+        s = perp.get(c)
+        fut = (f"фьючерс {s} {price[s]}" if price.get(s) else f"фьючерс {s}") if s else "фьючерса нет"
+        log("UPBIT", f"{sign}{f}", f"KRW-{c}", "|", fut + (f", держался {(now - since) / 3600:.1f} ч" if since else "") + gap)
+
+
 def status_text(cands):
     if not cands:
         return "Сейчас в канале нет монет, которые висят ≥%g ч." % MIN_RUN_H
@@ -1051,6 +1100,10 @@ def cycle(dry, state=None):
             broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка наблюдения за фандингом:", repr(e))
+    try:
+        upbit_flags_watch(state)
+    except Exception as e:
+        log("ошибка флагов Upbit:", repr(e))
     try:
         for msg in trader.manage(state):
             log(msg)

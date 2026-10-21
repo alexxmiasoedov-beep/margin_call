@@ -22,7 +22,7 @@ SAFE = ("CHANNEL", "MIN_RUN_H", "GAP_MIN", "PUMP_MIN", "PUMP_MAX", "COOLDOWN_H",
         "POLL_SEC", "STATE_FILE")                     # только настройки правил — ключи и токен не печатаются
 JOURNALS = (("virtual", "📓"), ("virtual_fund", "📗"), ("virtual_1525", "📘"), ("virtual_1520", "📕"), ("virtual_620", "📙"))
 OWN = (("virtual_D", "🟦"), ("virtual_P", "🟧"), ("virtual_KR", "🇰🇷"), ("virtual_TR", "🇹🇷"))
-LOG_PAT = re.compile(r"СИГНАЛ|НОВОЕ ПРАВИЛО|КОРЕЯ|ТУРЦИЯ|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
+LOG_PAT = re.compile(r"СИГНАЛ|НОВОЕ ПРАВИЛО|КОРЕЯ|ТУРЦИЯ|UPBIT|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
                      r"канал недоступен|Binance OK|торговля выключена|Убраны|Started|Stopped|Stopping|Main process exited|Scheduled restart")
 out = []
 
