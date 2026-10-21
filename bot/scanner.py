@@ -107,7 +107,7 @@ def broadcast(state, text, dry):
 WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
-    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*; корейский шорт), /params — параметры сделок, /set <параметр> <число> — изменить "
+    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*; корейский шорт; турецкий набег), /params — параметры сделок, /set <параметр> <число> — изменить "
     "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause, fexit), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
@@ -122,7 +122,7 @@ def main_menu(state):
     return kb([
         [("⚙️ Параметры сделок", "params"), ("📊 Позиции на Binance", "positions")],
         [("📒 Журнал сделок", "trades"), ("🔍 Кандидаты в канале", "status")],
-        [("📓📗📘📕📙🟦🟧🇰🇷 Виртуальные журналы", "virtual")],
+        [("📓📗📘📕📙🟦🟧🇰🇷🇹🇷 Виртуальные журналы", "virtual")],
         [pause],
     ])
 
@@ -819,6 +819,93 @@ def korea_rule(state):
     return msgs
 
 
+TR_SHARE_MIN, TR_NORM_X, TR_RISE_4H, TR_VOL_MIN = 0.10, 3.0, 0.10, 200e3   # турецкий набег: доля лиры за час, × к обычной, рост за 4 ч, объём за час $
+SPOT_HOSTS = ("https://api.binance.com", "https://data-api.binance.vision")  # второй — публичное зеркало рыночных данных Binance
+
+
+def spot_json(path, timeout=15):
+    """Спот Binance: основной адрес, при сбое — зеркало рыночных данных."""
+    for host in SPOT_HOSTS:
+        j = http_json(host + path, timeout)
+        if j is not None and not (isinstance(j, dict) and j.get("code")):
+            return j
+    return None
+
+
+def turkey_rule(state):
+    """Турецкий набег (журнал 🇹🇷, research/s2/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по фьючерсам Binance, у которых есть
+    спотовая пара к турецкой лире: фьючерс за 4 ч вырос на 10%+, доля пары к лире в объёме за час (спот в $ + фьючерс) ≥ 10%
+    и в 3+ раза выше обычной (медиана часовых долей за 7 суток) → виртуальный шорт. Возвращает сообщения для чата."""
+    T = int(time.time() // 900 * 900)
+    if state.get("tr_last_T") == T or time.time() - T > 600:
+        return []
+    state["tr_last_T"] = T
+    trader.contract("BTC")                                     # загружает список бессрочных контрактов USDT
+    px = spot_json("/api/v3/ticker/price")
+    if not isinstance(px, list):
+        return []
+    spot = {str(x.get("symbol")): x.get("price") for x in px}
+    try:
+        usdtry = float(spot["USDTTRY"])
+    except (KeyError, TypeError, ValueError):
+        return []
+    tick = http_json("https://fapi.binance.com/fapi/v1/ticker/24hr", 20)
+    if not isinstance(tick, list):
+        return []
+    cands = []
+    for x in tick:
+        s = str(x.get("symbol", ""))
+        if s not in trader._contracts:
+            continue
+        sym = s[:-4]
+        name = next((n for n in (sym, re.sub(r"^(1000000|100000|10000|1000)", "", sym)) if f"{n}TRY" in spot), None)
+        try:
+            hi, lo = float(x["highPrice"]), float(x["lowPrice"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if name and lo > 0 and hi >= lo * (1 + TR_RISE_4H):        # рост за 4 ч на 10% виден и в размахе за сутки
+            cands.append((sym, name))
+    with ThreadPoolExecutor(8) as ex:
+        ks = dict(zip([s for s, _ in cands], ex.map(lambda c: _closed_15m(c[0], T, 18), cands)))
+    msgs = []; H = T // 3600 * 3600
+    for sym, name in cands:
+        k = ks.get(sym)
+        if not k or len(k) < 17:
+            continue
+        c = float(k[-1][4]); r4 = c / float(k[-17][4]) - 1
+        if r4 < TR_RISE_4H:
+            continue
+        fut = sum(float(x[7]) for x in k[-4:])
+        sk = spot_json(f"/api/v3/klines?symbol={name}TRY&interval=15m&endTime={T * 1000 - 1}&limit=4")
+        if not isinstance(sk, list):
+            continue
+        tr = sum(float(x[7]) for x in sk if T - 3600 <= int(x[0]) // 1000 < T) / usdtry
+        share = tr / (tr + fut) if tr + fut > 0 else 0.0
+        head = (f"рост за 4 ч {r4 * 100:+.0f}%, доля лиры за час {share * 100:.1f}% "
+                f"(спот {name}/TRY {tr / 1e3:.0f} тыс. $, фьючерс {fut / 1e3:.0f} тыс. $)")
+        if share < TR_SHARE_MIN or tr + fut < TR_VOL_MIN:
+            if share >= TR_SHARE_MIN / 2:                             # в журнал — только близкие к порогу
+                log("ТУРЦИЯ", sym, head, "— меньше порога")
+            continue
+        # обычная доля — медиана часовых долей за 7 суток до последнего часа; пара к лире должна торговаться ≥ 8 суток
+        end = (H - 3600) * 1000 - 1
+        sh = spot_json(f"/api/v3/klines?symbol={name}TRY&interval=1h&endTime={end}&limit=192")
+        fh = http_json(f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}USDT&interval=1h&endTime={end}&limit=168", 15)
+        if not isinstance(sh, list) or not sh or not isinstance(fh, list) or len(fh) < 150 or int(sh[0][0]) // 1000 > H - 192 * 3600:
+            log("ТУРЦИЯ", sym, head, "— нет истории за неделю")
+            continue
+        sv = {int(x[0]): float(x[7]) / usdtry for x in sh}
+        hs = sorted(sv.get(int(x[0]), 0.0) / (sv.get(int(x[0]), 0.0) + float(x[7]) + 1e-9) for x in fh)
+        norm = (hs[len(hs) // 2] + hs[(len(hs) - 1) // 2]) / 2
+        note = f"{head}; обычно {norm * 100:.1f}%, в {share / max(norm, 1e-4):.1f} раза больше"
+        log("ТУРЦИЯ", sym, note)
+        if share >= TR_NORM_X * max(norm, 1e-4):
+            m = trader.virt_open(state, "virtual_TR", sym, "TR", note, price=c)
+            if m:
+                msgs.append(m)
+    return msgs
+
+
 def status_text(cands):
     if not cands:
         return "Сейчас в канале нет монет, которые висят ≥%g ч." % MIN_RUN_H
@@ -926,6 +1013,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка корейского правила:", repr(e))
+    try:
+        for msg in turkey_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка турецкого правила:", repr(e))
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
