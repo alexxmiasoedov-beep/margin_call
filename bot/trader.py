@@ -856,6 +856,9 @@ VIRTUALS = {
                   "icon": "🟦", "params": lambda fh: (10.0, 20.0), "own": True, "cooldown_h": 24},
     "virtual_P": {"title": "P*: памп за 12 ч ≥ 2%, серия ≥ 1 ч, объём 24 ч ≥ 20 млн $, BTC за 30 дней в минусе; тейк 10 / стоп 20",
                   "icon": "🟧", "params": lambda fh: (10.0, 20.0), "own": True, "cooldown_h": 24},
+    # корейский шорт (research/mm2/ВЫВОДЫ.md, бэктест за 2 года): свой сигнал на закрытии 15-мин свечи (scanner.korea_rule)
+    "virtual_KR": {"title": "корейский шорт: памп +15% за ≤ 2 ч из покоя, Upbit + Bithumb ≥ 20% объёма за час; тейк 10 / стоп 25",
+                   "icon": "🇰🇷", "params": lambda fh: (10.0, 25.0), "own": True, "cooldown_h": 24},
 }
 VIRT = {"hold_h": 48.0, "pause_h": 48.0, "start_balance": 20.0}   # стартовый капитал журнала, USDT
 

@@ -107,7 +107,7 @@ def broadcast(state, text, dry):
 WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
-    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*), /params — параметры сделок, /set <параметр> <число> — изменить "
+    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*; корейский шорт), /params — параметры сделок, /set <параметр> <число> — изменить "
     "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause, fexit), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
@@ -122,7 +122,7 @@ def main_menu(state):
     return kb([
         [("⚙️ Параметры сделок", "params"), ("📊 Позиции на Binance", "positions")],
         [("📒 Журнал сделок", "trades"), ("🔍 Кандидаты в канале", "status")],
-        [("📓📗📘📕📙🟦🟧 Виртуальные журналы", "virtual")],
+        [("📓📗📘📕📙🟦🟧🇰🇷 Виртуальные журналы", "virtual")],
         [pause],
     ])
 
@@ -713,6 +713,112 @@ def new_rules(state, posts):
     return msgs
 
 
+KR_SHARE_MIN = 0.20                    # корейский шорт: доля Upbit + Bithumb в объёме за час (вместе с фьючерсом Binance)
+_kr_markets = {"ts": 0, "upbit": set(), "bithumb": set()}
+
+
+def _kr_list():
+    """KRW-рынки Upbit и Bithumb: кэш на 6 ч; если биржа не ответила — прежний список и повтор через 10 мин."""
+    if time.time() - _kr_markets["ts"] > 6 * 3600:
+        ok = True
+        for ex, url in (("upbit", "https://api.upbit.com/v1/market/all"), ("bithumb", "https://api.bithumb.com/v1/market/all")):
+            j = http_json(url, 15)
+            if isinstance(j, list) and j:
+                _kr_markets[ex] = {str(x.get("market", ""))[4:] for x in j if str(x.get("market", "")).startswith("KRW-")}
+            else:
+                ok = False
+        _kr_markets["ts"] = time.time() if ok else time.time() - 6 * 3600 + 600
+    return _kr_markets
+
+
+def _kr_volume(ex, coin, T):
+    """Объём KRW-рынка монеты на бирже ex за 4 закрытые 15-мин свечи до T, в долларах (по KRW-USDT той же биржи).
+    None — биржа не ответила. Upbit ждёт время в UTC с «Z», Bithumb — в KST без зоны; граница to — не включительно."""
+    base = {"upbit": "https://api.upbit.com", "bithumb": "https://api.bithumb.com"}[ex]
+    to = (datetime.fromtimestamp(T, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if ex == "upbit"
+          else datetime.fromtimestamp(T + 9 * 3600, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"))
+    c = http_json(f"{base}/v1/candles/minutes/15?market=KRW-{coin}&to={to}&count=4", 15)
+    fx = http_json(f"{base}/v1/candles/minutes/15?market=KRW-USDT&to={to}&count=1", 15)
+    try:
+        krw = sum(float(x["candle_acc_trade_price"]) for x in c
+                  if T - 3600 <= datetime.fromisoformat(x["candle_date_time_utc"]).replace(tzinfo=timezone.utc).timestamp() < T)
+        return krw / float(fx[0]["trade_price"])
+    except (TypeError, KeyError, ValueError, IndexError, ZeroDivisionError):
+        return None
+
+
+def _pump_at(k):
+    """Памп как в бэктесте (research/mm2/load2y.py, detect): последняя закрытая свеча — первая за сутки, где максимум после
+    «спокойной» свечи из последних 2 ч (до неё 2 ч цена в пределах ±5%) достиг +15% от её закрытия. Индекс базы или None."""
+    c = [float(x[4]) for x in k]; h = [float(x[2]) for x in k]; n = len(k); last = -10**9
+    for j in range(9, n):
+        if j - last < 96:
+            continue
+        base = None
+        for i in range(max(8, j - 8), j):
+            if abs(c[i] / c[i - 8] - 1) <= 0.05 and max(h[i + 1:j + 1]) >= c[i] * 1.15:
+                base = i
+        if base is not None:
+            last = j
+            if j == n - 1:
+                return base
+    return None
+
+
+def korea_rule(state):
+    """Корейский шорт (журнал 🇰🇷, research/mm2/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по всем фьючерсам Binance —
+    памп +15% за ≤ 2 ч из покоя; если за последний час Upbit + Bithumb дали ≥ 20% объёма (вместе с фьючерсом Binance) —
+    виртуальный шорт. Только виртуальные сделки. Возвращает сообщения для чата."""
+    T = int(time.time() // 900 * 900)
+    if state.get("kr_last_T") == T or time.time() - T > 600:
+        return []
+    state["kr_last_T"] = T
+    trader.contract("BTC")                                     # загружает список бессрочных контрактов USDT
+    tick = http_json("https://fapi.binance.com/fapi/v1/ticker/24hr", 20)
+    if not isinstance(tick, list):
+        return []
+    cands = []
+    for x in tick:
+        s = str(x.get("symbol", ""))
+        try:
+            hi, lo = float(x["highPrice"]), float(x["lowPrice"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if s in trader._contracts and lo > 0 and hi >= lo * 1.15:     # памп +15% за 2 ч виден и в размахе за сутки
+            cands.append(s[:-4])
+    with ThreadPoolExecutor(8) as ex:
+        ks = dict(zip(cands, ex.map(lambda s: _closed_15m(s, T, 481), cands)))   # 5 суток: суточная пауза между пампами — как в бэктесте
+    kr = _kr_list(); msgs = []
+    for s in cands:
+        k = ks.get(s)
+        if not k or len(k) < 20:
+            continue
+        i = _pump_at(k)
+        if i is None:
+            continue
+        coin = re.sub(r"^(1000000|100000|10000|1000)", "", s)
+        c0, c = float(k[i][4]), float(k[-1][4]); hi = max(float(x[2]) for x in k[i + 1:])
+        fut = sum(float(x[7]) for x in k[-4:])
+        head = f"памп {(hi / c0 - 1) * 100:+.0f}% за {(len(k) - 1 - i) * 15} мин из покоя (закрытие {(c / c0 - 1) * 100:+.0f}%)"
+        exs = [ex for ex in ("upbit", "bithumb") if coin in kr[ex]]
+        if not exs:
+            log("КОРЕЯ", s, head, "— монеты нет на Upbit/Bithumb")
+            continue
+        vols = {ex: _kr_volume(ex, coin, T) for ex in exs}
+        got = sum(v for v in vols.values() if v is not None)
+        share = got / (got + fut) if got + fut > 0 else 0.0
+        note = (f"{head}; доля Кореи за час {share * 100:.0f}% ("
+                + ", ".join(f"{ex.capitalize()} {v / 1e6:.2f} млн $" if v is not None else f"{ex.capitalize()}: нет данных"
+                            for ex, v in vols.items())
+                + f", фьючерс Binance {fut / 1e6:.2f} млн $)")
+        log("КОРЕЯ", s, note)
+        if share >= KR_SHARE_MIN:
+            m = trader.virt_open(state, "virtual_KR", s, "KR", note, price=c)
+            if m:
+                msgs.append(m)
+    return msgs
+
+
 def status_text(cands):
     if not cands:
         return "Сейчас в канале нет монет, которые висят ≥%g ч." % MIN_RUN_H
@@ -815,6 +921,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка новых правил:", repr(e))
+    try:
+        for msg in korea_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка корейского правила:", repr(e))
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
