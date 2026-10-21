@@ -107,7 +107,7 @@ def broadcast(state, text, dry):
 WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
-    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*; корейский шорт; турецкий набег), /params — параметры сделок, /set <параметр> <число> — изменить "
+    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*; корейский шорт; турецкий набег; памп без розницы — лонг), /params — параметры сделок, /set <параметр> <число> — изменить "
     "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause, fexit), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
@@ -122,7 +122,7 @@ def main_menu(state):
     return kb([
         [("⚙️ Параметры сделок", "params"), ("📊 Позиции на Binance", "positions")],
         [("📒 Журнал сделок", "trades"), ("🔍 Кандидаты в канале", "status")],
-        [("📓📗📘📕📙🟦🟧🇰🇷🇹🇷 Виртуальные журналы", "virtual")],
+        [("📓📗📘📕📙🟦🟧🇰🇷🇹🇷🟩 Виртуальные журналы", "virtual")],
         [pause],
     ])
 
@@ -765,10 +765,54 @@ def _pump_at(k):
     return None
 
 
+NR_SPOT_MAX, NR_NORM_MIN, NR_KR_MAX, NR_TR_MAX = 0.12, 0.03, 0.20, 0.10   # лонг «памп без розницы»: доли за час и обычная доля спота
+
+
+def noretail_check(s, coin, T, fut, kr_share, spot):
+    """Лонг «памп без розницы» (журнал 🟩, research/s5/ВЫВОДЫ.md) для пампа, найденного korea_rule: у монеты есть спот Binance
+    к USDT (торгуется ≥ 8 суток, обычная доля ≥ 3% — медиана часовых долей за 7 суток), а в час пампа спот дал < 12% объёма
+    (вместе с фьючерсом), Корея < 20%, пара к лире < 10%. spot — цены спота Binance {пара: цена}. Возвращает (подходит, пояснение)."""
+    if kr_share is None:
+        return False, "доля Кореи неизвестна"
+    name = next((n for n in (s, coin) if f"{n}USDT" in spot), None)
+    if not name:
+        return False, "нет спота Binance"
+    sk = spot_json(f"/api/v3/klines?symbol={name}USDT&interval=15m&endTime={T * 1000 - 1}&limit=1000")
+    if not isinstance(sk, list) or not sk or int(sk[0][0]) // 1000 > T - 8 * 86400:
+        return False, "спот торгуется меньше 8 суток или нет данных"
+    sv = {int(x[0]) // 1000: float(x[7]) for x in sk}
+    sp = sum(sv.get(T - 900 * i, 0.0) for i in range(1, 5))
+    share = sp / max(sp + fut, 1)
+    tr_share, tname = 0.0, next((n for n in (s, coin) if f"{n}TRY" in spot), None)
+    if tname:
+        tk = spot_json(f"/api/v3/klines?symbol={tname}TRY&interval=15m&endTime={T * 1000 - 1}&limit=4")
+        try:
+            tr = sum(float(x[7]) for x in tk if T - 3600 <= int(x[0]) // 1000 < T) / float(spot["USDTTRY"])
+        except (TypeError, KeyError, ValueError, ZeroDivisionError):
+            return False, "нет данных по паре к лире"
+        tr_share = tr / max(tr + fut, 1)
+    why = f"спот Binance {share * 100:.1f}% объёма за час, Корея {kr_share * 100:.0f}%, лира {tr_share * 100:.1f}%"
+    if share >= NR_SPOT_MAX or kr_share >= NR_KR_MAX or tr_share >= NR_TR_MAX:
+        return False, why
+    # обычная доля спота: медиана долей за 167 часов до часа пампа (часы отсчитываются от закрытия свечи пампа, как в бэктесте)
+    fk = _closed_15m(s, T, 673)
+    if not fk or len(fk) < 672:
+        return False, why + "; нет истории фьючерса за неделю"
+    fv = {int(x[0]) // 1000: float(x[7]) for x in fk}
+    hs = []
+    for h in range(1, 168):
+        a = T - 3600 * (h + 1)
+        sh_, fh_ = (sum(d.get(a + 900 * i, 0.0) for i in range(4)) for d in (sv, fv))
+        hs.append(sh_ / max(sh_ + fh_, 1))
+    norm = sorted(hs)[len(hs) // 2]
+    return norm >= NR_NORM_MIN, why + f"; обычная доля спота {norm * 100:.1f}%"
+
+
 def korea_rule(state):
     """Корейский шорт (журнал 🇰🇷, research/mm2/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по всем фьючерсам Binance —
     памп +15% за ≤ 2 ч из покоя; если за последний час Upbit + Bithumb дали ≥ 20% объёма (вместе с фьючерсом Binance) —
-    виртуальный шорт. Только виртуальные сделки. Возвращает сообщения для чата."""
+    виртуальный шорт. Тот же памп без розницы (noretail_check) — виртуальный лонг 🟩. Только виртуальные сделки.
+    Возвращает сообщения для чата."""
     T = int(time.time() // 900 * 900)
     if state.get("kr_last_T") == T or time.time() - T > 600:
         return []
@@ -788,7 +832,7 @@ def korea_rule(state):
             cands.append(s[:-4])
     with ThreadPoolExecutor(8) as ex:
         ks = dict(zip(cands, ex.map(lambda s: _closed_15m(s, T, 481), cands)))   # 5 суток: суточная пауза между пампами — как в бэктесте
-    kr = _kr_list(); msgs = []
+    kr = _kr_list(); msgs = []; spot = None
     for s in cands:
         k = ks.get(s)
         if not k or len(k) < 20:
@@ -803,17 +847,28 @@ def korea_rule(state):
         exs = [ex for ex in ("upbit", "bithumb") if coin in kr[ex]]
         if not exs:
             log("КОРЕЯ", s, head, "— монеты нет на Upbit/Bithumb")
-            continue
-        vols = {ex: _kr_volume(ex, coin, T) for ex in exs}
-        got = sum(v for v in vols.values() if v is not None)
-        share = got / (got + fut) if got + fut > 0 else 0.0
-        note = (f"{head}; доля Кореи за час {share * 100:.0f}% ("
-                + ", ".join(f"{ex.capitalize()} {v / 1e6:.2f} млн $" if v is not None else f"{ex.capitalize()}: нет данных"
-                            for ex, v in vols.items())
-                + f", фьючерс Binance {fut / 1e6:.2f} млн $)")
-        log("КОРЕЯ", s, note)
-        if share >= KR_SHARE_MIN:
-            m = trader.virt_open(state, "virtual_KR", s, "KR", note, price=c)
+            kr_share = 0.0
+        else:
+            vols = {ex: _kr_volume(ex, coin, T) for ex in exs}
+            got = sum(v for v in vols.values() if v is not None)
+            share = got / (got + fut) if got + fut > 0 else 0.0
+            kr_share = share if all(v is not None for v in vols.values()) else None
+            note = (f"{head}; доля Кореи за час {share * 100:.0f}% ("
+                    + ", ".join(f"{ex.capitalize()} {v / 1e6:.2f} млн $" if v is not None else f"{ex.capitalize()}: нет данных"
+                                for ex, v in vols.items())
+                    + f", фьючерс Binance {fut / 1e6:.2f} млн $)")
+            log("КОРЕЯ", s, note)
+            if share >= KR_SHARE_MIN:
+                m = trader.virt_open(state, "virtual_KR", s, "KR", note, price=c)
+                if m:
+                    msgs.append(m)
+        if spot is None:                                      # цены спота Binance — один раз за проход, когда есть памп
+            px = spot_json("/api/v3/ticker/price")
+            spot = {str(x.get("symbol")): x.get("price") for x in px} if isinstance(px, list) else {}
+        ok, why = noretail_check(s, coin, T, fut, kr_share, spot)
+        log("РОЗНИЦА", s, f"{head}; {why}" + (" → лонг 🟩" if ok else ""))
+        if ok:
+            m = trader.virt_open(state, "virtual_L", s, "NR", f"{head}; {why}", price=c)
             if m:
                 msgs.append(m)
     return msgs

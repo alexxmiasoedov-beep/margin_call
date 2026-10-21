@@ -862,6 +862,10 @@ VIRTUALS = {
     # турецкий набег (research/s2/ВЫВОДЫ.md, бэктест за 2 года): свой сигнал на закрытии 15-мин свечи (scanner.turkey_rule)
     "virtual_TR": {"title": "турецкий набег: доля пары к лире за час ≥ 10% и в 3+ раза выше обычной, рост за 4 ч ≥ 10%; тейк 10 / стоп 15",
                    "icon": "🇹🇷", "params": lambda fh: (10.0, 15.0), "own": True, "cooldown_h": 48, "hold_h": 24.0},
+    # памп без розницы — ЛОНГ (research/s5/ВЫВОДЫ.md, бэктест за 2 года): свой сигнал на закрытии 15-мин свечи (scanner.korea_rule)
+    "virtual_L": {"title": "памп без розницы (ЛОНГ): памп +15% за ≤ 2 ч из покоя, спот Binance < 12% объёма за час, Корея < 20%, "
+                           "лира < 10%; тейк 30 / стоп 15", "icon": "🟩", "params": lambda fh: (30.0, 15.0), "own": True,
+                  "cooldown_h": 24, "pause_h": 0.0, "side": "long"},
 }
 VIRT = {"hold_h": 48.0, "pause_h": 48.0, "start_balance": 20.0}   # стартовый капитал журнала, USDT
 
@@ -875,11 +879,13 @@ def _virt(state, key):
 
 
 def _virt_scan(t):
-    """Проходит минутные свечи Binance после входа по порядку и возвращает первое событие: "стоп" (марк-цена ≥ стопа —
-    так срабатывает реальный стоп), "тейк" (цена сделок ниже тейка — так исполняется лимитный тейк) или None.
+    """Проходит минутные свечи Binance после входа по порядку и возвращает первое событие: "стоп" (марк-цена дошла до стопа —
+    так срабатывает реальный стоп), "тейк" (цена сделок прошла тейк — так исполняется лимитный тейк) или None.
+    Шорт: стоп по максимуму марк-цены, тейк по минимуму цены сделок; лонг — наоборот.
     Стоп и тейк в одной минуте — стоп. Свечи после выхода по времени не смотрим; докачка с места прошлой проверки."""
     start = int(t.get("v_next") or (t["opened"] // 60 + 1) * 60 * 1000)
     end = int((t["opened"] + t.get("hold_h", VIRT["hold_h"]) * 3600) * 1000)
+    long = t.get("side") == "long"
     for _ in range(4):
         if start > min(time.time() * 1000 - 60000, end):
             break
@@ -889,17 +895,17 @@ def _virt_scan(t):
             break
         now_ms = time.time() * 1000
         try:
-            mh = {int(x[0]): float(x[2]) for x in m if int(x[6]) < now_ms and int(x[0]) < end}
-            kl = {int(x[0]): float(x[3]) for x in k if int(x[6]) < now_ms and int(x[0]) < end}
+            mx = {int(x[0]): float(x[3] if long else x[2]) for x in m if int(x[6]) < now_ms and int(x[0]) < end}
+            kx = {int(x[0]): float(x[2] if long else x[3]) for x in k if int(x[6]) < now_ms and int(x[0]) < end}
         except (TypeError, ValueError, IndexError):
             break
-        mins = sorted(set(mh) & set(kl))
+        mins = sorted(set(mx) & set(kx))
         if not mins:
             break
         for ts in mins:
-            if mh[ts] >= t["sl"]:
+            if (mx[ts] <= t["sl"]) if long else (mx[ts] >= t["sl"]):
                 t["v_next"] = ts + 60000; return "стоп"
-            if t.get("tp") and kl[ts] < t["tp"]:
+            if t.get("tp") and ((kx[ts] > t["tp"]) if long else (kx[ts] < t["tp"])):
                 t["v_next"] = ts + 60000; return "тейк"
         start = t["v_next"] = mins[-1] + 60000
         if len(m) < 1500 or len(k) < 1500:
@@ -943,34 +949,40 @@ def virt_on_signal(state, sym, price, rule):
 
 
 def virt_open(state, key, sym, rule, note, price=None):
-    """Открывает виртуальный шорт в журнале key по его собственному сигналу. Возвращает строку для чата или None."""
+    """Открывает виртуальную сделку (шорт, у журнала с side="long" — лонг) в журнале key по его собственному сигналу.
+    Возвращает строку для чата или None."""
     cfg = VIRTUALS[key]; v = _virt(state, key); now = time.time()
+    long = cfg.get("side") == "long"; pause = cfg.get("pause_h", VIRT["pause_h"])
     mine = [t for t in v["trades"] if t["sym"] == sym]
     if any(not t.get("closed") for t in mine):
         return None
     if any(now - t["opened"] < cfg.get("cooldown_h", 0) * 3600 for t in mine):
         return None
-    if any(t.get("reason") == "стоп" and now - t["closed"] < VIRT["pause_h"] * 3600 for t in mine if t.get("closed")):
-        return f"{cfg['icon']} {sym}: сигнал {rule}, но пропуск — виртуальный стоп меньше {VIRT['pause_h']:g} ч назад"
+    if any(t.get("reason") == "стоп" and now - t["closed"] < pause * 3600 for t in mine if t.get("closed")):
+        return f"{cfg['icon']} {sym}: сигнал {rule}, но пропуск — виртуальный стоп меньше {pause:g} ч назад"
     if v["balance"] < MARGIN_USDT:
         return f"{cfg['icon']} {sym}: сигнал {rule}, но на виртуальном балансе {v['balance']:.2f} USDT — меньше маржи {MARGIN_USDT:g}"
     px = mark_price(sym) or price
     if not px:
         return None
     fh = funding_hourly(sym); tp, sl = cfg["params"](fh)
-    v["trades"].append({"sym": sym, "opened": now, "entry": px, "rule": rule, "margin": MARGIN_USDT, "lev": LEVERAGE, "bal": True,
-                        "sl": px * (1 + sl / 100), "tp": px * (1 - tp / 100) if tp else None, "tp_pct": tp, "sl_pct": sl, "fh_entry": fh,
-                        "note": note, "hold_h": cfg.get("hold_h", VIRT["hold_h"])})
-    return (f"{cfg['icon']} сигнал {rule}: виртуально шорт {sym} по {px:.6g}, тейк {tp:g}% / стоп {sl:g}%\n"
+    sgn = -1 if long else 1                                  # стоп выше входа у шорта, ниже — у лонга
+    t = {"sym": sym, "opened": now, "entry": px, "rule": rule, "margin": MARGIN_USDT, "lev": LEVERAGE, "bal": True,
+         "sl": px * (1 + sgn * sl / 100), "tp": px * (1 - sgn * tp / 100) if tp else None, "tp_pct": tp, "sl_pct": sl, "fh_entry": fh,
+         "note": note, "hold_h": cfg.get("hold_h", VIRT["hold_h"])}
+    if long:
+        t["side"] = "long"
+    v["trades"].append(t)
+    return (f"{cfg['icon']} сигнал {rule}: виртуально {'ЛОНГ' if long else 'шорт'} {sym} по {px:.6g}, тейк {tp:g}% / стоп {sl:g}%\n"
             f"{cfg['icon']} {note}")
 
 
 def _virt_close(v, t, px, reason, icon):
     t["closed"] = time.time(); t["exit"] = px; t["reason"] = reason
-    notional = t["margin"] * t["lev"]
-    pct = (1 - px / t["entry"]) * 100 * t["lev"]          # шорт: прибыль = (вход − выход) / вход
-    fr = funding_paid(t["sym"], t["opened"], t["closed"])
-    t["fund_usdt"] = round(fr * notional, 4) if fr is not None else 0.0
+    notional = t["margin"] * t["lev"]; long = t.get("side") == "long"
+    pct = (px / t["entry"] - 1 if long else 1 - px / t["entry"]) * 100 * t["lev"]   # шорт: прибыль = (вход − выход) / вход
+    fr = funding_paid(t["sym"], t["opened"], t["closed"])                          # фандинг для шорта; лонгу — с обратным знаком
+    t["fund_usdt"] = round((-fr if long else fr) * notional, 4) if fr is not None else 0.0
     t["pnl_usdt"] = round(t["margin"] * pct / 100 + t["fund_usdt"] - notional * 0.0005 * 2, 4)
     t["pnl_pct"] = round(t["pnl_usdt"] / t["margin"] * 100, 2)
     mark = "✅" if t["pnl_usdt"] > 0 else "❌"
@@ -982,7 +994,7 @@ def _virt_close(v, t, px, reason, icon):
                  f"({v['balance'] - start:+.2f}, {(v['balance'] / start - 1) * 100:+.1f}% от стартовых {start:g})")
     else:
         bnote = f"\n{icon} сделка открыта до запуска баланса — в баланс не входит (баланс {v['balance']:.2f} USDT)"
-    return (f"{icon} {mark} виртуально закрыт шорт {t['sym']}: {reason}, вход {t['entry']:.6g} → выход {px:.6g}, "
+    return (f"{icon} {mark} виртуально закрыт {'ЛОНГ' if long else 'шорт'} {t['sym']}: {reason}, вход {t['entry']:.6g} → выход {px:.6g}, "
             f"цена {pct:+.1f}% к марже{fnote} → итого {t['pnl_usdt']:+.2f} USDT, держали {(t['closed'] - t['opened']) / 3600:.1f} ч"
             + bnote)
 
@@ -1019,17 +1031,21 @@ def virt_manage(state):
 def _virt_block(state, key, cfg):
     v = _virt(state, key); now = time.time()
     op = [t for t in v["trades"] if not t.get("closed")]; cl = [t for t in v["trades"] if t.get("closed")]
-    lines = [f"{cfg['icon']} {cfg['title']}, выход {cfg.get('hold_h', VIRT['hold_h']):g} ч, пауза после стопа {VIRT['pause_h']:g} ч. "
-             f"С {time.strftime('%d.%m %H:%M', time.gmtime(v['started']))} UTC.",
+    pause = cfg.get("pause_h", VIRT["pause_h"])
+    lines = [f"{cfg['icon']} {cfg['title']}, выход {cfg.get('hold_h', VIRT['hold_h']):g} ч, "
+             + (f"пауза после стопа {pause:g} ч. " if pause else "без паузы после стопа. ")
+             + f"С {time.strftime('%d.%m %H:%M', time.gmtime(v['started']))} UTC.",
              f"  баланс {v['balance']:.2f} USDT (старт {VIRT['start_balance']:g} с {time.strftime('%d.%m %H:%M', time.gmtime(v['bal_since']))} UTC, "
              f"{v['balance'] - VIRT['start_balance']:+.2f}; сделок в балансе {sum(1 for t in v['trades'] if t.get('bal') and t.get('closed'))})"]
     for t in op:
-        px = mark_price(t["sym"]); cur = f", сейчас {(1 - px / t['entry']) * 100 * t['lev']:+.1f}% к марже" if px else ""
+        sgn = -1 if t.get("side") == "long" else 1                 # лонг: прибыль от роста цены, фандинг с обратным знаком
+        px = mark_price(t["sym"]); cur = f", сейчас {sgn * (1 - px / t['entry']) * 100 * t['lev']:+.1f}% к марже" if px else ""
         fr = funding_paid(t["sym"], t["opened"])
-        fund = f", фандинг {fr * t['margin'] * t['lev']:+.2f}" if fr is not None else ""
+        fund = f", фандинг {sgn * fr * t['margin'] * t['lev']:+.2f}" if fr is not None else ""
         tpn = f"тейк {t['tp_pct']:g}%" if t.get("tp_pct") else "без тейка"
         old = "" if t.get("bal") else " — вне баланса"
-        lines.append(f"  открыта {t['sym']} по {t['entry']:.6g} ({tpn}, стоп {t.get('sl_pct', 25):g}%), {(now - t['opened']) / 3600:.1f} ч{cur}{fund}{old}")
+        side = " (лонг)" if sgn < 0 else ""
+        lines.append(f"  открыта {t['sym']}{side} по {t['entry']:.6g} ({tpn}, стоп {t.get('sl_pct', 25):g}%), {(now - t['opened']) / 3600:.1f} ч{cur}{fund}{old}")
     if cl:
         tot = sum(t["pnl_usdt"] for t in cl); ftot = sum(t.get("fund_usdt", 0) for t in cl)
         cnt = {r: sum(1 for t in cl if t["reason"].startswith(r)) for r in ("тейк", "стоп", "выход")}

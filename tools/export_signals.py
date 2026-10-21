@@ -21,8 +21,8 @@ SAFE = ("CHANNEL", "MIN_RUN_H", "GAP_MIN", "PUMP_MIN", "PUMP_MAX", "COOLDOWN_H",
         "SL_PCT", "TP_PCT", "HOLD_H", "MAX_POSITIONS", "LSR_MAX", "DUMP_RULE", "DUMP_BR_MIN", "STOP_PAUSE_H", "FUND_EXIT",
         "POLL_SEC", "STATE_FILE")                     # только настройки правил — ключи и токен не печатаются
 JOURNALS = (("virtual", "📓"), ("virtual_fund", "📗"), ("virtual_1525", "📘"), ("virtual_1520", "📕"), ("virtual_620", "📙"))
-OWN = (("virtual_D", "🟦"), ("virtual_P", "🟧"), ("virtual_KR", "🇰🇷"), ("virtual_TR", "🇹🇷"))
-LOG_PAT = re.compile(r"СИГНАЛ|НОВОЕ ПРАВИЛО|КОРЕЯ|ТУРЦИЯ|UPBIT|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
+OWN = (("virtual_D", "🟦"), ("virtual_P", "🟧"), ("virtual_KR", "🇰🇷"), ("virtual_TR", "🇹🇷"), ("virtual_L", "🟩"))
+LOG_PAT = re.compile(r"СИГНАЛ|НОВОЕ ПРАВИЛО|КОРЕЯ|ТУРЦИЯ|РОЗНИЦА|UPBIT|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
                      r"канал недоступен|Binance OK|торговля выключена|Убраны|Started|Stopped|Stopping|Main process exited|Scheduled restart")
 out = []
 
@@ -121,7 +121,7 @@ for key, icon in OWN:
     for t in sorted((state.get(key) or {}).get("trades", []), key=lambda t: t["opened"]):
         res = (f"{short(t.get('reason'))} {fmt(t['closed'], False)} {t.get('pnl_usdt', 0):+.2f} ф{t.get('fund_usdt', 0):+.2f}"
                if t.get("closed") else "открыта")
-        p(f"{icon} {fmt(t['opened'])} {t['sym']} вход {t['entry']:.6g} {t.get('tp_pct', 0):g}/{t.get('sl_pct', 0):g} {res} | {t.get('note', '')}")
+        p(f"{icon} {fmt(t['opened'])} {t['sym']}{' ЛОНГ' if t.get('side') == 'long' else ''} вход {t['entry']:.6g} {t.get('tp_pct', 0):g}/{t.get('sl_pct', 0):g} {res} | {t.get('note', '')}")
 
 # ---------------------------------------------------------------- реальные сделки
 p()
