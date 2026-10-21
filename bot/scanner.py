@@ -107,7 +107,7 @@ def broadcast(state, text, dry):
 WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
-    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*; корейский шорт; турецкий набег; памп без розницы — лонг), /params — параметры сделок, /set <параметр> <число> — изменить "
+    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*; корейский шорт; корейский шорт ⭐ со счётом условий; турецкий набег; памп без розницы — лонг), /params — параметры сделок, /set <параметр> <число> — изменить "
     "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause, fexit), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
@@ -122,7 +122,7 @@ def main_menu(state):
     return kb([
         [("⚙️ Параметры сделок", "params"), ("📊 Позиции на Binance", "positions")],
         [("📒 Журнал сделок", "trades"), ("🔍 Кандидаты в канале", "status")],
-        [("📓📗📘📕📙🟦🟧🇰🇷🇹🇷🟩 Виртуальные журналы", "virtual")],
+        [("📓📗📘📕📙🟦🟧🇰🇷⭐🇹🇷🟩 Виртуальные журналы", "virtual")],
         [pause],
     ])
 
@@ -765,6 +765,40 @@ def _pump_at(k):
     return None
 
 
+def _pump_times(k):
+    """Все пампы в свечах k по тому же правилу, что _pump_at: время закрытия свечи-триггера (первой за сутки)."""
+    c = [float(x[4]) for x in k]; h = [float(x[2]) for x in k]; last = -10**9; out = []
+    for j in range(9, len(k)):
+        if j - last < 96:
+            continue
+        if any(abs(c[i] / c[i - 8] - 1) <= 0.05 and max(h[i + 1:j + 1]) >= c[i] * 1.15 for i in range(max(8, j - 8), j)):
+            last = j; out.append(int(k[j][0]) // 1000 + 900)
+    return out
+
+
+KRS_SCORE_MIN = 3                      # 🇰🇷⭐: сколько из пяти условий должно выполняться
+
+
+def korea_star(s, k, i, T, share, n24, btc24):
+    """Счёт условий для корейского шорта (журнал 🇰🇷⭐, research/s6/ВЫВОДЫ.md): пампов на рынке за сутки ≥ 16 (ажиотаж),
+    BTC за сутки ≥ 0, цена выше максимума 7 дней до базы пампа, покупки тейкеров на фьючерсе в пампе ≤ 51%, доля Кореи ≥ 40%.
+    k — свечи пампа (последняя — триггер), i — индекс базы в k. Возвращает (счёт ≥ KRS_SCORE_MIN, пояснение)."""
+    k7 = _closed_15m(s, T, 700); hi7 = None
+    if k7 and len(k7) >= 673:
+        i7 = len(k7) - (len(k) - i)                                  # та же база в недельном окне
+        hi7 = float(k7[-1][4]) / max(float(x[2]) for x in k7[len(k7) - 673:i7 + 1]) - 1
+    pk = k[i + 1:]; qv = sum(float(x[7]) for x in pk)
+    tbp = sum(float(x[10]) for x in pk) / qv if qv > 0 else None
+    pct = lambda v, f: f.format(v * 100) if v is not None else "нет данных"
+    conds = [("пампов на рынке за сутки", n24 >= 16, str(n24)),
+             ("BTC за сутки", btc24 is not None and btc24 >= 0, pct(btc24, "{:+.1f}%")),
+             ("к максимуму 7 дней", hi7 is not None and hi7 >= 0, pct(hi7, "{:+.1f}%")),
+             ("покупки тейкеров в пампе", tbp is not None and tbp <= 0.51, pct(tbp, "{:.1f}%")),
+             ("доля Кореи", share >= 0.4, pct(share, "{:.0f}%"))]
+    sc = sum(ok for _, ok, _ in conds)
+    return sc >= KRS_SCORE_MIN, f"счёт {sc}/5: " + ", ".join(f"{nm} {v} {'✓' if ok else '✗'}" for nm, ok, v in conds)
+
+
 NR_SPOT_MAX, NR_NORM_MIN, NR_KR_MAX, NR_TR_MAX = 0.12, 0.03, 0.20, 0.10   # лонг «памп без розницы»: доли за час и обычная доля спота
 
 
@@ -811,8 +845,8 @@ def noretail_check(s, coin, T, fut, kr_share, spot):
 def korea_rule(state):
     """Корейский шорт (журнал 🇰🇷, research/mm2/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по всем фьючерсам Binance —
     памп +15% за ≤ 2 ч из покоя; если за последний час Upbit + Bithumb дали ≥ 20% объёма (вместе с фьючерсом Binance) —
-    виртуальный шорт. Тот же памп без розницы (noretail_check) — виртуальный лонг 🟩. Только виртуальные сделки.
-    Возвращает сообщения для чата."""
+    виртуальный шорт; при ≥ 3 из 5 условий (korea_star) — ещё и шорт 🇰🇷⭐ (тейк 7 / стоп 20). Тот же памп без розницы
+    (noretail_check) — виртуальный лонг 🟩. Только виртуальные сделки. Возвращает сообщения для чата."""
     T = int(time.time() // 900 * 900)
     if state.get("kr_last_T") == T or time.time() - T > 600:
         return []
@@ -832,6 +866,12 @@ def korea_rule(state):
             cands.append(s[:-4])
     with ThreadPoolExecutor(8) as ex:
         ks = dict(zip(cands, ex.map(lambda s: _closed_15m(s, T, 481), cands)))   # 5 суток: суточная пауза между пампами — как в бэктесте
+    # пампы рынка за сутки до T (для 🇰🇷⭐): журнал найденных пампов + пампы в свечах кандидатов (если бот перезапускался)
+    plog = [p for p in state.get("pump_log", []) if p[1] >= T - 26 * 3600]
+    seen = {(p[0], p[1]) for p in plog if T - 86400 <= p[1] < T}
+    for s in cands:
+        seen |= {(s, tt) for tt in _pump_times(ks.get(s) or []) if T - 86400 <= tt < T}
+    n24 = len(seen); btc24 = None
     kr = _kr_list(); msgs = []; spot = None
     for s in cands:
         k = ks.get(s)
@@ -840,6 +880,7 @@ def korea_rule(state):
         i = _pump_at(k)
         if i is None:
             continue
+        plog.append([s, T])
         coin = re.sub(r"^(1000000|100000|10000|1000)", "", s)
         c0, c = float(k[i][4]), float(k[-1][4]); hi = max(float(x[2]) for x in k[i + 1:])
         fut = sum(float(x[7]) for x in k[-4:])
@@ -862,6 +903,15 @@ def korea_rule(state):
                 m = trader.virt_open(state, "virtual_KR", s, "KR", note, price=c)
                 if m:
                     msgs.append(m)
+                if btc24 is None:                             # BTC за сутки — один раз за проход (98: текущая незакрытая свеча отбрасывается)
+                    kb = _closed_15m("BTC", T, 98)
+                    btc24 = float(kb[-1][4]) / float(kb[-97][4]) - 1 if kb and len(kb) >= 97 else float("nan")
+                ok, why = korea_star(s, k, i, T, share, n24, btc24 if btc24 == btc24 else None)
+                log("КОРЕЯ⭐", s, why + (" → шорт 🇰🇷⭐" if ok else ""))
+                if ok:
+                    m = trader.virt_open(state, "virtual_KRS", s, "KR⭐", f"{note}; {why}", price=c)
+                    if m:
+                        msgs.append(m)
         if spot is None:                                      # цены спота Binance — один раз за проход, когда есть памп
             px = spot_json("/api/v3/ticker/price")
             spot = {str(x.get("symbol")): x.get("price") for x in px} if isinstance(px, list) else {}
@@ -871,6 +921,7 @@ def korea_rule(state):
             m = trader.virt_open(state, "virtual_L", s, "NR", f"{head}; {why}", price=c)
             if m:
                 msgs.append(m)
+    state["pump_log"] = plog
     return msgs
 
 
