@@ -7,8 +7,10 @@
 Все настройки — через переменные окружения (см. .env.example). Зависимостей нет.
 """
 import bisect
+import gzip
 import html
 import json
+import math
 import os
 import re
 import socket
@@ -306,11 +308,12 @@ ROW = re.compile(r"^([A-Z0-9]+)\s+([\d.]+[KMB]?)\s+([\d.]+[KMB]?)\s+([\d.]+)\s+(
 ROW_ALL = re.compile(r"^([A-Z0-9]+)\s+([\d.]+[KMB]?)\s+([\d.]+[KMB]?)\s+(\S+)\s+(\S+)\s*$")
 
 
-def fetch_posts(lookback_h):
-    """Посты канала за последние lookback_h часов: [{id, ts, rows:{sym:(bor,rep,br)}, rows_all:{sym:(bor,rep,br,chng)}}]."""
+def fetch_posts(lookback_h, max_pages=40):
+    """Посты канала за последние lookback_h часов: [{id, ts, rows:{sym:(bor,rep,br)}, rows_all:{sym:(bor,rep,br,chng)}}].
+    Страница веб-версии канала — около 20 постов; max_pages ограничивает глубину."""
     now = time.time()
     posts, before, seen = [], None, set()
-    for _ in range(40):
+    for _ in range(max_pages):
         url = f"https://t.me/s/{CHANNEL}" + (f"?before={before}" if before else "")
         try:
             page = http(url)
@@ -1185,6 +1188,198 @@ def turkey_rule(state):
     return msgs
 
 
+BF_LOOK_D, BF_TOP, BF_KEEP = 7, 10, 5                  # 🏦 фактор займа: окно постов (суток), топ по постам, сколько самых волатильных шортим
+BF_VOL_MIN, BF_FUND_MIN, BF_AGE_D = 10e6, -0.001, 30   # объём фьючерса за 7 суток, $/сут; фандинг за 8 ч (доля); возраст фьючерса, суток
+BF_HOUR, BF_LATE_H, BF_GAP_H = 1, 3, 2                 # проверка в 01:00 UTC, не позже 04:00; пауза в журнале постов > 2 ч — догрузка канала
+BF_FILE = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "margin_posts.json")
+_bf_log = None                                         # {id поста: [время, "МОНЕТА МОНЕТА …"]} за 8 суток
+
+
+def bf_record(posts):
+    """Дописывает посты маржинального канала (все монеты поста) в журнал 🏦 — файл margin_posts.json рядом с state.json;
+    хранит 8 суток."""
+    global _bf_log
+    if _bf_log is None:
+        try:
+            with open(BF_FILE) as f:
+                _bf_log = {int(k): v for k, v in json.load(f).items()}
+        except Exception:
+            _bf_log = {}
+    changed = False
+    for p in posts:
+        if p["id"] not in _bf_log:
+            _bf_log[p["id"]] = [int(p["ts"]), " ".join(sorted(p.get("rows_all") or {}))]
+            changed = True
+    old = time.time() - (BF_LOOK_D + 1) * 86400
+    for k in [k for k, v in _bf_log.items() if v[0] < old]:
+        del _bf_log[k]
+        changed = True
+    if changed:
+        try:
+            with open(BF_FILE + ".tmp", "w") as f:
+                json.dump(_bf_log, f, separators=(",", ":"))
+            os.replace(BF_FILE + ".tmp", BF_FILE)
+        except OSError as e:
+            log("ФАКТОР ЗАЙМА", "журнал постов не записан:", e)
+
+
+def bf_pick(cnt, T, fut, kl, fund):
+    """Выбор 🏦 (как в research/s10/journal_sim2.py): монеты по убыванию числа постов за 7 суток; фьючерс старше 30 суток,
+    объём за 7 суток до T ≥ 10 млн $/сут, фандинг не дешевле −0,1% за 8 ч → первые 10; из них 5 самых волатильных
+    (стандартное отклонение 15-мин лог-доходностей за 7 суток × √96). fut(монета) → (фьючерс, время запуска) или None;
+    kl(фьючерс) → 673 закрытые к T 15-мин свечи (меньше — фьючерс моложе) или None при сбое; fund(фьючерс) → фандинг в час
+    или None. Возвращает (топ, выбор, сбои): [(монета, фьючерс, постов, объём $/сут, волатильность, фандинг за 8 ч, цена)]."""
+    top, miss = [], []
+    order = sorted(cnt, key=lambda c: (-cnt[c], c))
+    with ThreadPoolExecutor(8) as ex:
+        for i in range(0, len(order), 16):
+            cand = []
+            for c in order[i:i + 16]:
+                f = fut(c)
+                if f and f[1] <= T - BF_AGE_D * 86400:       # нет бессрочного фьючерса или он моложе 30 суток — мимо
+                    cand.append((c, f[0]))
+            for (c, fs), k in zip(cand, ex.map(lambda x: kl(x[1]), cand)):
+                if k is None:
+                    miss.append(fs)
+                    continue
+                if len(k) < 673:
+                    continue
+                v7 = sum(float(x[7]) for x in k[-672:]) / 7
+                if v7 < BF_VOL_MIN:
+                    continue
+                fh = fund(fs)
+                f8 = fh * 8 if fh is not None else None
+                if f8 is not None and f8 < BF_FUND_MIN:
+                    continue
+                cl = [float(x[4]) for x in k[-673:]]
+                lr = [math.log(b / a) for a, b in zip(cl, cl[1:])]
+                m = sum(lr) / len(lr)
+                top.append((c, fs, cnt[c], v7, math.sqrt(sum((x - m) ** 2 for x in lr) / len(lr) * 96), f8, cl[-1]))
+                if len(top) == BF_TOP:
+                    break
+            if len(top) == BF_TOP:
+                break
+    return top, sorted(top, key=lambda x: -x[4])[:BF_KEEP], miss
+
+
+def borrow_factor_rule(state):
+    """Фактор займа (журнал 🏦, research/s10/ВЫВОДЫ.md): раз в сутки, в первый проход после 01:00 UTC (если бот лежал — до 04:00).
+    Для каждой монеты — сколько постов маржинального канала за 7 суток до 00:00 UTC её упоминали (журнал margin_posts.json;
+    если в нём пауза дольше 2 ч — догружаем 7 суток канала). Среди фьючерсов Binance старше 30 суток с объёмом за 7 суток
+    ≥ 10 млн $/сут и фандингом не дешевле −0,1% за 8 ч — 10 монет с наибольшим числом постов, из них 5 самых волатильных →
+    виртуальный шорт на 7 суток без тейка, плечо ×1. Если Binance не отдал свечи — повтор через 5 мин (до 4 попыток).
+    Возвращает сообщения для чата."""
+    now = time.time(); day0 = int(now // 86400 * 86400); T = day0 + BF_HOUR * 3600
+    day = datetime.fromtimestamp(day0, timezone.utc).strftime("%d.%m")
+    if now < T or state.get("bf_day") == day0:
+        return []
+    if now > T + BF_LATE_H * 3600:
+        state["bf_day"] = day0
+        log("ФАКТОР ЗАЙМА", f"{day} не проверен: проход начался в {datetime.fromtimestamp(now, timezone.utc):%H:%M} UTC, "
+            f"позже {BF_HOUR + BF_LATE_H:02d}:00")
+        return []
+    if now - state.get("bf_try", 0) < 300:
+        return []
+    state["bf_try"] = now
+    tries = state["bf_tries"] = state.get("bf_tries", 0) + 1 if state.get("bf_tries_day") == day0 else 1
+    state["bf_tries_day"] = day0
+    last = tries >= 4 or now > T + BF_LATE_H * 3600 - 600       # последняя попытка — считаем по тому, что есть
+    lo = day0 - BF_LOOK_D * 86400
+    bf_record([])
+
+    def coverage():
+        ts = sorted(v[0] for v in _bf_log.values() if lo <= v[0] < day0)
+        return ts, max(b - a for a, b in zip([lo] + ts, ts + [day0]))
+    ts, gap = coverage()
+    if gap > BF_GAP_H * 3600:
+        bf_record(fetch_posts((now - lo) / 3600 + 1, max_pages=250))
+        ts, gap = coverage()
+        if gap > BF_GAP_H * 3600 and not last:
+            log("ФАКТОР ЗАЙМА", f"{day}: в постах канала за 7 суток пауза {gap / 3600:.1f} ч — повтор через 5 мин")
+            return []
+    cnt = {}
+    for t0, coins in _bf_log.values():
+        if lo <= t0 < day0:
+            for c in coins.split():
+                cnt[c] = cnt.get(c, 0) + 1
+    trader.contract("BTC")                                     # загружает список бессрочных контрактов USDT
+    if not ts or not trader._contracts:
+        if last:
+            state["bf_day"] = day0
+        log("ФАКТОР ЗАЙМА", f"{day}: " + ("нет постов канала за 7 суток" if not ts else "Binance не отдал список фьючерсов")
+            + ("" if last else " — повтор через 5 мин"))
+        return []
+
+    def fut(c):
+        fs = _fut_sym(c)
+        return (fs, (trader.contract(fs) or {}).get("onboard", 0)) if fs else None
+
+    def kl(fs):
+        j = http_json(f"https://fapi.binance.com/fapi/v1/klines?symbol={fs}USDT&interval=15m&endTime={T * 1000 - 1}&limit=673", 20)
+        if not isinstance(j, list) or (j and int(j[-1][0]) // 1000 != T - 900):
+            return None
+        return j
+    top, keep, miss = bf_pick(cnt, T, fut, kl, trader.funding_hourly)
+    if miss and not last:
+        log("ФАКТОР ЗАЙМА", f"{day}: Binance не отдал свечи {', '.join(miss)} — повтор через 5 мин")
+        return []
+    state["bf_day"] = day0
+    n = len(ts); rank = {c: i + 1 for i, c in enumerate(sorted(cnt, key=lambda c: (-cnt[c], c)))}
+    log("ФАКТОР ЗАЙМА", f"{day}: постов за 7 суток {n}, самая длинная пауза {gap / 3600:.1f} ч; топ-10 (доля постов / волатильность "
+        "за сутки): " + ", ".join(f"{x[1]} {x[2] / n * 100:.0f}%/{x[4] * 100:.1f}%" for x in top)
+        + (f"; без свечей Binance: {', '.join(miss)}" if miss else ""))
+    msgs = []
+    for c, fs, k, v7, vola, f8, px in keep:
+        note = (f"в канале {k / n * 100:.0f}% постов за 7 суток ({k} из {n}, место {rank[c]}), объём {v7 / 1e6:.0f} млн $/сут, "
+                f"волатильность {vola * 100:.1f}%/сут, фандинг " + (f"{f8 * 100:+.3f}%/8 ч" if f8 is not None else "нет данных"))
+        m = trader.virt_open(state, "virtual_BF", fs, "BF", note, price=px)
+        log("ФАКТОР ЗАЙМА", fs, note + ("" if m else " — уже открыта"))
+        if m:
+            msgs.append(m)
+    if not msgs:
+        return []
+    return [f"🏦 Фактор займа на {day}: 5 самых волатильных из 10 монет, чаще всех бывших в маржинальном канале за 7 суток\n"
+            + "\n".join(msgs)]
+
+
+MR_URL = "https://www.binance.com/bapi/margin/v1/public/margin/vip/spec/list-all"
+MR_DIR = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "margin_rates")
+
+
+def margin_rates_watch(state):
+    """Сборщик ставок маржи Binance (research/s10/ВЫВОДЫ.md): раз в час, в первый проход после HH:02 UTC — публичная
+    VIP-спецификация маржи (без ключа): дневная ставка и лимит займа VIP 0 по ~490 активам → строки «час,актив,ставка,лимит»
+    в margin_rates/ГГГГ-ММ.csv.gz рядом с state.json. Только запись для будущей проверки «выкачки пула»: сделок и сообщений
+    в чат нет. Сбой — в журнал службы не чаще раза в 6 ч; раз в сутки — сводка «СТАВКИ» за прошлые сутки."""
+    now = time.time(); H = int(now // 3600 * 3600)
+    if state.get("mr_H") == H or now - H < 120 or now - state.get("mr_try", 0) < 300:
+        return
+    state["mr_try"] = now
+    rows, err = [], None
+    try:
+        for a in json.loads(http(MR_URL, timeout=20)).get("data") or []:
+            spec = next((x for x in a.get("specs") or [] if str(x.get("vipLevel")) == "0"), None)
+            if a.get("assetName") and spec:
+                rows.append(f"{H},{a['assetName']},{spec.get('dailyInterestRate')},{spec.get('borrowLimit')}")
+    except Exception as e:
+        err = repr(e)
+    if len(rows) < 50:
+        if now - state.get("mr_err", 0) >= 6 * 3600:
+            state["mr_err"] = now
+            log("СТАВКИ", "снимок ставок маржи не получен:", err or f"активов в ответе {len(rows)}")
+        return
+    os.makedirs(MR_DIR, exist_ok=True)
+    fn = os.path.join(MR_DIR, datetime.fromtimestamp(H, timezone.utc).strftime("%Y-%m") + ".csv.gz")
+    with gzip.open(fn, "at", encoding="utf-8") as f:            # в списке есть активы с нелатинскими именами
+        f.write("\n".join(rows) + "\n")
+    state["mr_H"] = H
+    if state.get("mr_day") != H // 86400:
+        if state.get("mr_day") is not None:
+            log("СТАВКИ", f"за прошлые сутки снимков {state.get('mr_cnt', 0)} из 24; сейчас активов {len(rows)}, файл {fn}")
+        state["mr_day"], state["mr_cnt"] = H // 86400, 0
+    state["mr_cnt"] = state.get("mr_cnt", 0) + 1
+
+
 UPBIT_FLAGS = ("warning", "PRICE_FLUCTUATIONS", "TRADING_VOLUME_SOARING", "DEPOSIT_AMOUNT_SOARING",
                "GLOBAL_PRICE_DIFFERENCES", "CONCENTRATION_OF_SMALL_ACCOUNTS")   # warning — «предупреждение», остальные — «внимание»
 
@@ -1280,6 +1475,10 @@ def followups(state, dry):
 
 def scan(state, dry):
     posts = fetch_posts(max(LOOKBACK_H, LOOKBACK_RP_H) if repay_due(state) else LOOKBACK_H)
+    try:
+        bf_record(posts)                                    # журнал постов для 🏦 (фактор займа)
+    except Exception as e:
+        log("ошибка журнала постов:", repr(e))
     runs = channel_runs(posts)
     log(f"постов {len(posts)}, монет в канале сейчас {len(runs)}, "
         f"висят ≥{MIN_RUN_H:g}ч: {sum(1 for r in runs.values() if r['run_h'] >= MIN_RUN_H)}")
@@ -1351,6 +1550,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка турецкого правила:", repr(e))
+    try:
+        for msg in borrow_factor_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила фактора займа:", repr(e))
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
@@ -1388,6 +1592,10 @@ def cycle(dry, state=None):
         upbit_flags_watch(state)
     except Exception as e:
         log("ошибка флагов Upbit:", repr(e))
+    try:
+        margin_rates_watch(state)
+    except Exception as e:
+        log("ошибка сборщика ставок:", repr(e))
     try:
         for msg in trader.manage(state):
             log(msg)

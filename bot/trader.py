@@ -163,6 +163,7 @@ def contract(sym):
                     "stepSize": float(f.get("MARKET_LOT_SIZE", {}).get("stepSize", 0) or f.get("LOT_SIZE", {}).get("stepSize", 0) or 0),
                     "maxQty": float(f.get("MARKET_LOT_SIZE", {}).get("maxQty", 0) or 0),
                     "minNotional": float(f.get("MIN_NOTIONAL", {}).get("notional", 0) or 0),
+                    "onboard": int(c.get("onboardDate") or 0) // 1000,          # когда фьючерс запущен, unix-время
                 }
     return _contracts.get(f"{sym}USDT")
 
@@ -874,6 +875,13 @@ VIRTUALS = {
     "virtual_RP": {"title": "отдача займа: монета в маржинальном канале ≥ 6 ч, отдача (REP) за час резко (первый всплеск за час) "
                             "выросла в 2+ раза и на 20+ тыс. $, цена за сутки ±10% и больше; тейк 10 / стоп 25",
                    "icon": "↩️", "params": lambda fh: (10.0, 25.0), "own": True, "cooldown_h": 24, "pause_h": 0.0},
+    # фактор займа (research/s10/ВЫВОДЫ.md, бэктест за 19 месяцев): раз в сутки в 01:00 UTC (scanner.borrow_factor_rule).
+    # Плечо ×1: стоп +100% — это ликвидация при ×1; рядом с итогом — тот же итог с лонгом BTC на ту же сумму (хедж)
+    "virtual_BF": {"title": "фактор займа: каждый день в 01:00 UTC — 10 монет, чаще всех бывших в маржинальном канале за 7 суток "
+                            "(фьючерс старше 30 суток, объём ≥ 10 млн $/сут, фандинг не дешевле −0,1%/8 ч), из них 5 самых "
+                            "волатильных; шорт на 7 суток без тейка, стоп +100%, плечо ×1",
+                   "icon": "🏦", "params": lambda fh: (None, 100.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
+                   "hold_h": 168.0, "lev": 1, "hedge": "BTC"},
 }
 VIRT = {"hold_h": 48.0, "pause_h": 48.0, "start_balance": 20.0}   # стартовый капитал журнала, USDT
 
@@ -975,14 +983,19 @@ def virt_open(state, key, sym, rule, note, price=None):
         return None
     fh = funding_hourly(sym); tp, sl = cfg["params"](fh)
     sgn = -1 if long else 1                                  # стоп выше входа у шорта, ниже — у лонга
-    t = {"sym": sym, "opened": now, "entry": px, "rule": rule, "margin": MARGIN_USDT, "lev": LEVERAGE, "bal": True,
+    t = {"sym": sym, "opened": now, "entry": px, "rule": rule, "margin": MARGIN_USDT, "lev": cfg.get("lev", LEVERAGE), "bal": True,
          "sl": px * (1 + sgn * sl / 100), "tp": px * (1 - sgn * tp / 100) if tp else None, "tp_pct": tp, "sl_pct": sl, "fh_entry": fh,
          "note": note, "hold_h": cfg.get("hold_h", VIRT["hold_h"])}
     if long:
         t["side"] = "long"
+    if cfg.get("hedge"):                                     # для отчёта: лонг монеты-хеджа на ту же сумму и тот же срок
+        hp = mark_price(cfg["hedge"])
+        if hp:
+            t["hedge_sym"], t["hedge_entry"] = cfg["hedge"], hp
     v["trades"].append(t)
-    return (f"{cfg['icon']} сигнал {rule}: виртуально {'ЛОНГ' if long else 'шорт'} {sym} по {px:.6g}, тейк {tp:g}% / стоп {sl:g}%\n"
-            f"{cfg['icon']} {note}")
+    return (f"{cfg['icon']} сигнал {rule}: виртуально {'ЛОНГ' if long else 'шорт'} {sym} по {px:.6g}, "
+            + (f"тейк {tp:g}%" if tp else "без тейка") + f" / стоп {sl:g}%" + (f", плечо ×{t['lev']}" if "lev" in cfg else "")
+            + f"\n{cfg['icon']} {note}")
 
 
 def _virt_close(v, t, px, reason, icon):
@@ -995,6 +1008,14 @@ def _virt_close(v, t, px, reason, icon):
     t["pnl_pct"] = round(t["pnl_usdt"] / t["margin"] * 100, 2)
     mark = "✅" if t["pnl_usdt"] > 0 else "❌"
     fnote = f", фандинг {t['fund_usdt']:+.2f}" if fr is not None else ", фандинг: нет данных"
+    hnote = ""
+    if t.get("hedge_entry"):                     # хедж для отчёта: лонг той же суммы на тот же срок, с фандингом и комиссией
+        hp = mark_price(t["hedge_sym"]); hfr = funding_paid(t["hedge_sym"], t["opened"], t["closed"])
+        if hp:
+            t["hedge_exit"] = hp
+            t["hedge_usdt"] = round(notional * (hp / t["hedge_entry"] - 1 - (hfr or 0.0) - 0.0005 * 2), 4)
+            hnote = (f"; с хеджем {t['hedge_sym']} ({t['hedge_entry']:.6g} → {hp:.6g}) "
+                     f"{t['pnl_usdt'] + t['hedge_usdt']:+.2f} USDT")
     if t.get("bal"):
         was = v["balance"]; v["balance"] = round(was + t["pnl_usdt"], 4)
         start = VIRT["start_balance"]
@@ -1004,7 +1025,7 @@ def _virt_close(v, t, px, reason, icon):
         bnote = f"\n{icon} сделка открыта до запуска баланса — в баланс не входит (баланс {v['balance']:.2f} USDT)"
     return (f"{icon} {mark} виртуально закрыт {'ЛОНГ' if long else 'шорт'} {t['sym']}: {reason}, вход {t['entry']:.6g} → выход {px:.6g}, "
             f"цена {pct:+.1f}% к марже{fnote} → итого {t['pnl_usdt']:+.2f} USDT, держали {(t['closed'] - t['opened']) / 3600:.1f} ч"
-            + bnote)
+            + hnote + bnote)
 
 
 def virt_manage(state):
@@ -1045,6 +1066,7 @@ def _virt_block(state, key, cfg):
              + f"С {time.strftime('%d.%m %H:%M', time.gmtime(v['started']))} UTC.",
              f"  баланс {v['balance']:.2f} USDT (старт {VIRT['start_balance']:g} с {time.strftime('%d.%m %H:%M', time.gmtime(v['bal_since']))} UTC, "
              f"{v['balance'] - VIRT['start_balance']:+.2f}; сделок в балансе {sum(1 for t in v['trades'] if t.get('bal') and t.get('closed'))})"]
+    hpx = {}
     for t in op:
         sgn = -1 if t.get("side") == "long" else 1                 # лонг: прибыль от роста цены, фандинг с обратным знаком
         px = mark_price(t["sym"]); cur = f", сейчас {sgn * (1 - px / t['entry']) * 100 * t['lev']:+.1f}% к марже" if px else ""
@@ -1053,12 +1075,21 @@ def _virt_block(state, key, cfg):
         tpn = f"тейк {t['tp_pct']:g}%" if t.get("tp_pct") else "без тейка"
         old = "" if t.get("bal") else " — вне баланса"
         side = " (лонг)" if sgn < 0 else ""
-        lines.append(f"  открыта {t['sym']}{side} по {t['entry']:.6g} ({tpn}, стоп {t.get('sl_pct', 25):g}%), {(now - t['opened']) / 3600:.1f} ч{cur}{fund}{old}")
+        hedge = ""
+        if t.get("hedge_entry"):
+            if t["hedge_sym"] not in hpx:
+                hpx[t["hedge_sym"]] = mark_price(t["hedge_sym"])
+            hp = hpx[t["hedge_sym"]]
+            hedge = f", хедж {t['hedge_sym']} {(hp / t['hedge_entry'] - 1) * 100 * t['lev']:+.1f}%" if hp else ""
+        lines.append(f"  открыта {t['sym']}{side} по {t['entry']:.6g} ({tpn}, стоп {t.get('sl_pct', 25):g}%), {(now - t['opened']) / 3600:.1f} ч{cur}{fund}{hedge}{old}")
     if cl:
         tot = sum(t["pnl_usdt"] for t in cl); ftot = sum(t.get("fund_usdt", 0) for t in cl)
         cnt = {r: sum(1 for t in cl if t["reason"].startswith(r)) for r in ("тейк", "стоп", "выход")}
+        hd = [t for t in cl if "hedge_usdt" in t]
+        hsum = (f"; с хеджем {hd[0]['hedge_sym']} {sum(t['pnl_usdt'] + t['hedge_usdt'] for t in hd):+.2f} USDT"
+                + (f" (по {len(hd)} сделкам)" if len(hd) < len(cl) else "")) if hd else ""
         lines.append(f"  закрытых {len(cl)}: тейков {cnt['тейк']}, стопов {cnt['стоп']}, по времени {cnt['выход']}; "
-                     f"итого {tot:+.2f} USDT ({tot / len(cl):+.3f} на сделку), из них фандинг {ftot:+.2f}")
+                     f"итого {tot:+.2f} USDT ({tot / len(cl):+.3f} на сделку), из них фандинг {ftot:+.2f}{hsum}")
         for t in cl[-6:]:
             lines.append(f"    {time.strftime('%d.%m', time.gmtime(t['closed']))} {t['sym']}: {t['reason']}, {t['pnl_usdt']:+.2f}")
     elif not op:
@@ -1067,7 +1098,8 @@ def _virt_block(state, key, cfg):
 
 
 def virt_text(state):
-    lines = ["Виртуальные журналы (маржа и плечо как у реальных, фандинг учтён):"]; starts = []
+    own_lev = "".join(f", у {c['icon']} плечо ×{c['lev']}" for c in VIRTUALS.values() if "lev" in c)
+    lines = [f"Виртуальные журналы (маржа и плечо как у реальных{own_lev}; фандинг учтён):"]; starts = []
     for key, cfg in VIRTUALS.items():
         bl, st = _virt_block(state, key, cfg); lines += [""] + bl; starts.append((st, cfg["icon"]))
     real_lines = []

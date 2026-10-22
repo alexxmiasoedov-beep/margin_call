@@ -22,8 +22,8 @@ SAFE = ("CHANNEL", "MIN_RUN_H", "GAP_MIN", "PUMP_MIN", "PUMP_MAX", "COOLDOWN_H",
         "POLL_SEC", "STATE_FILE")                     # только настройки правил — ключи и токен не печатаются
 JOURNALS = (("virtual", "📓"), ("virtual_fund", "📗"), ("virtual_1525", "📘"), ("virtual_1520", "📕"), ("virtual_620", "📙"))
 OWN = (("virtual_D", "🟦"), ("virtual_P", "🟧"), ("virtual_KR", "🇰🇷"), ("virtual_KRS", "🇰🇷⭐"), ("virtual_TR", "🇹🇷"), ("virtual_L", "🟩"),
-       ("virtual_RP", "↩️"))
-LOG_PAT = re.compile(r"СИГНАЛ|НОВОЕ ПРАВИЛО|КОРЕЯ|ТУРЦИЯ|РОЗНИЦА|ОТДАЧА|UPBIT|DNS|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
+       ("virtual_RP", "↩️"), ("virtual_BF", "🏦"))
+LOG_PAT = re.compile(r"СИГНАЛ|НОВОЕ ПРАВИЛО|КОРЕЯ|ТУРЦИЯ|РОЗНИЦА|ОТДАЧА|ФАКТОР ЗАЙМА|СТАВКИ|UPBIT|DNS|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
                      r"канал недоступен|Binance OK|торговля выключена|Убраны|Started|Stopped|Stopping|Main process exited|Scheduled restart")
 out = []
 SECRET = re.compile(r"\d{8,10}:[A-Za-z0-9_-]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|(?<=://)[^/@\s]+(?=@)")   # токены бота, GitHub, логин в URL
@@ -91,7 +91,7 @@ state_path = env.get("STATE_FILE") or "state.json"
 state_path = state_path if os.path.isabs(state_path) else os.path.join(bot, state_path)
 state = json.load(open(state_path))
 commit = run(["git", "-C", bot, "log", "-1", "--format=%h %cd", "--date=format:%d.%m %H:%M"], 15).strip()
-p(f"EXPORT-SIG v2 | папка {bot} | код {commit or '?'} | сейчас {fmt(datetime.datetime.now().timestamp())} UTC (всё время ниже — UTC)")
+p(f"EXPORT-SIG v3 | папка {bot} | код {commit or '?'} | сейчас {fmt(datetime.datetime.now().timestamp())} UTC (всё время ниже — UTC)")
 p("настройки: " + ", ".join(f"{k}={env[k]}" for k in SAFE if k in env))
 p("изменены из чата (/set): " + json.dumps(state.get("params") or {}, ensure_ascii=False))
 
@@ -164,8 +164,42 @@ for (op, sym), d in sorted(groups.items()):
 for key, icon in OWN:
     for t in sorted((state.get(key) or {}).get("trades", []), key=lambda t: t["opened"]):
         res = (f"{short(t.get('reason'))} {fmt(t['closed'], False)} {t.get('pnl_usdt', 0):+.2f} ф{t.get('fund_usdt', 0):+.2f}"
-               if t.get("closed") else "открыта")
-        p(f"{icon} {fmt(t['opened'])} {t['sym']}{' ЛОНГ' if t.get('side') == 'long' else ''} вход {t['entry']:.6g} {t.get('tp_pct', 0):g}/{t.get('sl_pct', 0):g} {res} | {t.get('note', '')}")
+               + (f" хедж {t['hedge_usdt']:+.2f}" if "hedge_usdt" in t else "") if t.get("closed") else "открыта")
+        p(f"{icon} {fmt(t['opened'])} {t['sym']}{' ЛОНГ' if t.get('side') == 'long' else ''} вход {t['entry']:.6g} "
+          f"{t.get('tp_pct') or 0:g}/{t.get('sl_pct') or 0:g} ×{t.get('lev', '?')} {res} | {t.get('note', '')}")
+
+# ---------------------------------------------------------------- 🏦: журнал постов канала и сборщик ставок маржи
+p()
+p("# ФАКТОР ЗАЙМА И СТАВКИ МАРЖИ")
+sdir = os.path.dirname(state_path)
+try:
+    posts = json.load(open(os.path.join(sdir, "margin_posts.json")))
+    ts = sorted(v[0] for v in posts.values())
+    gap = max((b - a for a, b in zip(ts, ts[1:])), default=0)
+    p(f"журнал постов канала: {len(ts)} постов, {fmt(ts[0], False)} — {fmt(ts[-1], False)}, самая длинная пауза {gap / 3600:.1f} ч"
+      if ts else "журнал постов канала пуст")
+except (OSError, ValueError) as e:
+    p(f"журнал постов канала не прочитан: {e!r}")
+p(f"🏦 последний день проверки: {fmt(state.get('bf_day'), False)}, попыток в тот день {state.get('bf_tries', 0)}")
+try:
+    import gzip
+    rdir = os.path.join(sdir, "margin_rates")
+    for fn in sorted(os.listdir(rdir)):
+        hours, assets, last = set(), set(), 0
+        with gzip.open(os.path.join(rdir, fn), "rt", encoding="utf-8", errors="replace") as f:
+            for ln in f:
+                h, a = ln.split(",", 2)[:2]
+                h = int(h); hours.add(h)
+                if h > last:
+                    last, assets = h, set()
+                if h == last:
+                    assets.add(a)
+        p(f"ставки {fn}: {os.path.getsize(os.path.join(rdir, fn)) // 1024} КБ, снимков {len(hours)}, "
+          f"{fmt(min(hours), False)} — {fmt(last, False)}, активов в последнем {len(assets)}")
+except FileNotFoundError:
+    p("ставки маржи: файлов пока нет")
+except Exception as e:
+    p(f"ставки маржи: не прочитаны ({e!r})")
 
 # ---------------------------------------------------------------- реальные сделки
 p()
