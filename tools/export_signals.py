@@ -89,9 +89,50 @@ state_path = env.get("STATE_FILE") or "state.json"
 state_path = state_path if os.path.isabs(state_path) else os.path.join(bot, state_path)
 state = json.load(open(state_path))
 commit = run(["git", "-C", bot, "log", "-1", "--format=%h %cd", "--date=format:%d.%m %H:%M"], 15).strip()
-p(f"EXPORT-SIG v1 | папка {bot} | код {commit or '?'} | сейчас {fmt(datetime.datetime.now().timestamp())} UTC (всё время ниже — UTC)")
+p(f"EXPORT-SIG v2 | папка {bot} | код {commit or '?'} | сейчас {fmt(datetime.datetime.now().timestamp())} UTC (всё время ниже — UTC)")
 p("настройки: " + ", ".join(f"{k}={env[k]}" for k in SAFE if k in env))
 p("изменены из чата (/set): " + json.dumps(state.get("params") or {}, ensure_ascii=False))
+
+# ---------------------------------------------------------------- версия кода и автообновление
+p()
+p("# ВЕРСИЯ И АВТООБНОВЛЕНИЕ")
+repo = os.path.dirname(bot)
+user_sc = subprocess.run(["systemctl", "--user", "cat", "margin-scanner"], capture_output=True).returncode == 0
+SC = ["systemctl", "--user"] if user_sc else ["systemctl"]
+p("код в папке: " + run(["git", "-C", repo, "log", "-1", "--format=%h %cd %s", "--date=format:%d.%m %H:%M"], 15).strip()[:120])
+p("последний main, загруженный сервером: " + run(["git", "-C", repo, "log", "-1", "--format=%h %cd", "--date=format:%d.%m %H:%M",
+                                                  "origin/main"], 15).strip())
+dirty = run(["git", "-C", repo, "status", "--porcelain", "--", "bot", "tools"], 15).split("\n")
+p("локальные правки в bot/ и tools/: " + (", ".join(x.strip() for x in dirty if x.strip()) or "нет"))
+p(f"scanner.py изменён {fmt(os.path.getmtime(os.path.join(bot, 'scanner.py')))}, trader.py — {fmt(os.path.getmtime(os.path.join(bot, 'trader.py')))}")
+for unit, props in (("margin-scanner", "ActiveState,SubState,ActiveEnterTimestamp,NRestarts"),
+                    ("margin-autoupdate.timer", "ActiveState,LastTriggerUSec,NextElapseUSecRealtime"),
+                    ("margin-autoupdate.service", "Result,ExecMainStatus,ExecMainExitTimestamp")):
+    p(f"{unit} ({' '.join(SC)}): " + "; ".join(x for x in run(SC + ["show", unit, "-p", props], 15).splitlines() if x.strip()))
+p("linger: " + run(["loginctl", "show-user", os.environ.get("USER", ""), "-p", "Linger"], 15).strip())
+try:                                                 # какие журналы есть в коде бота (trader.VIRTUALS), без импорта модуля
+    import ast
+    tree = ast.parse(open(os.path.join(bot, "trader.py")).read())
+    vk = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "VIRTUALS" for t in node.targets) and isinstance(node.value, ast.Dict):
+            for k, v in zip(node.value.keys, node.value.values):
+                icon = next((vv.value for kk, vv in zip(v.keys, v.values) if getattr(kk, "value", "") == "icon"), "?")
+                vk.append(f"{icon} {k.value}")
+    p("журналы в коде бота: " + ", ".join(vk))
+except Exception as e:
+    p(f"журналы в коде бота: trader.py не прочитан ({e!r})")
+since3 = datetime.datetime.fromtimestamp(time.time() - 3 * 86400, datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+au = ""
+for cmd in (["journalctl", "--user", "-u", "margin-autoupdate"], ["journalctl", "--user-unit", "margin-autoupdate"],
+            ["journalctl", "-u", "margin-autoupdate"]):
+    au = run(["timeout", "40"] + cmd + ["--since", since3, "--utc", "-o", "short-iso", "--no-pager", "-q"], 50)
+    if au.strip():
+        break
+au = [ln for ln in au.splitlines() if re.search(r"autoupdate:|Failed|failed|error|ошибк|fatal|Permission", ln)]
+p(f"журнал автообновления за 3 суток (строк с итогом или ошибкой: {len(au)}):")
+for ln in au[-30:]:
+    p("  " + ln[:300])
 
 # ---------------------------------------------------------------- виртуальные журналы: одна строка на сигнал
 p()
