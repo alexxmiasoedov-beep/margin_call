@@ -11,6 +11,7 @@ import html
 import json
 import os
 import re
+import socket
 import sys
 import time
 import urllib.parse
@@ -35,6 +36,37 @@ UA = "Mozilla/5.0 (margin-call scanner)"
 
 def log(*a):
     print(datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), *a, flush=True)
+
+
+# ---------------------------------------------------------------- DNS
+# DNS на сервере временами не отвечает («Temporary failure in name resolution»), и каждый такой запрос висит секунды.
+# Адреса хостов храним 10 мин (на все запросы процесса, и scanner, и trader); если DNS не ответил — берём последний
+# рабочий адрес и спрашиваем DNS снова через минуту.
+DNS_TTL, DNS_RETRY = 600, 60
+_dns_cache, _dns_logged = {}, {}
+_getaddrinfo = socket.getaddrinfo
+
+
+def _cached_getaddrinfo(host, port, *args, **kw):
+    key = (host, port, args, tuple(sorted(kw.items())))
+    hit = _dns_cache.get(key); now = time.time()
+    if hit and now < hit[0]:
+        return hit[1]
+    try:
+        res = _getaddrinfo(host, port, *args, **kw)
+    except socket.gaierror as e:
+        if not hit:
+            raise
+        _dns_cache[key] = (now + DNS_RETRY, hit[1])
+        if now - _dns_logged.get(host, 0) >= DNS_TTL:              # в журнал — не чаще раза в 10 мин на хост
+            _dns_logged[host] = now
+            log(f"DNS не ответил для {host} ({e}) — беру прежний адрес")
+        return hit[1]
+    _dns_cache[key] = (now + DNS_TTL, res)
+    return res
+
+
+socket.getaddrinfo = _cached_getaddrinfo
 
 
 def http(url, data=None, timeout=30):
@@ -669,26 +701,58 @@ def _closed_15m(sym, T, n=99):
     return k if k and int(k[-1][0]) // 1000 + 900 == T else None
 
 
+_skip_why = {}   # 15-мин правило → почему последняя свеча ещё не проверена (сбой ключевых данных)
+
+
+def candle_due(state, key, name):
+    """Время закрытия T свечи, которую 15-мин правило (отметка state[key]) ещё не проверило, если с закрытия прошло ≤ 10 мин;
+    иначе None. Свеча, не проверенная за 10 мин, — одна строка в журнал службы: сбой данных или поздний проход."""
+    T = int(time.time() // 900 * 900)
+    if state.get(key) == T:
+        return None
+    if time.time() - T <= 600:
+        return T
+    if state.get(key + "_skip") != T:
+        state[key + "_skip"] = T
+        log(name, f"свеча {datetime.fromtimestamp(T, timezone.utc):%d.%m %H:%M} не проверена: "
+            + _skip_why.pop(key, f"проход начался через {(time.time() - T) / 60:.0f} мин после закрытия"))
+    return None
+
+
+def candle_retry(key, why):
+    """Ключевые данные свечи не получены: свеча не отмечается, правило повторит её на следующем проходе (до 10 мин)."""
+    _skip_why[key] = why
+    return []
+
+
+def candle_done(state, key, T):
+    state[key] = T
+    _skip_why.pop(key, None)
+
+
 def new_rules(state, posts):
     """Правила D* и P* (журналы 🟦 🟧, research/futures/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по монетам,
     которые были в постах канала за эту свечу. Только виртуальные сделки. Возвращает сообщения для чата."""
-    T = int(time.time() // 900 * 900)
-    if state.get("nr_last_T") == T or time.time() - T > 600:
+    T = candle_due(state, "nr_last_T", "НОВОЕ ПРАВИЛО")
+    if T is None:
         return []
-    state["nr_last_T"] = T
     gap = GAP_MIN * 60; in_bar = {}
     for p in posts:                                            # посты — от новых к старым
         if T - 900 <= p["ts"] < T:
             for s in p["rows"]:
                 in_bar.setdefault(s, p)                        # последний пост с монетой внутри свечи
     if not in_bar:
-        return []
+        return candle_retry("nr_last_T", "нет постов канала за свечу")
     b = _closed_15m("BTC", T)
     btc_now = float(b[-1][4]) if b else None
     btc24 = btc_now / float(b[-97][4]) - 1 if b and len(b) >= 97 else None
     j = http_json(f"https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=15m&startTime={(T - 30 * 86400 - 900) * 1000}&limit=1", 15)
     btc30 = btc_now / float(j[0][4]) - 1 if btc_now and isinstance(j, list) and j else None
-    msgs = []
+    if btc24 is None or btc30 is None:
+        return candle_retry("nr_last_T", "нет свечей BTC с Binance")
+    candle_done(state, "nr_last_T", T)
+    trader.contract("BTC")                                     # загружает список бессрочных контрактов USDT
+    msgs = []; miss = []
     for s, p in in_bar.items():
         times = [q["ts"] for q in posts if s in q["rows"] and q["ts"] <= p["ts"]]
         start = times[0]
@@ -700,6 +764,8 @@ def new_rules(state, posts):
         if run_h < 1:
             continue
         k = _closed_15m(s, T)
+        if k is None and f"{s}USDT" in trader._contracts:
+            miss.append(s)                                     # фьючерс есть, а свечей Binance не отдал
         if not k or len(k) < 97:
             continue
         c = float(k[-1][4]); ch12 = (c / float(k[-49][4]) - 1) * 100; qv = sum(float(x[7]) for x in k[-96:])
@@ -717,6 +783,8 @@ def new_rules(state, posts):
                 m = trader.virt_open(state, key, s, rule, note, price=c)
                 if m:
                     msgs.append(m)
+    if miss:
+        log("НОВОЕ ПРАВИЛО", "D*/P* не проверены — Binance не отдал свечи:", ", ".join(miss))
     return msgs
 
 
@@ -743,10 +811,12 @@ def repay_rule(state, posts):
     часовой давности (45–75 мин назад) и не меньше чем на 20 тыс. $, причём резко: это первый за час пост монеты с ростом
     отдачи ×1,5 и +10 тыс. $ (отсчёт часа — от прошлого такого поста, как в бэктесте), цена фьючерса за сутки изменилась
     на ≥ 10% в любую сторону → виртуальный шорт. Только виртуальные сделки. Возвращает сообщения для чата."""
-    T = int(time.time() // 900 * 900)
-    if not repay_due(state) or not posts or posts[-1]["ts"] > T - (LOOKBACK_RP_H - 0.5) * 3600:
-        return []                                               # посты неглубокие (проход начался до закрытия свечи) — в следующий раз
-    state["rp_last_T"] = T
+    T = candle_due(state, "rp_last_T", "ОТДАЧА")
+    if T is None:
+        return []
+    if not posts or posts[-1]["ts"] > T - (LOOKBACK_RP_H - 0.5) * 3600:   # проход начался до закрытия свечи или канал не ответил
+        return candle_retry("rp_last_T", "посты канала не получены на нужную глубину")
+    candle_done(state, "rp_last_T", T)
     gap = GAP_MIN * 60; hits = {}
     for s in {s for q in posts if T - 900 <= q["ts"] < T for s in q.get("rows_all", {})}:
         ser = sorted((q["ts"], q["rows_all"][s]) for q in posts if s in q.get("rows_all", {}) and q["ts"] < T)   # от старых к новым
@@ -889,14 +959,18 @@ def noretail_check(s, coin, T, fut, kr_share, spot):
     if not name:
         return False, "нет спота Binance"
     sk = spot_json(f"/api/v3/klines?symbol={name}USDT&interval=15m&endTime={T * 1000 - 1}&limit=1000")
-    if not isinstance(sk, list) or not sk or int(sk[0][0]) // 1000 > T - 8 * 86400:
-        return False, "спот торгуется меньше 8 суток или нет данных"
+    if not isinstance(sk, list):
+        return False, "Binance не отдал свечи спота — проверка не сделана"
+    if not sk or int(sk[0][0]) // 1000 > T - 8 * 86400:
+        return False, "спот торгуется меньше 8 суток"
     sv = {int(x[0]) // 1000: float(x[7]) for x in sk}
     sp = sum(sv.get(T - 900 * i, 0.0) for i in range(1, 5))
     share = sp / max(sp + fut, 1)
     tr_share, tname = 0.0, next((n for n in (s, coin) if f"{n}TRY" in spot), None)
     if tname:
         tk = spot_json(f"/api/v3/klines?symbol={tname}TRY&interval=15m&endTime={T * 1000 - 1}&limit=4")
+        if not isinstance(tk, list):
+            return False, "Binance не отдал свечи пары к лире — проверка не сделана"
         try:
             tr = sum(float(x[7]) for x in tk if T - 3600 <= int(x[0]) // 1000 < T) / float(spot["USDTTRY"])
         except (TypeError, KeyError, ValueError, ZeroDivisionError):
@@ -907,8 +981,10 @@ def noretail_check(s, coin, T, fut, kr_share, spot):
         return False, why
     # обычная доля спота: медиана долей за 167 часов до часа пампа (часы отсчитываются от закрытия свечи пампа, как в бэктесте)
     fk = _closed_15m(s, T, 673)
-    if not fk or len(fk) < 672:
-        return False, why + "; нет истории фьючерса за неделю"
+    if fk is None:
+        return False, why + "; Binance не отдал свечи фьючерса за неделю — проверка не сделана"
+    if len(fk) < 672:
+        return False, why + "; фьючерс торгуется меньше недели"
     fv = {int(x[0]) // 1000: float(x[7]) for x in fk}
     hs = []
     for h in range(1, 168):
@@ -924,14 +1000,14 @@ def korea_rule(state):
     памп +15% за ≤ 2 ч из покоя; если за последний час Upbit + Bithumb дали ≥ 20% объёма (вместе с фьючерсом Binance) —
     виртуальный шорт; при ≥ 3 из 6 условий (korea_star) — ещё и шорт 🇰🇷⭐ (тейк 7 / стоп 20). Тот же памп без розницы
     (noretail_check) — виртуальный лонг 🟩. Только виртуальные сделки. Возвращает сообщения для чата."""
-    T = int(time.time() // 900 * 900)
-    if state.get("kr_last_T") == T or time.time() - T > 600:
+    T = candle_due(state, "kr_last_T", "КОРЕЯ")
+    if T is None:
         return []
-    state["kr_last_T"] = T
     trader.contract("BTC")                                     # загружает список бессрочных контрактов USDT
     tick = http_json("https://fapi.binance.com/fapi/v1/ticker/24hr", 20)
     if not isinstance(tick, list):
-        return []
+        return candle_retry("kr_last_T", "Binance не отдал цены фьючерсов за сутки (ticker/24hr)")
+    candle_done(state, "kr_last_T", T)
     cands = []
     for x in tick:
         s = str(x.get("symbol", ""))
@@ -950,6 +1026,10 @@ def korea_rule(state):
         seen |= {(s, tt) for tt in _pump_times(ks.get(s) or []) if T - 86400 <= tt < T}
     n24 = len(seen); btc24 = None
     kr = _kr_list(); msgs = []; spot = None
+    missing = [ex for ex in ("upbit", "bithumb") if not kr[ex]]   # список KRW-рынков биржи не загрузился
+    miss = [s for s in cands if ks.get(s) is None]
+    if miss:
+        log("КОРЕЯ", "пампы не проверены — Binance не отдал свечи:", ", ".join(miss))
     for s in cands:
         k = ks.get(s)
         if not k or len(k) < 20:
@@ -964,13 +1044,16 @@ def korea_rule(state):
         head = f"памп {(hi / c0 - 1) * 100:+.0f}% за {(len(k) - 1 - i) * 15} мин из покоя (закрытие {(c / c0 - 1) * 100:+.0f}%)"
         exs = [ex for ex in ("upbit", "bithumb") if coin in kr[ex]]
         if not exs:
-            log("КОРЕЯ", s, head, "— монеты нет на Upbit/Bithumb")
-            kr_share = 0.0
+            if missing:
+                log("КОРЕЯ", s, head, f"— не загружен список рынков {'/'.join(e.capitalize() for e in missing)}, доля Кореи неизвестна")
+            else:
+                log("КОРЕЯ", s, head, "— монеты нет на Upbit/Bithumb")
+            kr_share = None if missing else 0.0
         else:
             vols = {ex: _kr_volume(ex, coin, T) for ex in exs}
             got = sum(v for v in vols.values() if v is not None)
             share = got / (got + fut) if got + fut > 0 else 0.0
-            kr_share = share if all(v is not None for v in vols.values()) else None
+            kr_share = share if all(v is not None for v in vols.values()) and not missing else None
             note = (f"{head}; доля Кореи за час {share * 100:.0f}% ("
                     + ", ".join(f"{ex.capitalize()} {v / 1e6:.2f} млн $" if v is not None else f"{ex.capitalize()}: нет данных"
                                 for ex, v in vols.items())
@@ -992,6 +1075,10 @@ def korea_rule(state):
         if spot is None:                                      # цены спота Binance — один раз за проход, когда есть памп
             px = spot_json("/api/v3/ticker/price")
             spot = {str(x.get("symbol")): x.get("price") for x in px} if isinstance(px, list) else {}
+        if not spot:
+            log("РОЗНИЦА", s, f"{head}; Binance не отдал цены спота — проверка не сделана")
+            spot = None                                       # у следующего пампа этой свечи — новая попытка
+            continue
         ok, why = noretail_check(s, coin, T, fut, kr_share, spot)
         log("РОЗНИЦА", s, f"{head}; {why}" + (" → лонг 🟩" if ok else ""))
         if ok:
@@ -1019,22 +1106,22 @@ def turkey_rule(state):
     """Турецкий набег (журнал 🇹🇷, research/s2/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по фьючерсам Binance, у которых есть
     спотовая пара к турецкой лире: фьючерс за 4 ч вырос на 10%+, доля пары к лире в объёме за час (спот в $ + фьючерс) ≥ 10%
     и в 3+ раза выше обычной (медиана часовых долей за 7 суток) → виртуальный шорт. Возвращает сообщения для чата."""
-    T = int(time.time() // 900 * 900)
-    if state.get("tr_last_T") == T or time.time() - T > 600:
+    T = candle_due(state, "tr_last_T", "ТУРЦИЯ")
+    if T is None:
         return []
-    state["tr_last_T"] = T
     trader.contract("BTC")                                     # загружает список бессрочных контрактов USDT
     px = spot_json("/api/v3/ticker/price")
     if not isinstance(px, list):
-        return []
+        return candle_retry("tr_last_T", "Binance не отдал цены спота")
     spot = {str(x.get("symbol")): x.get("price") for x in px}
     try:
         usdtry = float(spot["USDTTRY"])
     except (KeyError, TypeError, ValueError):
-        return []
+        return candle_retry("tr_last_T", "нет курса USDT/TRY")
     tick = http_json("https://fapi.binance.com/fapi/v1/ticker/24hr", 20)
     if not isinstance(tick, list):
-        return []
+        return candle_retry("tr_last_T", "Binance не отдал цены фьючерсов за сутки (ticker/24hr)")
+    candle_done(state, "tr_last_T", T)
     cands = []
     for x in tick:
         s = str(x.get("symbol", ""))
@@ -1050,7 +1137,8 @@ def turkey_rule(state):
             cands.append((sym, name))
     with ThreadPoolExecutor(8) as ex:
         ks = dict(zip([s for s, _ in cands], ex.map(lambda c: _closed_15m(c[0], T, 18), cands)))
-    msgs = []; H = T // 3600 * 3600
+    msgs = []; H = T // 3600 * 3600; miss_s = []
+    miss_f = [sym for sym, _ in cands if ks.get(sym) is None]
     for sym, name in cands:
         k = ks.get(sym)
         if not k or len(k) < 17:
@@ -1061,6 +1149,7 @@ def turkey_rule(state):
         fut = sum(float(x[7]) for x in k[-4:])
         sk = spot_json(f"/api/v3/klines?symbol={name}TRY&interval=15m&endTime={T * 1000 - 1}&limit=4")
         if not isinstance(sk, list):
+            miss_s.append(sym)
             continue
         tr = sum(float(x[7]) for x in sk if T - 3600 <= int(x[0]) // 1000 < T) / usdtry
         share = tr / (tr + fut) if tr + fut > 0 else 0.0
@@ -1074,8 +1163,11 @@ def turkey_rule(state):
         end = (H - 3600) * 1000 - 1
         sh = spot_json(f"/api/v3/klines?symbol={name}TRY&interval=1h&endTime={end}&limit=192")
         fh = http_json(f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}USDT&interval=1h&endTime={end}&limit=168", 15)
-        if not isinstance(sh, list) or not sh or not isinstance(fh, list) or len(fh) < 150 or int(sh[0][0]) // 1000 > H - 192 * 3600:
-            log("ТУРЦИЯ", sym, head, "— нет истории за неделю")
+        if not isinstance(sh, list) or not isinstance(fh, list):
+            log("ТУРЦИЯ", sym, head, "— Binance не отдал часовые свечи за неделю, проверка не сделана")
+            continue
+        if not sh or len(fh) < 150 or int(sh[0][0]) // 1000 > H - 192 * 3600:
+            log("ТУРЦИЯ", sym, head, "— нет истории за неделю (пара или фьючерс моложе)")
             continue
         sv = {int(x[0]): float(x[7]) / usdtry for x in sh}
         hs = sorted(sv.get(int(x[0]), 0.0) / (sv.get(int(x[0]), 0.0) + float(x[7]) + 1e-9) for x in fh)
@@ -1086,6 +1178,10 @@ def turkey_rule(state):
             m = trader.virt_open(state, "virtual_TR", sym, "TR", note, price=c)
             if m:
                 msgs.append(m)
+    if miss_f:
+        log("ТУРЦИЯ", "рост за 4 ч не проверен — Binance не отдал свечи фьючерса:", ", ".join(miss_f))
+    if miss_s:
+        log("ТУРЦИЯ", "доля лиры не проверена — Binance не отдал свечи пары к лире:", ", ".join(miss_s))
     return msgs
 
 
