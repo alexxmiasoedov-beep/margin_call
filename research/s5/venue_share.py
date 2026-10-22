@@ -1,4 +1,4 @@
-"""Доля площадки (cb — Coinbase, ku — KuCoin, bg — Bitget, okx — OKX; по умолчанию Coinbase) в объёме за час на момент пампа и её «обычная» доля (медиана часовых долей
+"""Доля площадки (cb — Coinbase, ku — KuCoin, bg — Bitget, okx — OKX, bvv — Bitvavo; по умолчанию Coinbase) в объёме за час на момент пампа и её «обычная» доля (медиана часовых долей
 за сутки до этого); премия цены площадки к фьючерсу Binance. Исходы: шорт 10/25/48 ч (как в корейском правиле) и лонг."""
 import json, pickle, re, os, sys, datetime
 import numpy as np, pandas as pd
@@ -7,7 +7,7 @@ strip = lambda s: re.sub(r"^(1000000|100000|10000|1000)", "", s)
 K = pickle.load(open("s2/k2y.pkl", "rb")); F = pickle.load(open("s2/fund2y.pkl", "rb")); P = pd.read_pickle("s2/pump_TRY.pkl")
 UTC = datetime.timezone.utc; CUT = datetime.datetime(2025, 10, 1, tzinfo=UTC).timestamp()
 def load(c, t):
-    fn = f"s5/{V}/{c}_{int(t)}.json"
+    fn = f"s8/{V}/{c}_{int(t)}.json" if V == "bvv" else f"s5/{V}/{c}_{int(t)}.json"
     if not os.path.exists(fn): return None
     j = json.load(open(fn))
     if not isinstance(j, list): return None
@@ -17,6 +17,9 @@ def load(c, t):
         return {int(x[0]): (float(x[6]), float(x[2])) for x in j}
     if V == "bg":   # [ts мс, o, h, l, c, baseVol, usdtVol, quoteVol]
         return {int(x[0]) // 1000: (float(x[6]), float(x[4])) for x in j}
+    if V == "bvv":  # Bitvavo: [ts мс, o, h, l, c, объём в монетах], цены в евро → доллары по EUR/USDT
+        fx = np.load("s8/eurusd.npy"); r = lambda ts: np.interp(ts, fx[:, 0], fx[:, 1])
+        return {int(x[0]) // 1000: (float(x[5]) * float(x[4]) * r(int(x[0]) // 1000), float(x[4]) * r(int(x[0]) // 1000)) for x in j}
     if V == "okx":  # [ts мс, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
         return {int(x[0]) // 1000: (float(x[7]), float(x[4])) for x in j}
     return None
