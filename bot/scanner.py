@@ -6,6 +6,7 @@
          добавьте --dry-run, чтобы ничего не отправлять, а только печатать.
 Все настройки — через переменные окружения (см. .env.example). Зависимостей нет.
 """
+import bisect
 import html
 import json
 import os
@@ -107,7 +108,7 @@ def broadcast(state, text, dry):
 WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
-    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*; корейский шорт; корейский шорт ⭐ со счётом условий; турецкий набег; памп без розницы — лонг), /params — параметры сделок, /set <параметр> <число> — изменить "
+    "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*; корейский шорт; корейский шорт ⭐ со счётом условий; турецкий набег; памп без розницы — лонг; отдача займа — шорт), /params — параметры сделок, /set <параметр> <число> — изменить "
     "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause, fexit), /pause и /resume — пауза торговли, /stop — отписаться."
 )
 
@@ -122,7 +123,7 @@ def main_menu(state):
     return kb([
         [("⚙️ Параметры сделок", "params"), ("📊 Позиции на Binance", "positions")],
         [("📒 Журнал сделок", "trades"), ("🔍 Кандидаты в канале", "status")],
-        [("📓📗📘📕📙🟦🟧🇰🇷⭐🇹🇷🟩 Виртуальные журналы", "virtual")],
+        [("📓📗📘📕📙🟦🟧🇰🇷⭐🇹🇷🟩↩️ Виртуальные журналы", "virtual")],
         [pause],
     ])
 
@@ -268,10 +269,12 @@ def poll_commands(state, candidates, dry, wait=0):
 
 # ---------------------------------------------------------------- канал
 ROW = re.compile(r"^([A-Z0-9]+)\s+([\d.]+[KMB]?)\s+([\d.]+[KMB]?)\s+([\d.]+)\s+(-?[\d.]+)\s*$")
+# все строки поста, как в бэктесте: B/R = inf (отдачи нет), CHNG со знаком «+» — только для журнала ↩️; правила 1 и 2 видят прежние rows
+ROW_ALL = re.compile(r"^([A-Z0-9]+)\s+([\d.]+[KMB]?)\s+([\d.]+[KMB]?)\s+(\S+)\s+(\S+)\s*$")
 
 
 def fetch_posts(lookback_h):
-    """Посты канала за последние lookback_h часов: [{id, ts, rows:{sym:(bor,rep,br)}}]."""
+    """Посты канала за последние lookback_h часов: [{id, ts, rows:{sym:(bor,rep,br)}, rows_all:{sym:(bor,rep,br,chng)}}]."""
     now = time.time()
     posts, before, seen = [], None, set()
     for _ in range(40):
@@ -295,12 +298,15 @@ def fetch_posts(lookback_h):
             seen.add(pid)
             ts = datetime.fromisoformat(t.group(1)).timestamp()
             text = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"<br\s*/?>", "\n", body.group(1))))
-            rows = {}
+            rows, rows_all = {}, {}
             for ln in text.splitlines():
                 r = ROW.match(ln.strip())
                 if r:
                     rows[r.group(1)] = (r.group(2), r.group(3), r.group(4))
-            got.append({"id": pid, "ts": ts, "rows": rows})
+                r = ROW_ALL.match(ln.strip())
+                if r:
+                    rows_all[r.group(1)] = (r.group(2), r.group(3), r.group(4), r.group(5))
+            got.append({"id": pid, "ts": ts, "rows": rows, "rows_all": rows_all})
         if not got:
             break
         posts += got
@@ -713,6 +719,74 @@ def new_rules(state, posts):
     return msgs
 
 
+RP_RUN_H, RP_X, RP_DREP, RP_MOVE = 6.0, 2.0, 20e3, 0.10   # ↩️: серия в канале, рост отдачи за час (раз и $), ход цены за сутки
+RP_X0, RP_DREP0 = 1.5, 10e3     # ↩️ всплеск отдачи: первый за час рост ×1,5 и +10 тыс. $ уже должен быть сильным (×2 и +20 тыс. $)
+LOOKBACK_RP_H = 10.0            # ↩️: серия ≥ 6 ч и всплески за прошлые часы — посты тянем глубже, но только раз в 15 мин
+
+
+def _fut_sym(coin):
+    """Фьючерс Binance для монеты из маржинального канала: PEPE → 1000PEPE и т. п.; None, если бессрочного контракта нет."""
+    trader.contract("BTC")                                     # загружает список бессрочных контрактов USDT
+    return next((p + coin for p in ("", "1000", "10000", "100000", "1000000") if f"{p}{coin}USDT" in trader._contracts), None)
+
+
+def repay_due(state):
+    """↩️ проверяется раз в 15 мин: первый проход в течение 10 мин после закрытия свечи."""
+    T = int(time.time() // 900 * 900)
+    return state.get("rp_last_T") != T and time.time() - T <= 600
+
+
+def repay_rule(state, posts):
+    """Отдача займа (журнал ↩️, research/s9/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по монетам из постов маржинального
+    канала за эту свечу: монета в канале непрерывно ≥ 6 ч (разрывы ≤ 30 мин), отдача за 24 ч (REP) выросла в ≥ 2 раза к посту
+    часовой давности (45–75 мин назад) и не меньше чем на 20 тыс. $, причём резко: это первый за час пост монеты с ростом
+    отдачи ×1,5 и +10 тыс. $ (отсчёт часа — от прошлого такого поста, как в бэктесте), цена фьючерса за сутки изменилась
+    на ≥ 10% в любую сторону → виртуальный шорт. Только виртуальные сделки. Возвращает сообщения для чата."""
+    T = int(time.time() // 900 * 900)
+    if not repay_due(state) or not posts or posts[-1]["ts"] > T - (LOOKBACK_RP_H - 0.5) * 3600:
+        return []                                               # посты неглубокие (проход начался до закрытия свечи) — в следующий раз
+    state["rp_last_T"] = T
+    gap = GAP_MIN * 60; hits = {}
+    for s in {s for q in posts if T - 900 <= q["ts"] < T for s in q.get("rows_all", {})}:
+        ser = sorted((q["ts"], q["rows_all"][s]) for q in posts if s in q.get("rows_all", {}) and q["ts"] < T)   # от старых к новым
+        times = [ts for ts, _ in ser]; start = times[0]; last_jump = -1e18
+        for i, (ts, row) in enumerate(ser):
+            if i and ts - times[i - 1] > gap:
+                start = ts                                      # разрыв > 30 мин — новая серия
+            k = bisect.bisect_right(times, ts - 3600) - 1      # пост часовой давности
+            if ts - start < 2 * 3600 or k < 0 or ts - times[k] > 75 * 60:
+                continue
+            rep, rep1 = _num(row[1]), _num(ser[k][1][1])
+            if rep is None or rep1 is None or rep < RP_X0 * max(rep1, 1.0) or rep - rep1 < RP_DREP0:
+                continue
+            if ts - last_jump < 3600:
+                continue                                        # не первый всплеск за час — отдача набиралась постепенно
+            last_jump = ts
+            run_h = (ts - start) / 3600
+            if ts >= T - 900 and run_h >= RP_RUN_H and rep >= RP_X * max(rep1, 1.0) and rep - rep1 >= RP_DREP:
+                hits[s] = (row, rep, rep1, run_h, start <= posts[-1]["ts"])   # серия упёрлась в глубину выборки — на деле длиннее
+                break
+    msgs = []
+    for s, (row, rep, rep1, run_h, capped) in hits.items():
+        fs = _fut_sym(s)
+        k = _closed_15m(fs, T, 98) if fs else None
+        if not k or len(k) < 97:
+            log("ОТДАЧА", s, "— нет фьючерса Binance или свечей за сутки")
+            continue
+        c = float(k[-1][4]); r24 = c / float(k[-97][4]) - 1; bor = _num(row[0])
+        note = (f"отдача за час {rep1 / 1e3:.0f} → {rep / 1e3:.0f} тыс. $ (×{rep / max(rep1, 1.0):.1f}), займ "
+                + (f"{bor / 1e6:.2f} млн $" if bor is not None else row[0]) + f", B/R {row[2]}, CHNG {row[3]}, в канале "
+                + ("≥" if capped else "") + f"{run_h:.1f} ч, цена за сутки {r24 * 100:+.1f}%")
+        if abs(r24) < RP_MOVE:
+            log("ОТДАЧА", fs, note, f"— ход цены за сутки меньше {RP_MOVE * 100:g}%")
+            continue
+        log("ОТДАЧА", fs, note)
+        m = trader.virt_open(state, "virtual_RP", fs, "RP", note, price=c)
+        if m:
+            msgs.append(m)
+    return msgs
+
+
 KR_SHARE_MIN = 0.20                    # корейский шорт: доля Upbit + Bithumb в объёме за час (вместе с фьючерсом Binance)
 _kr_markets = {"ts": 0, "upbit": set(), "bithumb": set()}
 
@@ -1108,7 +1182,7 @@ def followups(state, dry):
 
 
 def scan(state, dry):
-    posts = fetch_posts(LOOKBACK_H)
+    posts = fetch_posts(max(LOOKBACK_H, LOOKBACK_RP_H) if repay_due(state) else LOOKBACK_H)
     runs = channel_runs(posts)
     log(f"постов {len(posts)}, монет в канале сейчас {len(runs)}, "
         f"висят ≥{MIN_RUN_H:g}ч: {sum(1 for r in runs.values() if r['run_h'] >= MIN_RUN_H)}")
@@ -1165,6 +1239,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка новых правил:", repr(e))
+    try:
+        for msg in repay_rule(state, posts):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила отдачи займа:", repr(e))
     try:
         for msg in korea_rule(state):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
