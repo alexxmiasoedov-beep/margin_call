@@ -776,13 +776,14 @@ def _pump_times(k):
     return out
 
 
-KRS_SCORE_MIN = 3                      # 🇰🇷⭐: сколько из пяти условий должно выполняться
+KRS_SCORE_MIN = 3                      # 🇰🇷⭐: сколько из шести условий должно выполняться
 
 
 def korea_star(s, k, i, T, share, n24, btc24):
     """Счёт условий для корейского шорта (журнал 🇰🇷⭐, research/s6/ВЫВОДЫ.md): пампов на рынке за сутки ≥ 16 (ажиотаж),
-    BTC за сутки ≥ 0, цена выше максимума 7 дней до базы пампа, покупки тейкеров на фьючерсе в пампе ≤ 51%, доля Кореи ≥ 40%.
-    k — свечи пампа (последняя — триггер), i — индекс базы в k. Возвращает (счёт ≥ KRS_SCORE_MIN, пояснение)."""
+    BTC за сутки ≥ 0, цена выше максимума 7 дней до базы пампа, покупки тейкеров на фьючерсе в пампе ≤ 51%, доля Кореи ≥ 40%,
+    воскресенье по UTC (с 22.10.2026, research/s7/ВЫВОДЫ.md). k — свечи пампа (последняя — триггер), i — индекс базы в k.
+    Возвращает (счёт ≥ KRS_SCORE_MIN, пояснение)."""
     k7 = _closed_15m(s, T, 700); hi7 = None
     if k7 and len(k7) >= 673:
         i7 = len(k7) - (len(k) - i)                                  # та же база в недельном окне
@@ -794,9 +795,10 @@ def korea_star(s, k, i, T, share, n24, btc24):
              ("BTC за сутки", btc24 is not None and btc24 >= 0, pct(btc24, "{:+.1f}%")),
              ("к максимуму 7 дней", hi7 is not None and hi7 >= 0, pct(hi7, "{:+.1f}%")),
              ("покупки тейкеров в пампе", tbp is not None and tbp <= 0.51, pct(tbp, "{:.1f}%")),
-             ("доля Кореи", share >= 0.4, pct(share, "{:.0f}%"))]
+             ("доля Кореи", share >= 0.4, pct(share, "{:.0f}%")),
+             ("воскресенье (UTC)", datetime.fromtimestamp(T, timezone.utc).weekday() == 6, "да" if datetime.fromtimestamp(T, timezone.utc).weekday() == 6 else "нет")]
     sc = sum(ok for _, ok, _ in conds)
-    return sc >= KRS_SCORE_MIN, f"счёт {sc}/5: " + ", ".join(f"{nm} {v} {'✓' if ok else '✗'}" for nm, ok, v in conds)
+    return sc >= KRS_SCORE_MIN, f"счёт {sc}/{len(conds)}: " + ", ".join(f"{nm} {v} {'✓' if ok else '✗'}" for nm, ok, v in conds)
 
 
 NR_SPOT_MAX, NR_NORM_MIN, NR_KR_MAX, NR_TR_MAX = 0.12, 0.03, 0.20, 0.10   # лонг «памп без розницы»: доли за час и обычная доля спота
@@ -845,7 +847,7 @@ def noretail_check(s, coin, T, fut, kr_share, spot):
 def korea_rule(state):
     """Корейский шорт (журнал 🇰🇷, research/mm2/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по всем фьючерсам Binance —
     памп +15% за ≤ 2 ч из покоя; если за последний час Upbit + Bithumb дали ≥ 20% объёма (вместе с фьючерсом Binance) —
-    виртуальный шорт; при ≥ 3 из 5 условий (korea_star) — ещё и шорт 🇰🇷⭐ (тейк 7 / стоп 20). Тот же памп без розницы
+    виртуальный шорт; при ≥ 3 из 6 условий (korea_star) — ещё и шорт 🇰🇷⭐ (тейк 7 / стоп 20). Тот же памп без розницы
     (noretail_check) — виртуальный лонг 🟩. Только виртуальные сделки. Возвращает сообщения для чата."""
     T = int(time.time() // 900 * 900)
     if state.get("kr_last_T") == T or time.time() - T > 600:
