@@ -212,6 +212,18 @@ def funding_paid(sym, since, until=None):
         return None
 
 
+def funding_rates(sym, since):
+    """Начисления фандинга с момента since: [(время, ставка в пересчёте на 8 ч)]; None, если Binance не ответил."""
+    j = _request("GET", "/fapi/v1/fundingRate", {"symbol": f"{sym}USDT", "startTime": int(since * 1000), "limit": 1000}, signed=False)
+    if not isinstance(j, list):
+        return None
+    iv = funding_interval_h(sym)
+    try:
+        return [(int(x["fundingTime"]) // 1000, float(x["fundingRate"]) / iv * 8) for x in j]
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def taker_lsr(sym):
     """Соотношение объёмов тейкеров покупка/продажа за последний завершённый час: >1 — агрессивно покупают.
     Binance (takerlongshortRatio), резерв — Gate (lsr_taker). None, если данных нет."""
@@ -882,6 +894,17 @@ VIRTUALS = {
                             "волатильных; шорт на 7 суток без тейка, стоп +100%, плечо ×1",
                    "icon": "🏦", "params": lambda fh: (None, 100.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
                    "hold_h": 168.0, "lev": 1, "hedge": "BTC"},
+    # первый займ свежего токена (research/s12/ВЫВОДЫ.md, стратегия A): scanner.newtoken_rule
+    "virtual_NT": {"title": "первый займ свежего токена: монета впервые в маржинальном канале, спотовый листинг Binance ±10 суток, "
+                            "через 24 ч после первого поста (фандинг не дешевле −0,1%/8 ч); шорт на 21 сутки без тейка, стоп +60%, "
+                            "выход при фандинге ≤ −0,5%/8 ч два раза подряд, плечо ×1",
+                   "icon": "🆕", "params": lambda fh: (None, 60.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
+                   "hold_h": 504.0, "lev": 1, "hedge": "BTC", "fund_exit": -0.005},
+    # объявления Binance (research/s12/ВЫВОДЫ.md, стратегия B): scanner.announce_rule
+    "virtual_AN": {"title": "объявления Binance: делистинг спота или фьючерса, Monitoring Tag → шорт не позже часа после публикации "
+                            "(фандинг не дешевле −0,1%/8 ч); 7 суток без тейка, стоп +25%, плечо ×1",
+                   "icon": "📢", "params": lambda fh: (None, 25.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
+                   "hold_h": 168.0, "lev": 1, "hedge": "BTC"},
 }
 VIRT = {"hold_h": 48.0, "pause_h": 48.0, "start_balance": 20.0}   # стартовый капитал журнала, USDT
 
@@ -1040,10 +1063,18 @@ def virt_manage(state):
                 cache[t["sym"]] = mark_price(t["sym"])
             px = cache[t["sym"]]
             ev = _virt_scan(t)
+            fx = cfg.get("fund_exit")                      # досрочный выход: фандинг ≤ fx за 8 ч два начисления подряд
+            fbad = False
+            if fx is not None and not ev and px and now >= t.get("f_chk", 0):
+                t["f_chk"] = now + 1800                    # проверяем раз в 30 мин
+                fr = funding_rates(t["sym"], t["opened"])
+                fbad = bool(fr) and any(a[1] <= fx and b[1] <= fx for a, b in zip(fr, fr[1:]))
             if ev == "стоп":
                 msgs.append(_virt_close(v, t, t["sl"], "стоп", cfg["icon"]))
             elif ev == "тейк":
                 msgs.append(_virt_close(v, t, t["tp"], "тейк", cfg["icon"]))
+            elif fbad:
+                msgs.append(_virt_close(v, t, px, f"фандинг ≤ {fx * 100:g}%/8 ч два раза подряд", cfg["icon"]))
             elif now - t["opened"] >= t.get("hold_h", VIRT["hold_h"]) * 3600:
                 if px:
                     msgs.append(_virt_close(v, t, px, f"выход по времени ({t.get('hold_h', VIRT['hold_h']):g} ч)", cfg["icon"]))

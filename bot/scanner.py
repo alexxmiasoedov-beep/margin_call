@@ -1342,6 +1342,215 @@ def borrow_factor_rule(state):
             + "\n".join(msgs)]
 
 
+ANN_LIST = "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&pageNo={page}&pageSize={size}&catalogId={cat}"
+ANN_DETAIL = "https://www.binance.com/bapi/composite/v1/public/cms/article/detail/query?articleCode={code}"
+ANN_CATS = (48, 49, 161)                   # разделы: новые листинги, новости (там Monitoring Tag), делистинг
+AN_FRESH_MIN, AN_FUND_MIN = 60, -0.001     # 📢: объявление не старше 60 мин; не входить при фандинге дешевле −0,1%/8 ч
+NT_DELAY_H, NT_LATE_H, NT_WIN_D, NT_FUND_MIN = 24, 72, 10, -0.001   # 🆕: вход через 24 ч после первого поста (до 72 ч),
+                                                                     # спотовый листинг ±10 суток, фандинг ≥ −0,1%/8 ч
+KNOWN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "margin_known.txt")
+_known = None
+
+
+def _ann_get(url):
+    """CMS Binance → data или None."""
+    try:
+        j = json.loads(http(url, timeout=20))
+        return j.get("data") if isinstance(j, dict) and j.get("success", True) else None
+    except Exception:
+        return None
+
+
+def _listing_coins(title):
+    """Монеты из заголовка спотового листинга: «Binance Will List X (X) …», «Introducing X (X) on Binance HODLer/…»."""
+    if re.search(r"^Binance Will List", title) or re.search(r"^Introducing .* on Binance (?:HODLer|Launchpool|Megadrop)", title):
+        return re.findall(r"\(([A-Z0-9]{1,15})\)", title)
+    return []
+
+
+def _ann_kind(title):
+    """Тип объявления по заголовку: MT — Monitoring Tag, DL — делистинг спота, FD — делистинг фьючерса; иначе None."""
+    if re.search(r"Monitoring Tag", title) and re.search(r"Include", title):
+        return "MT"
+    if re.search(r"^Binance Will Delist", title):
+        return "DL"
+    if re.search(r"Futures Will Delist", title):
+        return "FD"
+    return None
+
+
+def _delist_coins(art):
+    """Монеты из объявления о делистинге спота / фьючерса или Monitoring Tag ([] — не нашлись)."""
+    t = art["title"]; kind_ = _ann_kind(t)
+    if kind_ == "FD":
+        syms = re.findall(r"\b([A-Z0-9]{2,20})USDT\b", t)
+        for _ in range(0 if syms else 3):                    # «Multiple … Contracts» — список в тексте объявления
+            d = _ann_get(ANN_DETAIL.format(code=art["code"]))
+            if isinstance(d, dict):
+                syms = re.findall(r"\b([A-Z0-9]{2,20})USDT\b", re.sub(r"<[^>]+>", " ", str(d.get("body") or "")))
+                break
+            time.sleep(3)
+        return sorted(set(syms))
+    m = (re.search(r"Include (.+?) on \d", t) or re.search(r"Include (.+)$", t)) if kind_ == "MT" else \
+        re.search(r"Delist (.+?) on \d", t) if kind_ == "DL" else None
+    return [c.strip() for c in re.split(r",|&| and ", m.group(1)) if c.strip()] if m else []
+
+
+def ann_poll(state, every=55):
+    """Раз в минуту — первые страницы трёх разделов объявлений Binance. Новые объявления (по коду) — в ответ; листинги
+    запоминаются в state["ann_list"] (монета → время объявления) для 🆕. Первый успешный опрос раздела: 100 последних его
+    объявлений помечаются виденными (листинги — запоминаются), в ответ — только опубликованные за последние 60 мин.
+    Объявления старше 40 суток не учитываются. Сбой — в журнал не чаще раза в час."""
+    now = time.time()
+    if now - state.get("ann_try", 0) < every:
+        return []
+    state["ann_try"] = now
+    seen = state.setdefault("ann_seen", {}); lst = state.setdefault("ann_list", {}); init = state.setdefault("ann_init", [])
+    new, fail = [], []
+    for cat in ANN_CATS:
+        first = cat not in init
+        arts = []
+        for page in ((1, 2) if first else (1,)):
+            d = _ann_get(ANN_LIST.format(cat=cat, page=page, size=50 if first else 20))
+            got = [dict(code=a["code"], title=a.get("title", ""), ts=(a.get("releaseDate") or 0) / 1000, cat=cat)
+                   for c in (d.get("catalogs") or [] if isinstance(d, dict) else [])
+                   for a in c.get("articles") or [] if a.get("code") and a.get("releaseDate")]
+            if page == 1 and not got:                        # пустая первая страница — сбой или другой формат ответа
+                arts = None
+                break
+            arts += got
+        if arts is None:
+            fail.append(cat)
+            continue
+        for a in sorted(arts, key=lambda a: a["ts"]):
+            if a["code"] in seen or a["ts"] < now - 40 * 86400:
+                continue
+            seen[a["code"]] = a["ts"]
+            for c in _listing_coins(a["title"]):
+                lst[c] = min(lst.get(c, a["ts"]), a["ts"])
+            if not first or now - a["ts"] <= AN_FRESH_MIN * 60:      # при первом опросе — только свежие (до 60 мин)
+                new.append(a)
+        if first:
+            init.append(cat)
+            log("ОБЪЯВЛЕНИЕ", f"раздел {cat}: просмотрено объявлений {len(arts)}, по старше {AN_FRESH_MIN} мин сделок нет; "
+                              f"листингов за 40 суток {len(lst)}")
+    if fail and now - state.get("ann_err", 0) >= 3600:
+        state["ann_err"] = now
+        log("ОБЪЯВЛЕНИЕ", f"Binance не отдал список объявлений (разделы {', '.join(map(str, fail))}) — повтор через минуту")
+    for k in [k for k, ts in seen.items() if ts < now - 40 * 86400]:
+        del seen[k]
+    for k in [k for k, ts in lst.items() if ts < now - 40 * 86400]:
+        del lst[k]
+    return sorted(new, key=lambda a: a["ts"])
+
+
+def announce_rule(state, new):
+    """Объявления Binance (журнал 📢, research/s12/ВЫВОДЫ.md, стратегия B): делистинг спота («Binance Will Delist …»),
+    делистинг фьючерса, Monitoring Tag → виртуальный шорт фьючерса каждой монеты, если объявлению не больше 60 мин и фандинг
+    не дешевле −0,1% за 8 ч; 7 суток без тейка, стоп +25%, плечо ×1. Возвращает сообщения для чата."""
+    msgs = []
+    for a in new:
+        kind_ = _ann_kind(a["title"])
+        if not kind_:
+            continue
+        age = (time.time() - a["ts"]) / 60
+        name = {"MT": "Monitoring Tag", "DL": "делистинг спота", "FD": "делистинг фьючерса"}[kind_]
+        if age > AN_FRESH_MIN:
+            log("ОБЪЯВЛЕНИЕ", f"{name}: «{a['title']}» — {age:.0f} мин назад, позже {AN_FRESH_MIN} мин, сделок нет")
+            continue
+        coins = _delist_coins(a)
+        out, skip = [], ([] if coins else ["монеты в объявлении не найдены"])
+        for c in coins:
+            fs = _fut_sym(c)
+            if not fs:
+                skip.append(f"{c} (нет фьючерса)")
+                continue
+            fh = trader.funding_hourly(fs)
+            if fh is not None and fh * 8 < AN_FUND_MIN:
+                skip.append(f"{fs} (фандинг {fh * 8 * 100:+.3f}%/8 ч)")
+                continue
+            note = f"{name}: «{a['title']}», опубликовано {age:.0f} мин назад"
+            m = trader.virt_open(state, "virtual_AN", fs, kind_, note)
+            if m:
+                out.append(m)
+            else:
+                skip.append(f"{fs} (уже открыта)")
+        log("ОБЪЯВЛЕНИЕ", f"{name}: «{a['title']}» → шорт: {len(out)}" + (f"; пропуск: {', '.join(skip)}" if skip else ""))
+        if out:
+            msgs.append(f"📢 Binance: {a['title']}\n" + "\n".join(out))
+    return msgs
+
+
+def nt_track(state):
+    """Первое появление монеты в маржинальном канале (для 🆕): монета, которой нет в архиве канала (margin_known.txt)
+    и которую бот ещё не видел, запоминается в state["nt_first"] со временем самого раннего поста в журнале постов."""
+    global _known
+    if _known is None:
+        try:
+            with open(KNOWN_FILE, encoding="utf-8") as f:
+                _known = {ln.strip() for ln in f if ln.strip() and not ln.startswith("#")}
+        except OSError:                                      # файла нет — известны все монеты журнала постов за 8 суток
+            if not _bf_log:
+                return
+            _known = {c for _, coins in _bf_log.values() for c in coins.split()}
+            log("НОВЫЙ ТОКЕН", f"нет файла {os.path.basename(KNOWN_FILE)} — монеты из журнала постов ({len(_known)}) "
+                               "считаются известными")
+    first = state.setdefault("nt_first", {}); old = state.setdefault("nt_old", [])
+    early = {}
+    for ts, coins in (_bf_log or {}).values():
+        for c in coins.split():
+            if c not in _known and c not in first and c not in old:
+                early[c] = min(early.get(c, ts), ts)
+    for c, ts in early.items():
+        first[c] = ts
+        log("НОВЫЙ ТОКЕН", f"{c}: впервые в маржинальном канале {datetime.fromtimestamp(ts, timezone.utc):%d.%m %H:%M} UTC")
+    for c in [c for c, ts in first.items() if ts < time.time() - 30 * 86400]:
+        old.append(c)
+        del first[c]
+
+
+def newtoken_rule(state):
+    """Первый займ свежего токена (журнал 🆕, research/s12/ВЫВОДЫ.md, стратегия A): монета впервые появилась в маржинальном
+    канале, объявление о её спотовом листинге на Binance вышло в пределах ±10 суток от первого поста (и уже известно);
+    через 24 ч после первого поста (если бот лежал — до 72 ч) и при фандинге не дешевле −0,1% за 8 ч — виртуальный шорт
+    фьючерса на 21 сутки без тейка, стоп +60%, выход при фандинге ≤ −0,5%/8 ч два раза подряд, плечо ×1."""
+    nt_track(state)
+    now = time.time(); msgs = []
+    done = state.setdefault("nt_done", {}); lst = state.get("ann_list", {})
+    for c, t1 in list(state.get("nt_first", {}).items()):
+        if c in done or now < t1 + NT_DELAY_H * 3600:
+            continue
+        sa = lst.get(c)
+        fresh = sa is not None and abs(sa - t1) <= NT_WIN_D * 86400
+        if not fresh and now <= t1 + NT_LATE_H * 3600:
+            continue                                         # объявление о листинге может выйти позже — ждём до 72 ч
+        why = None
+        if now > t1 + NT_LATE_H * 3600 and fresh:
+            why = f"прошло больше {NT_LATE_H} ч после первого поста"
+        elif not fresh:
+            why = "нет объявления о спотовом листинге Binance в пределах ±10 суток"
+        fs = None if why else _fut_sym(c)
+        if not why and not fs:
+            why = "нет фьючерса Binance"
+        fh = trader.funding_hourly(fs) if fs else None
+        if not why and fh is not None and fh * 8 < NT_FUND_MIN:
+            why = f"фандинг {fh * 8 * 100:+.3f}%/8 ч дешевле −0,1%"
+        done[c] = now
+        if why:
+            log("НОВЫЙ ТОКЕН", f"{c}: пропуск — {why}")
+            continue
+        note = (f"впервые в маржинальном канале {datetime.fromtimestamp(t1, timezone.utc):%d.%m %H:%M} UTC, спотовый листинг "
+                f"объявлен {datetime.fromtimestamp(sa, timezone.utc):%d.%m %H:%M} UTC, фандинг "
+                + (f"{fh * 8 * 100:+.3f}%/8 ч" if fh is not None else "нет данных"))
+        m = trader.virt_open(state, "virtual_NT", fs, "NT", note)
+        log("НОВЫЙ ТОКЕН", fs, note + ("" if m else " — уже открыта"))
+        if m:
+            msgs.append(m)
+    for k in [k for k, ts in done.items() if ts < now - 60 * 86400]:
+        del done[k]
+    return msgs
+
+
 MR_URL = "https://www.binance.com/bapi/margin/v1/public/margin/vip/spec/list-all"
 MR_DIR = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "margin_rates")
 
@@ -1555,6 +1764,16 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила фактора займа:", repr(e))
+    try:
+        for msg in announce_rule(state, ann_poll(state)):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила объявлений:", repr(e))
+    try:
+        for msg in newtoken_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила нового токена:", repr(e))
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
