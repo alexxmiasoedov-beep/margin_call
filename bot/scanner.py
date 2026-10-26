@@ -93,7 +93,11 @@ socket.getaddrinfo = _cached_getaddrinfo
 
 
 def http(url, data=None, timeout=30):
-    host = "telegram getUpdates" if "/getUpdates" in url else (urllib.parse.urlsplit(url).hostname or "?")
+    real = urllib.parse.urlsplit(url).hostname or "?"
+    host = "telegram getUpdates" if "/getUpdates" in url else real
+    wait = trader.banned(real)
+    if wait:                                                 # Binance ответил 403/418/429 — до конца паузы не стучимся
+        raise urllib.error.URLError(f"пауза после ответа Binance 418/429, ещё {wait:.0f} с")
     t0 = time.time(); ok = False
     try:
         req = urllib.request.Request(url, data=data, headers={"User-Agent": UA})
@@ -101,6 +105,10 @@ def http(url, data=None, timeout=30):
             body = r.read().decode("utf-8", "replace")
         ok = True
         return body
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 418, 429) and real.endswith("binance.com"):
+            trader.ban_note(real, e.code, e.headers)
+        raise
     finally:
         trader.net_note(host, time.time() - t0, ok)          # для строки «РЕСУРСЫ» раз в час
 
@@ -109,7 +117,8 @@ def http_json(url, timeout=30):
     try:
         return json.loads(http(url, timeout=timeout))
     except Exception as e:
-        log("http_json fail", url.split("?")[0], e)
+        if not trader.banned(urllib.parse.urlsplit(url).hostname or ""):   # о паузе после бана уже написано один раз
+            log("http_json fail", url.split("?")[0], e)
         return None
 
 
@@ -1880,10 +1889,35 @@ def log_resources(durs):
     trader.NET.clear()
 
 
+_exec = {"bad": False, "t": 0, "said": 0}                # проверка ключей Binance не прошла: когда проверяли и писали в чат
+
+
+def exec_recheck(state, dry):
+    """Проверка ключей на старте не прошла — повтор раз в 5 мин. Binance ответил — одно сообщение в чат; всё ещё нет —
+    напоминание раз в 6 ч с текущей причиной."""
+    now = time.time()
+    if not _exec["bad"] or now - _exec["t"] < 300:
+        return
+    _exec["t"] = now
+    check = trader.startup_check()
+    log(check)
+    if check.startswith("Binance OK"):
+        _exec["bad"] = False
+        state.pop("exec_bad", None)
+        broadcast(state, f"✅ Исполнитель сделок снова на связи: {check}", dry)
+    elif now - _exec["said"] >= 6 * 3600:
+        _exec["said"] = now
+        broadcast(state, f"⚠️ Исполнитель сделок всё ещё без связи с Binance: {check}", dry)
+
+
 def cycle(dry, state=None):
     """Один проход: канал → сигналы/сделки → отчёты → сопровождение позиций. Возвращает кандидатов."""
     state = state if state is not None else load_state()
     trader.configure(state)
+    try:
+        exec_recheck(state, dry)
+    except Exception as e:
+        log("ошибка повторной проверки ключей:", repr(e))
     cands = scan(state, dry)
     followups(state, dry)
     try:
@@ -1970,8 +2004,16 @@ def main():
     log(check)
     if TOKEN and not dry:
         setup_commands()
-    if trader.MODE != "off" and not check.startswith("Binance OK") and not dry:
-        broadcast(load_state(), f"⚠️ Исполнитель сделок: {check}", dry)
+    if trader.MODE != "off" and not dry:
+        st = load_state()
+        if not check.startswith("Binance OK"):
+            broadcast(st, f"⚠️ Исполнитель сделок: {check}. Проверю снова через 5 мин и напишу, когда Binance ответит", dry)
+            _exec.update(bad=True, t=time.time(), said=time.time())
+            st["exec_bad"] = True
+            save_state(st)
+        elif st.pop("exec_bad", None):                       # до перезапуска связи не было — сообщаем, что появилась
+            broadcast(st, f"✅ Исполнитель сделок снова на связи: {check}", dry)
+            save_state(st)
     if "--loop" in sys.argv:
         run_loop(dry)
     else:

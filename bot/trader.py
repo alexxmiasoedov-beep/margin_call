@@ -117,8 +117,34 @@ def net_note(host, dt, ok):
     n[0] += 1; n[1] += 0 if ok else 1; n[2] += dt; n[3] = max(n[3], dt)
 
 
+BAN = {}                                       # хост → до какого времени не слать запросы (ответ Binance 403/418/429)
+
+
+def ban_note(host, code, headers):
+    """Ответ 418 (бан IP), 429 (превышен лимит веса) или 403 (WAF): до конца паузы (Retry-After) запросов к хосту не шлём —
+    запросы во время бана Binance наказывает более долгим баном (от 2 мин до 3 суток). В журнал — один раз на паузу."""
+    try:
+        sec = int(float(headers.get("Retry-After") or 0))
+    except (TypeError, ValueError, AttributeError):
+        sec = 0
+    sec = max(sec, 120 if code == 418 else 60)
+    until = time.time() + sec
+    if until > BAN.get(host, 0) + 5:
+        BAN[host] = until
+        log(f"Binance {code}: " + {418: "IP сервера забанен", 429: "превышен лимит запросов с IP сервера"}.get(code, "отказ WAF")
+            + f" — пауза запросов к {host} на {sec} с")
+
+
+def banned(host):
+    """Сколько секунд ещё пауза запросов к хосту после ответа 403/418/429 (0 — можно)."""
+    return max(0.0, BAN.get(host, 0) - time.time())
+
+
 def _request(method, path, params=None, signed=True, _retry=True):
     """Binance USDT-M futures. Ошибка — dict с отрицательным code; успех может быть list, dict или {"code": 200}."""
+    wait = banned("fapi.binance.com")
+    if wait:
+        return {"code": -1003, "msg": f"пауза после ответа Binance 418/429, ещё {wait:.0f} с"}
     params = dict(params or {})
     qs = urllib.parse.urlencode(params)
     if signed:
@@ -133,6 +159,8 @@ def _request(method, path, params=None, signed=True, _retry=True):
         with urllib.request.urlopen(req, timeout=20) as r:
             j = json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
+        if e.code in (403, 418, 429):
+            ban_note("fapi.binance.com", e.code, e.headers)
         try:
             j = json.loads(e.read().decode())
         except Exception:
@@ -256,13 +284,16 @@ def taker_lsr(sym):
     return None
 
 
-def balance():
-    j = _request("GET", "/fapi/v2/balance")
+def _usdt(j):
     if isinstance(j, list):
         for b in j:
             if b.get("asset") == "USDT":
                 return {"asset": "USDT", "balance": float(b["balance"]), "available": float(b["availableBalance"])}
     return None
+
+
+def balance():
+    return _usdt(_request("GET", "/fapi/v2/balance"))
 
 
 def hedge_mode():
@@ -849,16 +880,29 @@ def summary(state):
     return "\n".join(lines)
 
 
+CHECK_HINT = {-2015: "Binance не принял ключ с этого IP: ключ удалён или выключен, у него нет прав на фьючерсы, "
+                    "либо IP сервера нет в белом списке ключа",
+              -2014: "ключ в неверном формате", -1022: "подпись не сошлась — проверьте секрет ключа",
+              -1021: "часы сервера расходятся с Binance",
+              -1003: "превышен лимит запросов с IP сервера (лимит общий для всех программ на сервере) — Binance дал паузу",
+              -1: "Binance не ответил — сбой сети или DNS на сервере", 451: "Binance не обслуживает страну IP сервера"}
+
+
 def startup_check():
-    """Проверка ключей на старте: запрос баланса. Возвращает строку для лога."""
+    """Проверка ключей: запрос баланса (на старте и, если не прошла, раз в 5 мин — scanner.exec_recheck). Возвращает строку
+    для журнала и чата; при сбое — код и сообщение Binance и подсказку, что это значит."""
     if MODE == "off":
         return "торговля выключена (TRADE_MODE=off)"
     if not KEY or not SECRET:
         return "BINANCE_API_KEY/SECRET не заданы — торговля невозможна"
     sync_time()
-    b = balance()
+    j = _request("GET", "/fapi/v2/balance")
+    b = _usdt(j)
     if not b:
-        return "Binance: ключи не подошли или API недоступен"
+        code = j.get("code") if isinstance(j, dict) else None
+        hint = CHECK_HINT.get(code)
+        return (f"Binance: ключи не подошли или API недоступен — код {code}: {str(_err(j) or j)[:200]}"
+                + (f". {hint}" if hint else ""))
     return f"Binance OK: баланс {b['balance']:.2f} {b['asset']}, доступно {b['available']:.2f}; режим {MODE}"
 
 
