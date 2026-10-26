@@ -15,7 +15,9 @@ import os
 import re
 import socket
 import sys
+import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -1992,6 +1994,91 @@ def run_loop(dry):
             time.sleep(3)
 
 
+# ---------------------------------------------------------------- самописец сервера
+SYS_LOG = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "system.log")
+
+
+def _proc_name(cmd):
+    """Имя программы для сводки памяти: chrome — одно на все процессы; python — по скрипту или модулю."""
+    exe = os.path.basename(cmd[0].decode("utf-8", "replace"))
+    if "chrome" in exe or "chromium" in exe:
+        return "chrome"
+    if exe.startswith("python"):
+        args = [a.decode("utf-8", "replace") for a in cmd[1:] if a]
+        if "-m" in args and args.index("-m") + 1 < len(args):
+            return "python -m " + args[args.index("-m") + 1]
+        script = next((a for a in args if not a.startswith("-")), "")
+        return "python " + os.path.basename(script) if script else exe
+    return exe
+
+
+def sys_snapshot():
+    """Состояние сервера одной строкой: память и подкачка, нехватка памяти/диска/процессора (PSI за 10 с, % времени),
+    нагрузка, программы, больше всех занимающие память (RSS в МБ, процессы одной программы — суммой).
+    Возвращает (строка, памяти меньше 10%)."""
+    mi = {}
+    with open("/proc/meminfo") as f:
+        for ln in f:
+            k, _, v = ln.partition(":")
+            mi[k] = int(v.split()[0]) // 1024 if v.split() else 0
+    psi = []
+    for res in ("memory", "io", "cpu"):
+        try:
+            with open(f"/proc/pressure/{res}") as f:
+                psi.append(f"{res} {f.readline().split()[1].split('=')[1]}")
+        except (OSError, IndexError):
+            pass
+    with open("/proc/loadavg") as f:
+        load = f.read().split()
+    page = os.sysconf("SC_PAGE_SIZE"); mem = {}
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmd = f.read().split(b"\0")
+            if not cmd[0]:
+                continue                                         # потоки ядра
+            with open(f"/proc/{pid}/statm") as f:
+                rss = int(f.read().split()[1]) * page
+        except (OSError, IndexError, ValueError):
+            continue
+        n = _proc_name(cmd)
+        mem[n] = mem.get(n, 0) + rss
+    top = sorted(mem.items(), key=lambda x: -x[1])[:6]
+    av, tot = mi.get("MemAvailable", 0), mi.get("MemTotal", 0)
+    return (f"доступно {av} МБ из {tot}, подкачка {mi.get('SwapTotal', 0) - mi.get('SwapFree', 0)} МБ из {mi.get('SwapTotal', 0)}, "
+            f"ждёт записи {mi.get('Dirty', 0)} МБ; PSI {' '.join(psi)}; нагрузка {' '.join(load[:3])}, процессов {load[3]}; "
+            "память, МБ: " + ", ".join(f"{n} {b // 1048576}" for n, b in top)), av < tot * 0.1
+
+
+def sys_watch():
+    """Самописец сервера (отдельный поток): раз в минуту, при нехватке памяти — раз в 15 с, строка sys_snapshot в system.log
+    рядом с state.json с fsync — запись переживёт зависание и жёсткую перезагрузку; раз в 10 мин та же строка в журнал
+    службы («СИСТЕМА»). После зависания видно, что к нему привело: кончилась память (и кто её занял), диск, процессор —
+    или сервер встал целиком (тогда в файле пропуск по времени). Записи перед перезагрузками — tools/server_health.py."""
+    n = 0
+    while True:
+        low = False
+        try:
+            text, low = sys_snapshot()
+            if os.path.exists(SYS_LOG) and os.path.getsize(SYS_LOG) > 5 * 1048576:
+                os.replace(SYS_LOG, SYS_LOG + ".1")
+            fd = os.open(SYS_LOG, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+            try:
+                os.write(fd, f"{datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S} {text}\n".encode())
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            if n % 10 == 0 or low:
+                log("СИСТЕМА", text)
+        except Exception as e:
+            if n % 60 == 0:
+                log("СИСТЕМА: снимок не записан:", repr(e))
+        n += 1
+        time.sleep(15 if low else 60)
+
+
 def main():
     dry = "--dry-run" in sys.argv
     try:
@@ -2015,6 +2102,7 @@ def main():
             broadcast(st, f"✅ Исполнитель сделок снова на связи: {check}", dry)
             save_state(st)
     if "--loop" in sys.argv:
+        threading.Thread(target=sys_watch, name="sys_watch", daemon=True).start()
         run_loop(dry)
     else:
         state = load_state()

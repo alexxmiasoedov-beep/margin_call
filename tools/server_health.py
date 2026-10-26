@@ -1,5 +1,6 @@
-"""Проверка сервера бота: почему виснет и обрывает SSH — память и подкачка, процессор, диск, сеть, события ядра,
-нагрузка от бота по дням.
+"""Проверка сервера бота: почему виснет и обрывает SSH — чем закончилась каждая прошлая загрузка (штатно или оборвалась,
+что было в последний час), записи самописца бота перед зависаниями, память и подкачка, процессор, диск, сеть,
+события ядра, нагрузка от бота по дням.
 
 Запуск на сервере одной строкой из любой папки (около минуты):
   curl -sL https://raw.githubusercontent.com/alexxmiasoedov-beep/margin_call/main/tools/server_health.py | python3
@@ -17,7 +18,8 @@ import time
 home = os.path.expanduser("~")
 out = []
 SECRET = re.compile(r"\d{8,10}:[A-Za-z0-9_-]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|(?<=://)[^/@\s]+(?=@)")   # токены бота, GitHub, логин в URL
-SINCE_D = 6                                                 # сутки журнала для разбора
+SINCE_D = 3                                                 # сутки журнала бота для разбора
+os.environ["TZ"] = "UTC"                                    # journalctl — всё время в UTC, как в самописце бота
 
 
 def p(line=""):
@@ -91,7 +93,7 @@ state_dir = os.path.dirname(os.path.abspath(state_path))
 
 up = float(read("/proc/uptime").split()[0] or 0) if read("/proc/uptime") else 0
 osr = dict(re.findall(r'^(\w+)="?([^"\n]*)"?', read("/etc/os-release"), re.M))
-p(f"SERVER-HEALTH v2 | сейчас {fmt(time.time())} UTC | работает без перезагрузки {up / 86400:.1f} сут | загрузка "
+p(f"SERVER-HEALTH v3 | сейчас {fmt(time.time())} UTC | работает без перезагрузки {up / 86400:.1f} сут | загрузка "
   f"{' '.join(read('/proc/loadavg').split()[:3])} | ядер {os.cpu_count()} | {os.uname().machine} | {osr.get('PRETTY_NAME', '?')}")
 p(f"бот: {bot or 'папка не найдена'} | state: {state_path}")
 
@@ -126,7 +128,37 @@ def disk():
       + "; система — " + run(["journalctl", "--disk-usage"], 30).strip()[-80:])
 
 
+def _proc_name(cmd):
+    """Как в самописце бота: chrome — одно имя на все процессы; python — по скрипту или модулю."""
+    exe = os.path.basename(cmd[0].decode("utf-8", "replace"))
+    if "chrome" in exe or "chromium" in exe:
+        return "chrome"
+    if exe.startswith("python"):
+        args = [a.decode("utf-8", "replace") for a in cmd[1:] if a]
+        if "-m" in args and args.index("-m") + 1 < len(args):
+            return "python -m " + args[args.index("-m") + 1]
+        script = next((a for a in args if not a.startswith("-")), "")
+        return "python " + os.path.basename(script) if script else exe
+    return exe
+
+
 def procs():
+    page = os.sysconf("SC_PAGE_SIZE"); mem = collections.Counter(); cnt = collections.Counter()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmd = f.read().split(b"\0")
+            if not cmd[0]:
+                continue
+            with open(f"/proc/{pid}/statm") as f:
+                rss = int(f.read().split()[1]) * page
+        except (OSError, IndexError, ValueError):
+            continue
+        mem[_proc_name(cmd)] += rss; cnt[_proc_name(cmd)] += 1
+    p("  память по программам (сумма по процессам, МБ): "
+      + ", ".join(f"{n} {b // 1048576}" + (f" ({cnt[n]} проц.)" if cnt[n] > 1 else "") for n, b in mem.most_common(10)))
     p("  больше всего памяти:")
     for ln in run(["ps", "-eo", "pid,user,stat,pcpu,pmem,rss,etime,args", "--sort=-rss"], 15).splitlines()[:12]:
         p("    " + ln[:170])
@@ -366,9 +398,102 @@ def conns():
         p(f"  {n:4d} соединений — pid {pid}: {cmd[:150]}")
 
 
+def boots():
+    r, ok = journal(["--list-boots", "--no-pager", "-q"], 60)
+    if not ok:
+        p("  нет доступа к журналу системы (нужен sudo)")
+        return
+    rows = []
+    for ln in r.splitlines():
+        m = re.match(r"\s*(-?\d+)\s+\S+\s+\w{3} (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)(?: \S+)?\s+\w{3} (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)", ln)
+        if m:
+            rows.append((int(m.group(1)), m.group(2), m.group(3)))
+    box = []
+    for fn in ("system.log.1", "system.log"):
+        box += read(os.path.join(state_dir, fn)).splitlines()
+    rows = rows[-7:]
+    p(f"  загрузок в журнале {len(rows)} последних (UTC):")
+    pat = (r"Under memory pressure|soft lockup|blocked for more than|rcu.*stall|Out of memory|oom|page allocation|I/O error|"
+           r"Time jumped|clock.*(wrong|jump|unstable)|hung|xrdp")
+    for i, (idx, first, last) in enumerate(rows):
+        if idx == 0:
+            p(f"  ── текущая загрузка: с {first}")
+            continue
+        nxt = rows[i + 1][1] if i + 1 < len(rows) else None
+        t_last = datetime.datetime.strptime(last, "%Y-%m-%d %H:%M:%S")
+        gap = (datetime.datetime.strptime(nxt, "%Y-%m-%d %H:%M:%S") - t_last).total_seconds() / 60 if nxt else None
+        tail, _ = journal(["-b", str(idx), "-n", "300", "-o", "short-iso", "--no-pager", "-q"], 60)
+        clean = re.search(r"systemd-shutdown|Reached target .*(Reboot|Power-Off|Shutdown|Halt)|System is (rebooting|powering)|"
+                          r"Journal stopped|reboot: Restarting system|Power key pressed|Stopped target", tail)
+        p(f"  ── загрузка {idx}: {first} → {last}" + (f", до следующей {gap:.0f} мин" if gap is not None else "")
+          + ("; выключение штатное (перезагрузка из системы)" if clean
+             else "; ОБОРВАЛАСЬ — журнал кончается без выключения: сервер завис или его сбросили кнопкой"))
+        since = (t_last - datetime.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+        w, _ = journal(["-b", str(idx), "--since", since, "-p", "warning", "-o", "short-iso", "--no-pager", "-q"], 60)
+        wl = [ln for ln in w.splitlines() if ln.strip() and not DENIED.search(ln) and not ln.startswith("--")]
+        src = collections.Counter(re.sub(r"\[\d+\]:?$", "", ln.split()[2]).rstrip(":") for ln in wl if len(ln.split()) > 2)
+        p(f"    предупреждений и ошибок за последний час: {len(wl)}" + (": " + ", ".join(f"{k} {v}" for k, v in src.most_common(6)) if wl else ""))
+        for ln in wl[-5:]:
+            p("      " + ln[:200])
+        k, kok = journal(["-b", str(idx), "--since", since, "-g", pat, "--case-sensitive=false", "-o", "short-iso", "--no-pager", "-q"], 60)
+        kl = [ln for ln in k.splitlines() if ln.strip() and not ln.startswith("--") and "pattern" not in ln] if kok else []
+        if kl:
+            p(f"    память, зависания, часы, xrdp за последний час: {len(kl)}")
+            for ln in kl[-5:]:
+                p("      " + ln[:200])
+        p("    последние строки журнала:")
+        for ln in [ln for ln in tail.splitlines() if ln.strip()][-4:]:
+            p("      " + ln[:200])
+        bx = [ln for ln in box if since <= ln[:19] <= last]
+        if bx:
+            p(f"    самописец за последний час: {len(bx)} записей, последние:")
+            for ln in bx[-3:]:
+                p("      " + ln[:300])
+
+
+def blackbox():
+    lines = []
+    for fn in ("system.log.1", "system.log"):
+        lines += read(os.path.join(state_dir, fn)).splitlines()
+    lines = [ln for ln in lines if re.match(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d ", ln)]
+    if not lines:
+        p("  записей ещё нет: самописец появился в боте 26.10 — пишет раз в минуту в system.log рядом с state.json")
+        return
+    p(f"  записей {len(lines)}, с {lines[0][:16]} по {lines[-1][:16]} UTC")
+    gaps, prev = [], None
+    for ln in lines:
+        t = datetime.datetime.strptime(ln[:19], "%Y-%m-%d %H:%M:%S")
+        if prev and (t - prev).total_seconds() > 180:
+            gaps.append((prev, t))
+        prev = t
+    p(f"  пропуски дольше 3 мин (бот не работал или сервер стоял): {len(gaps)}")
+    for a, b in gaps[-8:]:
+        p(f"    {a:%d.%m %H:%M} → {b:%d.%m %H:%M} ({(b - a).total_seconds() / 60:.0f} мин)")
+    day = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+    recent = [ln for ln in lines if ln[:19] >= day]
+
+    def num(rx, ln):
+        m = re.search(rx, ln)
+        return float(m.group(1)) if m else None
+    av = [(num(r"доступно (\d+) МБ", ln), ln) for ln in recent]
+    av = [x for x in av if x[0] is not None]
+    if av:
+        p("  меньше всего свободной памяти за сутки: " + min(av)[1][:300])
+    for res in ("memory", "io", "cpu"):
+        ps = [(num(rf"{res} ([\d.]+)", ln), ln) for ln in recent]
+        ps = [x for x in ps if x[0] is not None]
+        if ps and max(ps)[0] >= 5:
+            p(f"  сильнее всего не хватало {res} ({max(ps)[0]:.0f}% времени): " + max(ps)[1][:300])
+    p("  последние записи:")
+    for ln in lines[-4:]:
+        p("    " + ln[:300])
+
+
+section("ПРЕДЫДУЩИЕ ЗАГРУЗКИ: чем закончилась каждая", boots)
+section("САМОПИСЕЦ БОТА: состояние сервера раз в минуту", blackbox)
 section("ПАМЯТЬ И ПРОЦЕССОР", mem)
-section("ДИСК", disk)
 section("ПРОЦЕССЫ", procs)
+section("ДИСК", disk)
 section("СЛУЖБА БОТА", service)
 section(f"СОБЫТИЯ СИСТЕМЫ ЗА {SINCE_D} СУТ", events)
 section(f"ЖУРНАЛ БОТА ПО ДНЯМ (UTC) ЗА {SINCE_D} СУТ", bot_log)
