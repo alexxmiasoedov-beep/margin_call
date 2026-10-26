@@ -31,6 +31,9 @@
   `curl -sL https://raw.githubusercontent.com/alexxmiasoedov-beep/margin_call/main/tools/<файл> | python3`:
   `export_signals.py` — журналы и журнал службы, `server_health.py` — проверка сервера, `margin_rate_history.py`.
 - Исследования и правила журналов: `research/s2` … `research/s12`, в каждой папке `ВЫВОДЫ.md`.
+- Данные исследований (свечи 869 фьючерсов за 2 года, премии, фандинг, архив канала MarginData, объявления Binance,
+  ставки маржи; ~580 МБ в сжатом виде) — в отдельной ветке `data`, как распаковать — `DATA.md` в ней. Скачивать
+  только при надобности: `git clone --branch data --single-branch …`.
 
 ## Открыто на 26.10.2026
 
