@@ -24,7 +24,7 @@ JOURNALS = (("virtual", "📓"), ("virtual_fund", "📗"), ("virtual_1525", "�
 OWN = (("virtual_D", "🟦"), ("virtual_P", "🟧"), ("virtual_KR", "🇰🇷"), ("virtual_KRS", "🇰🇷⭐"), ("virtual_TR", "🇹🇷"), ("virtual_L", "🟩"),
        ("virtual_RP", "↩️"), ("virtual_BF", "🏦"), ("virtual_NT", "🆕"), ("virtual_AN", "📢"))
 LOG_PAT = re.compile(r"СИГНАЛ|НОВОЕ ПРАВИЛО|КОРЕЯ|ТУРЦИЯ|РОЗНИЦА|ОТДАЧА|ФАКТОР ЗАЙМА|СТАВКИ|НОВЫЙ ТОКЕН|ОБЪЯВЛЕНИЕ|UPBIT|DNS|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
-                     r"канал недоступен|Binance OK|торговля выключена|Убраны|Started|Stopped|Stopping|Main process exited|Scheduled restart")
+                     r"РЕСУРСЫ|telegram fail|telegram getUpdates|канал недоступен|Binance OK|торговля выключена|Убраны|Started|Stopped|Stopping|Main process exited|Scheduled restart")
 out = []
 SECRET = re.compile(r"\d{8,10}:[A-Za-z0-9_-]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|(?<=://)[^/@\s]+(?=@)")   # токены бота, GitHub, логин в URL
 

@@ -72,6 +72,7 @@ socket.getaddrinfo = _cached_getaddrinfo
 
 
 def http(url, data=None, timeout=30):
+    trader.REQ[urllib.parse.urlsplit(url).hostname or "?"] += 1          # для строки «РЕСУРСЫ» раз в час
     req = urllib.request.Request(url, data=data, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
@@ -86,6 +87,17 @@ def http_json(url, timeout=30):
 
 
 # ---------------------------------------------------------------- Telegram
+_tg_fail = {"t": 0, "n": 0}
+
+
+def tg_warn(*a):
+    """Сбой Telegram — в журнал не чаще раза в минуту: при обрыве сети ошибки идут подряд."""
+    _tg_fail["n"] += 1
+    if time.time() - _tg_fail["t"] >= 60:
+        log(*a, f"(сбоев Telegram за минуту: {_tg_fail['n']})" if _tg_fail["n"] > 1 else "")
+        _tg_fail.update(t=time.time(), n=0)
+
+
 def tg(method, _timeout=30, **params):
     if not TOKEN:
         return None
@@ -94,7 +106,7 @@ def tg(method, _timeout=30, **params):
     try:
         return json.loads(http(url, data=data, timeout=_timeout))
     except Exception as e:
-        log("telegram fail", method, e)
+        tg_warn("telegram fail", method, e)
         return None
 
 
@@ -224,12 +236,15 @@ def handle_callback(state, cq, candidates):
 
 def poll_commands(state, candidates, dry, wait=0):
     """Обрабатывает команды, нажатия кнопок и ввод значений параметров.
-    wait > 0 — длинный опрос: Telegram держит запрос до wait секунд и отвечает сразу, как придёт событие."""
+    wait > 0 — длинный опрос: Telegram держит запрос до wait секунд и отвечает сразу, как придёт событие.
+    Возвращает число событий или None, если Telegram не ответил (нет сети, второй экземпляр бота с тем же токеном)."""
     if not TOKEN:
-        return
+        return None
     r = tg("getUpdates", _timeout=wait + 15, offset=state.get("update_offset", 0), timeout=wait)
     if not r or not r.get("ok"):
-        return
+        if r:
+            tg_warn("telegram getUpdates:", r.get("error_code"), r.get("description"))
+        return None
     for u in r["result"]:
         state["update_offset"] = u["update_id"] + 1
         if "callback_query" in u:
@@ -299,6 +314,7 @@ def poll_commands(state, candidates, dry, wait=0):
         elif text.startswith("/resume"):
             state["trading_paused"] = False
             send(cid, "Торговля возобновлена.")
+    return len(r["result"])
 
 
 # ---------------------------------------------------------------- канал
@@ -998,6 +1014,17 @@ def noretail_check(s, coin, T, fut, kr_share, spot):
     return norm >= NR_NORM_MIN, why + f"; обычная доля спота {norm * 100:.1f}%"
 
 
+_t24 = {"t": 0, "data": None}
+
+
+def ticker24():
+    """Цены фьючерсов Binance за сутки (ticker/24hr: ~600 контрактов, вес 40) — один запрос на проход для 🇰🇷 и 🇹🇷."""
+    if time.time() - _t24["t"] > 120 or not isinstance(_t24["data"], list):
+        _t24["data"] = http_json("https://fapi.binance.com/fapi/v1/ticker/24hr", 20)
+        _t24["t"] = time.time()
+    return _t24["data"]
+
+
 def korea_rule(state):
     """Корейский шорт (журнал 🇰🇷, research/mm2/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по всем фьючерсам Binance —
     памп +15% за ≤ 2 ч из покоя; если за последний час Upbit + Bithumb дали ≥ 20% объёма (вместе с фьючерсом Binance) —
@@ -1007,7 +1034,7 @@ def korea_rule(state):
     if T is None:
         return []
     trader.contract("BTC")                                     # загружает список бессрочных контрактов USDT
-    tick = http_json("https://fapi.binance.com/fapi/v1/ticker/24hr", 20)
+    tick = ticker24()
     if not isinstance(tick, list):
         return candle_retry("kr_last_T", "Binance не отдал цены фьючерсов за сутки (ticker/24hr)")
     candle_done(state, "kr_last_T", T)
@@ -1121,7 +1148,7 @@ def turkey_rule(state):
         usdtry = float(spot["USDTTRY"])
     except (KeyError, TypeError, ValueError):
         return candle_retry("tr_last_T", "нет курса USDT/TRY")
-    tick = http_json("https://fapi.binance.com/fapi/v1/ticker/24hr", 20)
+    tick = ticker24()
     if not isinstance(tick, list):
         return candle_retry("tr_last_T", "Binance не отдал цены фьючерсов за сутки (ticker/24hr)")
     candle_done(state, "tr_last_T", T)
@@ -1217,7 +1244,7 @@ def bf_record(posts):
     if changed:
         try:
             with open(BF_FILE + ".tmp", "w") as f:
-                json.dump(_bf_log, f, separators=(",", ":"))
+                f.write(json.dumps(_bf_log, separators=(",", ":")))
             os.replace(BF_FILE + ".tmp", BF_FILE)
         except OSError as e:
             log("ФАКТОР ЗАЙМА", "журнал постов не записан:", e)
@@ -1781,7 +1808,8 @@ def scan(state, dry):
 
 def load_state():
     try:
-        s = json.load(open(STATE_FILE))
+        with open(STATE_FILE, encoding="utf-8") as f:
+            s = json.load(f)
     except Exception:
         s = {}
     s.setdefault("subscribers", [])
@@ -1790,10 +1818,37 @@ def load_state():
     return s
 
 
+_saved = [None]                                         # последний записанный текст state.json
+
+
 def save_state(s):
+    """state.json: одной строкой (быстрый кодировщик json вместо медленного с отступами) и только если что-то изменилось —
+    раньше файл целиком переписывался после каждого опроса Telegram, 3–4 раза в минуту."""
+    text = json.dumps(s, ensure_ascii=False, separators=(",", ":"))
+    if text == _saved[0]:
+        return
     tmp = STATE_FILE + ".tmp"
-    json.dump(s, open(tmp, "w"), ensure_ascii=False, indent=1)
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
     os.replace(tmp, STATE_FILE)
+    _saved[0] = text
+
+
+def log_resources(durs):
+    """Раз в час — строка «РЕСУРСЫ»: память процесса (сейчас и пик), потоки, проходы за час (медиана и максимум),
+    запросы по хостам. Для поиска причин перегрузки сервера (tools/server_health.py)."""
+    st = {}
+    try:
+        with open("/proc/self/status") as f:
+            st = dict(ln.split(":", 1) for ln in f if ":" in ln)
+    except OSError:
+        pass
+    mb = lambda k: f"{int(st[k].split()[0]) / 1024:.0f}" if k in st else "?"
+    d = sorted(durs); req = trader.REQ
+    log("РЕСУРСЫ", f"память {mb('VmRSS')} МБ (пик {mb('VmHWM')} МБ), потоков {st.get('Threads', '?').strip()}; проходов за час "
+        f"{len(d)}" + (f", медиана {d[len(d) // 2]:.0f} с, максимум {d[-1]:.0f} с" if d else "")
+        + f"; запросов за час {sum(req.values())}: " + ", ".join(f"{h} {n}" for h, n in req.most_common(6)))
+    req.clear()
 
 
 def cycle(dry, state=None):
@@ -1841,6 +1896,7 @@ def run_loop(dry):
     cands = []
     started = time.time()
     next_scan = 0
+    durs, res_t = [], time.time()
     while True:
         now = time.time()
         if now >= next_scan:
@@ -1849,8 +1905,12 @@ def run_loop(dry):
             except Exception as e:
                 log("ошибка цикла:", repr(e))
             took = time.time() - now
+            durs.append(took)
             if took > trader.POLL_SEC * 0.8:
                 log(f"проход занял {took:.0f} с — дольше периода опроса {trader.POLL_SEC:g} с")
+            if time.time() - res_t >= 3600:
+                log_resources(durs)
+                durs, res_t = [], time.time()
             next_scan = max(now + trader.POLL_SEC, time.time() + 5)
             if MAX_RUNTIME_SEC and time.time() - started + trader.POLL_SEC > MAX_RUNTIME_SEC:
                 log("достигнут MAX_RUNTIME_SEC, выхожу")
@@ -1858,8 +1918,12 @@ def run_loop(dry):
         wait = max(1, min(25, int(next_scan - time.time())))
         try:
             trader.configure(state)
-            poll_commands(state, cands, dry, wait=wait)
+            got = poll_commands(state, cands, dry, wait=wait)
             save_state(state)
+            if got is None:
+                # Telegram не ответил: без паузы цикл крутился бы вхолостую сотни раз в секунду (при обрыве сети ошибка
+                # приходит сразу) — каждый раз строка в журнал и запись state.json, сервер вставал
+                time.sleep(max(0.5, min(10, next_scan - time.time())))
         except Exception as e:
             log("ошибка обработки команд:", repr(e))
             time.sleep(3)
@@ -1867,6 +1931,10 @@ def run_loop(dry):
 
 def main():
     dry = "--dry-run" in sys.argv
+    try:
+        os.nice(10)                     # процессор — сначала SSH и системе: бот почти всё время ждёт сеть, ему хватит
+    except OSError:
+        pass
     if not TOKEN and not dry:
         sys.exit("TG_BOT_TOKEN не задан (или используйте --dry-run)")
     check = trader.startup_check()

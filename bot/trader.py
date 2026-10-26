@@ -1,4 +1,5 @@
 """Исполнитель ордеров (Binance USDT-M perpetual). Ключи только из окружения."""
+import collections
 import hashlib
 import math
 import hmac
@@ -108,8 +109,12 @@ def sync_time():
         pass
 
 
+REQ = collections.Counter()                    # запросы по хостам с последней строки «РЕСУРСЫ» (scanner.log_resources)
+
+
 def _request(method, path, params=None, signed=True, _retry=True):
     """Binance USDT-M futures. Ошибка — dict с отрицательным code; успех может быть list, dict или {"code": 200}."""
+    REQ["fapi.binance.com"] += 1
     params = dict(params or {})
     qs = urllib.parse.urlencode(params)
     if signed:
@@ -906,7 +911,8 @@ VIRTUALS = {
                    "icon": "📢", "params": lambda fh: (None, 25.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
                    "hold_h": 168.0, "lev": 1, "hedge": "BTC"},
 }
-VIRT = {"hold_h": 48.0, "pause_h": 48.0, "start_balance": 20.0}   # стартовый капитал журнала, USDT
+VIRT = {"hold_h": 48.0, "pause_h": 48.0, "start_balance": 20.0,   # стартовый капитал журнала, USDT
+        "check_s": 300}                                             # свечи открытых сделок докачиваются раз в 5 мин
 
 
 def _virt(state, key):
@@ -921,15 +927,18 @@ def _virt_scan(t):
     """Проходит минутные свечи Binance после входа по порядку и возвращает первое событие: "стоп" (марк-цена дошла до стопа —
     так срабатывает реальный стоп), "тейк" (цена сделок прошла тейк — так исполняется лимитный тейк) или None.
     Шорт: стоп по максимуму марк-цены, тейк по минимуму цены сделок; лонг — наоборот.
-    Стоп и тейк в одной минуте — стоп. Свечи после выхода по времени не смотрим; докачка с места прошлой проверки."""
+    Стоп и тейк в одной минуте — стоп. Свечи после выхода по времени не смотрим; докачка с места прошлой проверки.
+    Свечей просим ровно столько, сколько прошло (вес запроса у Binance 1, а не 10); без тейка цена сделок не нужна."""
     start = int(t.get("v_next") or (t["opened"] // 60 + 1) * 60 * 1000)
     end = int((t["opened"] + t.get("hold_h", VIRT["hold_h"]) * 3600) * 1000)
     long = t.get("side") == "long"
     for _ in range(4):
-        if start > min(time.time() * 1000 - 60000, end):
+        last = min(time.time() * 1000 - 60000, end)
+        if start > last:
             break
-        m = _request("GET", "/fapi/v1/markPriceKlines", {"symbol": f"{t['sym']}USDT", "interval": "1m", "startTime": start, "limit": 1500}, signed=False)
-        k = _request("GET", "/fapi/v1/klines", {"symbol": f"{t['sym']}USDT", "interval": "1m", "startTime": start, "limit": 1500}, signed=False)
+        q = {"symbol": f"{t['sym']}USDT", "interval": "1m", "startTime": start, "limit": int(min(1500, (last - start) // 60000 + 2))}
+        m = _request("GET", "/fapi/v1/markPriceKlines", q, signed=False)
+        k = _request("GET", "/fapi/v1/klines", q, signed=False) if t.get("tp") else m
         if not isinstance(m, list) or not isinstance(k, list) or not m or not k:
             break
         now_ms = time.time() * 1000
@@ -947,7 +956,7 @@ def _virt_scan(t):
             if t.get("tp") and ((kx[ts] > t["tp"]) if long else (kx[ts] < t["tp"])):
                 t["v_next"] = ts + 60000; return "тейк"
         start = t["v_next"] = mins[-1] + 60000
-        if len(m) < 1500 or len(k) < 1500:
+        if len(m) < q["limit"] or len(k) < q["limit"]:
             break
     return None
 
@@ -1052,20 +1061,29 @@ def _virt_close(v, t, px, reason, icon):
 
 
 def virt_manage(state):
-    """Каждый цикл: виртуальные стоп (марк-цена), тейк (цена сделок) по минутным свечам после входа и выход по времени."""
+    """Виртуальные стоп (марк-цена), тейк (цена сделок) по минутным свечам после входа и выход по времени. Сделка
+    проверяется раз в 5 мин (VIRT["check_s"]) и в момент выхода по времени: свечи докачиваются с места прошлой проверки,
+    так что стоп и тейк ловятся так же точно, а запросов к Binance в разы меньше. Текущая цена — только для выхода."""
     msgs = []; now = time.time(); cache = {}; dropped = {}
+
+    def price(sym):
+        if sym not in cache:
+            cache[sym] = mark_price(sym)
+        return cache[sym]
+
     for key, cfg in VIRTUALS.items():
         v = _virt(state, key)
         for t in v["trades"]:
             if t.get("closed"):
                 continue
-            if t["sym"] not in cache:
-                cache[t["sym"]] = mark_price(t["sym"])
-            px = cache[t["sym"]]
+            t_end = t["opened"] + t.get("hold_h", VIRT["hold_h"]) * 3600
+            if now < t.get("v_chk", 0) and now < t_end:
+                continue
+            t["v_chk"] = min(now + VIRT["check_s"], t_end)
             ev = _virt_scan(t)
             fx = cfg.get("fund_exit")                      # досрочный выход: фандинг ≤ fx за 8 ч два начисления подряд
             fbad = False
-            if fx is not None and not ev and px and now >= t.get("f_chk", 0):
+            if fx is not None and not ev and now >= t.get("f_chk", 0) and price(t["sym"]):
                 t["f_chk"] = now + 1800                    # проверяем раз в 30 мин
                 fr = funding_rates(t["sym"], t["opened"])
                 fbad = bool(fr) and any(a[1] <= fx and b[1] <= fx for a, b in zip(fr, fr[1:]))
@@ -1074,8 +1092,9 @@ def virt_manage(state):
             elif ev == "тейк":
                 msgs.append(_virt_close(v, t, t["tp"], "тейк", cfg["icon"]))
             elif fbad:
-                msgs.append(_virt_close(v, t, px, f"фандинг ≤ {fx * 100:g}%/8 ч два раза подряд", cfg["icon"]))
-            elif now - t["opened"] >= t.get("hold_h", VIRT["hold_h"]) * 3600:
+                msgs.append(_virt_close(v, t, price(t["sym"]), f"фандинг ≤ {fx * 100:g}%/8 ч два раза подряд", cfg["icon"]))
+            elif now >= t_end:
+                px = price(t["sym"])
                 if px:
                     msgs.append(_virt_close(v, t, px, f"выход по времени ({t.get('hold_h', VIRT['hold_h']):g} ч)", cfg["icon"]))
                 elif contract(t["sym"]) is None and _contracts:
