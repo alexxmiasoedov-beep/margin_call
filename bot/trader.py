@@ -1,5 +1,4 @@
 """Исполнитель ордеров (Binance USDT-M perpetual). Ключи только из окружения."""
-import collections
 import hashlib
 import math
 import hmac
@@ -109,12 +108,17 @@ def sync_time():
         pass
 
 
-REQ = collections.Counter()                    # запросы по хостам с последней строки «РЕСУРСЫ» (scanner.log_resources)
+NET = {}                                       # хост → [запросов, сбоев, секунд ожидания, максимум] с последней «РЕСУРСЫ»
+
+
+def net_note(host, dt, ok):
+    """Учёт сети для строки «РЕСУРСЫ» раз в час (scanner.log_resources): запросы, сбои и время ожидания по хостам."""
+    n = NET.setdefault(host, [0, 0, 0.0, 0.0])
+    n[0] += 1; n[1] += 0 if ok else 1; n[2] += dt; n[3] = max(n[3], dt)
 
 
 def _request(method, path, params=None, signed=True, _retry=True):
     """Binance USDT-M futures. Ошибка — dict с отрицательным code; успех может быть list, dict или {"code": 200}."""
-    REQ["fapi.binance.com"] += 1
     params = dict(params or {})
     qs = urllib.parse.urlencode(params)
     if signed:
@@ -124,6 +128,7 @@ def _request(method, path, params=None, signed=True, _retry=True):
         qs += "&signature=" + hmac.new(SECRET.encode(), qs.encode(), hashlib.sha256).hexdigest()
     url = f"{BASE}{path}" + (f"?{qs}" if qs else "")
     req = urllib.request.Request(url, method=method, headers={"X-MBX-APIKEY": KEY, "User-Agent": "margin-call"})
+    t0 = time.time()
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             j = json.loads(r.read().decode())
@@ -134,6 +139,7 @@ def _request(method, path, params=None, signed=True, _retry=True):
             j = {"code": e.code, "msg": str(e)}
     except Exception as e:
         j = {"code": -1, "msg": repr(e)}
+    net_note("fapi.binance.com", time.time() - t0, not (isinstance(j, dict) and j.get("code") == -1))
     if _err(j):
         log("API error", method, path, j.get("code"), j.get("msg"))
         if signed and _retry and j.get("code") == -1021:      # часы разошлись — сверяем и повторяем один раз

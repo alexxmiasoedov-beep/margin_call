@@ -91,7 +91,7 @@ state_dir = os.path.dirname(os.path.abspath(state_path))
 
 up = float(read("/proc/uptime").split()[0] or 0) if read("/proc/uptime") else 0
 osr = dict(re.findall(r'^(\w+)="?([^"\n]*)"?', read("/etc/os-release"), re.M))
-p(f"SERVER-HEALTH v1 | сейчас {fmt(time.time())} UTC | работает без перезагрузки {up / 86400:.1f} сут | загрузка "
+p(f"SERVER-HEALTH v2 | сейчас {fmt(time.time())} UTC | работает без перезагрузки {up / 86400:.1f} сут | загрузка "
   f"{' '.join(read('/proc/loadavg').split()[:3])} | ядер {os.cpu_count()} | {os.uname().machine} | {osr.get('PRETTY_NAME', '?')}")
 p(f"бот: {bot or 'папка не найдена'} | state: {state_path}")
 
@@ -225,27 +225,39 @@ LOG_KEYS = (("канал недоступен", r"канал недоступе�
 
 
 def log_stats(lines):
-    """Строки журнала службы (journalctl -o short-iso) → таблица по дням."""
+    """Строки журнала службы (journalctl -o short-iso) → таблица по дням, по часам за последние сутки и последние строки."""
     D = collections.defaultdict(collections.Counter)
     took = collections.defaultdict(list)
-    codes = collections.Counter(); res = []
+    H = collections.defaultdict(collections.Counter); htook = collections.defaultdict(list)
+    h0 = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)).strftime("%Y-%m-%dT%H")
+    codes = collections.Counter(); res = []; tail = collections.deque(maxlen=25)
     for ln in lines:
-        m = re.match(r"(\d{4}-\d\d-\d\d)T", ln)
+        m = re.match(r"(\d{4}-\d\d-\d\d)T(\d\d)", ln)
         if not m:
             continue
         day = m.group(1)[5:]; d = D[day]
+        hour = f"{m.group(1)}T{m.group(2)}"
+        hd = H[hour] if hour >= h0 else None
         d["строк"] += 1
         t = re.search(r"проход занял (\d+) с", ln)
         if t:
             took[day].append(int(t.group(1)))
+            if hd is not None:
+                htook[hour].append(int(t.group(1)))
         for key, rx in LOG_KEYS:
             if re.search(rx, ln):
                 d[key] += 1
+                if hd is not None:
+                    hd[key] += 1
+        if hd is not None:
+            hd["строк"] += 1
         c = re.search(r"API error \w+ (\S+) (-?\d+)", ln)
         if c:
             codes[f"{c.group(1)} {c.group(2)}"] += 1
         if "РЕСУРСЫ" in ln:
             res.append(ln)
+        if "telegram fail" not in ln or len(tail) == 0 or "telegram fail" not in tail[-1]:
+            tail.append(ln)
     keys = ("строк",) + tuple(k for k, _ in LOG_KEYS)
     p("  день  | проходов > 48 с, медиана, максимум | " + " | ".join(keys))
     for day in sorted(D):
@@ -254,8 +266,16 @@ def log_stats(lines):
           + " | ".join(str(D[day][k]) for k in keys))
     if codes:
         p("  ошибки Binance (путь и код): " + ", ".join(f"{k} ×{v}" for k, v in codes.most_common(8)))
+    hk = ("строк", "telegram fail", "DNS", "таймаут", "API error", "http_json fail", "запуск")
+    p("  по часам за сутки (UTC) | проходов > 48 с, медиана | " + " | ".join(hk))
+    for hour in sorted(H):
+        tk = sorted(htook.get(hour, []))
+        p(f"  {hour[5:10]} {hour[11:]}ч | {len(tk)}, {tk[len(tk) // 2] if tk else 0} с | " + " | ".join(str(H[hour][k]) for k in hk))
     for ln in res[-6:]:
-        p("  " + ln.split(": ", 1)[-1][:220])
+        p("  " + ln.split(": ", 1)[-1][:400])
+    p("  последние строки журнала бота (подряд идущие «telegram fail» — одной строкой):")
+    for ln in tail:
+        p("    " + ln.split(": ", 1)[-1][:220])
 
 
 def bot_log():
@@ -309,6 +329,43 @@ def net():
     p(f"  DNS t.me за {time.time() - t0:.1f} с: " + " ".join(sorted(set(x.split()[0] for x in r.splitlines() if x.strip())))[:150])
 
 
+def dns():
+    import socket
+    import threading
+    ns = re.findall(r"^nameserver\s+(\S+)", read("/etc/resolv.conf"), re.M)
+    p("  /etc/resolv.conf: nameserver " + (", ".join(ns) or "нет"))
+    rs = run(["resolvectl", "status"], 20)
+    for ln in rs.splitlines():
+        if re.search(r"Current DNS Server|DNS Servers|Fallback DNS|^Link|resolv.conf mode", ln):
+            p("  " + ln.strip()[:160])
+
+    def look(host, fam, out):
+        t0 = time.time()
+        try:
+            socket.getaddrinfo(host, 443, fam, socket.SOCK_STREAM)
+            out.append(f"{time.time() - t0:.2f} с")
+        except Exception as e:
+            out.append(f"сбой за {time.time() - t0:.1f} с ({e.__class__.__name__})")
+    for host in ("fapi.binance.com", "api.telegram.org", "t.me", "www.binance.com", "api.upbit.com"):
+        row = []
+        for fam, name in ((socket.AF_INET6, "AAAA"), (socket.AF_INET, "A")):
+            out = []
+            th = threading.Thread(target=look, args=(host, fam, out), daemon=True)
+            th.start(); th.join(15)
+            row.append(f"{name} {out[0] if out else 'нет ответа за 15 с'}")
+        p(f"  {host}: " + ", ".join(row))
+
+
+def conns():
+    cnt = collections.Counter()
+    for ln in run(["ss", "-tnpH", "state", "established"], 15).splitlines():
+        for name, pid in re.findall(r'\("([^"]+)",pid=(\d+)', ln):
+            cnt[pid] += 1
+    for pid, n in cnt.most_common(6):
+        cmd = read(f"/proc/{pid}/cmdline").replace("\0", " ").strip()
+        p(f"  {n:4d} соединений — pid {pid}: {cmd[:150]}")
+
+
 section("ПАМЯТЬ И ПРОЦЕССОР", mem)
 section("ДИСК", disk)
 section("ПРОЦЕССЫ", procs)
@@ -317,6 +374,8 @@ section(f"СОБЫТИЯ СИСТЕМЫ ЗА {SINCE_D} СУТ", events)
 section(f"ЖУРНАЛ БОТА ПО ДНЯМ (UTC) ЗА {SINCE_D} СУТ", bot_log)
 section("СОСТОЯНИЕ БОТА", state_info)
 section("СЕТЬ", net)
+section("DNS: сколько ищется адрес (норма — сотые доли секунды)", dns)
+section("СОЕДИНЕНИЯ ПО ПРОЦЕССАМ (свои процессы)", conns)
 try:
     with open(os.path.join(home, "margin_server_health.txt"), "w") as f:
         f.write("\n".join(out) + "\n")

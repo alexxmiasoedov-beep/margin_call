@@ -43,20 +43,41 @@ def log(*a):
 # ---------------------------------------------------------------- DNS
 # DNS на сервере временами не отвечает («Temporary failure in name resolution»), и каждый такой запрос висит секунды.
 # Адреса хостов храним 10 мин (на все запросы процесса, и scanner, и trader); если DNS не ответил — берём последний
-# рабочий адрес и спрашиваем DNS снова через минуту.
+# рабочий адрес и спрашиваем DNS снова через минуту. Без маршрута IPv6 спрашиваем только адреса IPv4: запрос AAAA
+# у медленного DNS стоит секунды, а соединиться по IPv6 всё равно нельзя («Network is unreachable»).
 DNS_TTL, DNS_RETRY = 600, 60
 _dns_cache, _dns_logged = {}, {}
 _getaddrinfo = socket.getaddrinfo
+_v6 = {"t": 0, "ok": True}
+
+
+def _ipv6_route():
+    """Есть ли маршрут IPv6 по умолчанию (не через lo)."""
+    try:
+        with open("/proc/net/ipv6_route") as f:
+            return any(x[0] == "0" * 32 and x[1] == "00" and x[-1] != "lo" for x in (ln.split() for ln in f) if len(x) >= 10)
+    except OSError:
+        return True
 
 
 def _cached_getaddrinfo(host, port, *args, **kw):
+    now = time.time()
+    if now - _v6["t"] > 600:
+        _v6.update(t=now, ok=_ipv6_route())
+    if not _v6["ok"]:
+        if args[:1] == (0,):
+            args = (socket.AF_INET,) + args[1:]
+        elif not args and not kw.get("family"):
+            kw = dict(kw, family=socket.AF_INET)
     key = (host, port, args, tuple(sorted(kw.items())))
-    hit = _dns_cache.get(key); now = time.time()
+    hit = _dns_cache.get(key)
     if hit and now < hit[0]:
         return hit[1]
     try:
         res = _getaddrinfo(host, port, *args, **kw)
+        trader.net_note("DNS", time.time() - now, True)
     except socket.gaierror as e:
+        trader.net_note("DNS", time.time() - now, False)
         if not hit:
             raise
         _dns_cache[key] = (now + DNS_RETRY, hit[1])
@@ -72,10 +93,16 @@ socket.getaddrinfo = _cached_getaddrinfo
 
 
 def http(url, data=None, timeout=30):
-    trader.REQ[urllib.parse.urlsplit(url).hostname or "?"] += 1          # для строки «РЕСУРСЫ» раз в час
-    req = urllib.request.Request(url, data=data, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
+    host = "telegram getUpdates" if "/getUpdates" in url else (urllib.parse.urlsplit(url).hostname or "?")
+    t0 = time.time(); ok = False
+    try:
+        req = urllib.request.Request(url, data=data, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = r.read().decode("utf-8", "replace")
+        ok = True
+        return body
+    finally:
+        trader.net_note(host, time.time() - t0, ok)          # для строки «РЕСУРСЫ» раз в час
 
 
 def http_json(url, timeout=30):
@@ -1835,8 +1862,9 @@ def save_state(s):
 
 
 def log_resources(durs):
-    """Раз в час — строка «РЕСУРСЫ»: память процесса (сейчас и пик), потоки, проходы за час (медиана и максимум),
-    запросы по хостам. Для поиска причин перегрузки сервера (tools/server_health.py)."""
+    """Раз в час — строка «РЕСУРСЫ»: память процесса (сейчас и пик), потоки, проходы за час (медиана и максимум), сеть
+    по хостам — запросов, секунд ожидания, максимум, сбоев (DNS — поиск адресов; длинный опрос Telegram не считается).
+    Для поиска причин долгих проходов и перегрузки сервера (tools/server_health.py)."""
     st = {}
     try:
         with open("/proc/self/status") as f:
@@ -1844,11 +1872,12 @@ def log_resources(durs):
     except OSError:
         pass
     mb = lambda k: f"{int(st[k].split()[0]) / 1024:.0f}" if k in st else "?"
-    d = sorted(durs); req = trader.REQ
+    d = sorted(durs)
+    net = sorted(((v[2], h, v) for h, v in trader.NET.items() if h != "telegram getUpdates"), reverse=True)
     log("РЕСУРСЫ", f"память {mb('VmRSS')} МБ (пик {mb('VmHWM')} МБ), потоков {st.get('Threads', '?').strip()}; проходов за час "
         f"{len(d)}" + (f", медиана {d[len(d) // 2]:.0f} с, максимум {d[-1]:.0f} с" if d else "")
-        + f"; запросов за час {sum(req.values())}: " + ", ".join(f"{h} {n}" for h, n in req.most_common(6)))
-    req.clear()
+        + "; сеть за час: " + ", ".join(f"{h} {v[0]} запр. {v[2]:.0f} с (макс {v[3]:.1f} с, сбоев {v[1]})" for _, h, v in net[:7]))
+    trader.NET.clear()
 
 
 def cycle(dry, state=None):
