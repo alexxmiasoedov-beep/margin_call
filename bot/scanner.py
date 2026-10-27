@@ -35,6 +35,9 @@ PUMP_MAX = float(os.environ.get("PUMP_MAX", "17"))
 COOLDOWN_H = float(os.environ.get("COOLDOWN_H", "24"))
 MAX_RUNTIME_SEC = int(os.environ.get("MAX_RUNTIME_SEC", "0"))  # --loop: выйти через N секунд (0 = бесконечно)
 LOOKBACK_H = MIN_RUN_H + 1.5  # сколько часов постов тянуть из канала
+# Выключатель. Непустая строка — бот не работает: не сканирует канал, не торгует, не ходит в сеть, не пишет в Telegram;
+# жив только самописец сервера (sys_watch, строка раз в минуту в system.log). Включить обратно — пустая строка и push в main.
+HALT = "остановлен по просьбе владельца 27.10.2026: проверяем, виснет ли сервер без бота"
 UA = "Mozilla/5.0 (margin-call scanner)"
 
 
@@ -2085,6 +2088,11 @@ def main():
         os.nice(10)                     # процессор — сначала SSH и системе: бот почти всё время ждёт сеть, ему хватит
     except OSError:
         pass
+    if HALT:
+        log("БОТ ОСТАНОВЛЕН:", HALT, "— сделок, сканирования, сети и сообщений нет, пишет только самописец сервера")
+        if "--loop" in sys.argv:
+            sys_watch()                 # раз в минуту строка о сервере в system.log; процесс живёт, чтобы systemd не перезапускал
+        return
     if not TOKEN and not dry:
         sys.exit("TG_BOT_TOKEN не задан (или используйте --dry-run)")
     check = trader.startup_check()
