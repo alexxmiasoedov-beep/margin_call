@@ -97,7 +97,13 @@ def _cached_getaddrinfo(host, port, *args, **kw):
 socket.getaddrinfo = _cached_getaddrinfo
 
 
+NON_ASCII = re.compile(r"[^\x00-\x7f]+")
+
+
 def http(url, data=None, timeout=30):
+    # Фьючерсы Binance бывают с иероглифами в названии (币安人生USDT): в адресе — %-кодировка UTF-8, иначе urllib падает
+    # с «'ascii' codec can't encode», и правила 🇰🇷 🇰🇷⭐ 🟩 молча пропускают такие монеты
+    url = NON_ASCII.sub(lambda m: urllib.parse.quote(m.group(0)), url)
     real = urllib.parse.urlsplit(url).hostname or "?"
     host = "telegram getUpdates" if "/getUpdates" in url else real
     wait = trader.banned(real)

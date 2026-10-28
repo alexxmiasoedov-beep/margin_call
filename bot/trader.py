@@ -279,7 +279,7 @@ def taker_lsr(sym):
     except (KeyError, TypeError, ValueError):
         pass
     try:
-        u = f"https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract={sym}_USDT&interval=1h&limit=1"
+        u = f"https://api.gateio.ws/api/v4/futures/usdt/contract_stats?contract={urllib.parse.quote(sym)}_USDT&interval=1h&limit=1"
         with urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "margin-call"}), timeout=15) as r:
             g = json.loads(r.read().decode())
         if isinstance(g, list) and g and g[0].get("lsr_taker") is not None:
