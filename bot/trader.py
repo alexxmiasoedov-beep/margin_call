@@ -13,6 +13,11 @@ BASE = "https://fapi.binance.com"
 KEY = os.environ.get("BINANCE_API_KEY", "")
 SECRET = os.environ.get("BINANCE_API_SECRET", "")
 MODE = os.environ.get("TRADE_MODE", "off").lower()          # off | paper | live
+# Выключатель реальной торговли. Непустая строка — бот работает (канал, сигналы, виртуальные журналы, команды), но ордеров
+# на Binance не ставит и реальные позиции не ведёт: режим off, что бы ни стояло в TRADE_MODE. Включить — пустая строка и push в main.
+NO_TRADE = "выключена по просьбе владельца 28.10.2026"
+if NO_TRADE:
+    MODE = "off"
 MARGIN_USDT = float(os.environ.get("POSITION_USDT", "50"))   # маржа на сделку
 LEVERAGE = int(os.environ.get("LEVERAGE", "2"))
 SL_PCT = float(os.environ.get("SL_PCT", "18"))               # стоп: цена выше входа на N %
@@ -855,7 +860,8 @@ def summary(state):
     state.setdefault("trades", [])
     ot = open_trades(state)
     closed = [t for t in state["trades"] if t.get("closed")]
-    lines = [f"Режим: {MODE}, маржа {MARGIN_USDT:g} USDT × {LEVERAGE}x, стоп +{SL_PCT:g}%, тейк −{TP_PCT:g}%, "
+    off = f" (реальная торговля {NO_TRADE})" if NO_TRADE else ""
+    lines = [f"Режим: {MODE}{off}, маржа {MARGIN_USDT:g} USDT × {LEVERAGE}x, стоп +{SL_PCT:g}%, тейк −{TP_PCT:g}%, "
              f"выход {HOLD_H:g} ч" + (" — НА ПАУЗЕ" if state.get("trading_paused") else "")]
     if MODE != "off":
         b = balance() if KEY and SECRET else None
@@ -869,6 +875,9 @@ def summary(state):
             p = mark_price(t["sym"])
             cur = f", сейчас {p:.6g} ({(t['entry'] / p - 1) * 100 * t['lev']:+.1f}% к марже)" if p else ""
             lines.append(f"  {t['sym']} шорт по {t['entry']:.6g}, {(time.time() - t['opened']) / 3600:.1f} ч{cur}")
+        if NO_TRADE and any(t.get("mode") == "live" for t in ot):
+            lines.append("Реальные позиции бот сейчас не ведёт: их закроют стоп или тейк на бирже, выхода по времени нет; "
+                         "что на самом деле открыто на Binance — /positions")
     else:
         lines.append("Открытых позиций нет.")
     if closed:
@@ -892,7 +901,7 @@ def startup_check():
     """Проверка ключей: запрос баланса (на старте и, если не прошла, раз в 5 мин — scanner.exec_recheck). Возвращает строку
     для журнала и чата; при сбое — код и сообщение Binance и подсказку, что это значит."""
     if MODE == "off":
-        return "торговля выключена (TRADE_MODE=off)"
+        return f"реальная торговля {NO_TRADE}" if NO_TRADE else "торговля выключена (TRADE_MODE=off)"
     if not KEY or not SECRET:
         return "BINANCE_API_KEY/SECRET не заданы — торговля невозможна"
     sync_time()

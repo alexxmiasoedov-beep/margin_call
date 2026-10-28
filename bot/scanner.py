@@ -37,7 +37,7 @@ MAX_RUNTIME_SEC = int(os.environ.get("MAX_RUNTIME_SEC", "0"))  # --loop: вый�
 LOOKBACK_H = MIN_RUN_H + 1.5  # сколько часов постов тянуть из канала
 # Выключатель. Непустая строка — бот не работает: не сканирует канал, не торгует, не ходит в сеть, не пишет в Telegram;
 # жив только самописец сервера (sys_watch, строка раз в минуту в system.log). Включить обратно — пустая строка и push в main.
-HALT = "остановлен по просьбе владельца 27.10.2026: проверяем, виснет ли сервер без бота"
+HALT = ""
 UA = "Mozilla/5.0 (margin-call scanner)"
 
 
@@ -231,6 +231,13 @@ def send_menu(cid, state):
     tg("sendMessage", chat_id=cid, text="Меню бота. Выберите действие:", reply_markup=main_menu(state))
 
 
+def resume_text():
+    """Ответ на «возобновить торговлю»: при выключенной в коде реальной торговле (trader.NO_TRADE) сделок не будет и без паузы."""
+    if trader.NO_TRADE:
+        return f"Пауза снята, но реальная торговля {trader.NO_TRADE} — сделок на Binance не будет. Чтобы включить, попросите Claude."
+    return "Торговля возобновлена."
+
+
 def setup_commands():
     """Регистрирует команды в меню Telegram (кнопка «/» у поля ввода)."""
     cmds = [("menu", "Меню с кнопками"), ("params", "Параметры сделок"), ("positions", "Открытые позиции на Binance"),
@@ -272,7 +279,7 @@ def handle_callback(state, cq, candidates):
            reply_markup=main_menu(state))
     elif data == "resume":
         state["trading_paused"] = False
-        tg("sendMessage", chat_id=cid, text="Торговля возобновлена.", reply_markup=main_menu(state))
+        tg("sendMessage", chat_id=cid, text=resume_text(), reply_markup=main_menu(state))
 
 
 def poll_commands(state, candidates, dry, wait=0):
@@ -354,7 +361,7 @@ def poll_commands(state, candidates, dry, wait=0):
             send(cid, "Торговля на паузе: новые сделки не открываются, открытые ведутся до выхода. /resume — продолжить.")
         elif text.startswith("/resume"):
             state["trading_paused"] = False
-            send(cid, "Торговля возобновлена.")
+            send(cid, resume_text())
     return len(r["result"])
 
 
@@ -2115,6 +2122,18 @@ def main():
             save_state(st)
         elif st.pop("exec_bad", None):                       # до перезапуска связи не было — сообщаем, что появилась
             broadcast(st, f"✅ Исполнитель сделок снова на связи: {check}", dry)
+            save_state(st)
+    if TOKEN and not dry:
+        st = load_state()
+        if st.get("no_trade_said", "") != trader.NO_TRADE:   # одно сообщение, когда выключатель торговли поставлен или снят
+            broadcast(st, f"▶️ Бот работает: канал, сигналы, виртуальные журналы и команды. Реальная торговля {trader.NO_TRADE}: "
+                          "новых сделок и ордеров на Binance нет; открытые позиции, если есть, бот не ведёт — их закроют стоп- и "
+                          "тейк-ордера биржи, выхода по времени нет (что открыто — /positions). Чтобы включить, попросите Claude."
+                      if trader.NO_TRADE else f"💰 Реальная торговля снова включена: {check}", dry)
+            if trader.NO_TRADE:
+                st["no_trade_said"] = trader.NO_TRADE
+            else:
+                st.pop("no_trade_said", None)
             save_state(st)
     if "--loop" in sys.argv:
         threading.Thread(target=sys_watch, name="sys_watch", daemon=True).start()
