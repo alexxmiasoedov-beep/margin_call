@@ -259,17 +259,27 @@ def service():
 
 
 DENIED = re.compile(r"not seeing messages|insufficient permissions|Operation not permitted|password is required|No journal files")
+NO_SYS = "не видно — нет доступа к системному журналу"
+
+
+def _sys_access():
+    """Как читать системный журнал (ядро, PID 1, logind, SSH): [] — от своего имени (группы adm, systemd-journal),
+    ["sudo", "-n"] — sudo без пароля, None — никак. Без доступа journalctl показывает только свои записи, а с -q
+    об этом молчит: «0 строк» значило бы «не видно», а не «не было». Проверка — есть ли записи PID 1."""
+    for pre in ([], ["sudo", "-n"]):
+        r = run(pre + ["journalctl", "-n", "1", "_PID=1", "-q", "--no-pager"], 30)
+        if r.strip() and not DENIED.search(r) and not r.startswith("("):
+            return pre
+    return None
+
+
+JPRE = _sys_access()
 
 
 def journal(args, timeout=90):
-    """Системный журнал: сначала от своего имени, при нехватке прав — через sudo без пароля (если настроен)."""
-    r = run(["journalctl"] + args, timeout)
-    if DENIED.search(r) or not r.strip():
-        r2 = run(["sudo", "-n", "journalctl"] + args, timeout)
-        if r2.strip() and not DENIED.search(r2):
-            return r2, True
-        return r, not DENIED.search(r)
-    return r, True
+    """Журнал: системный, если есть доступ (JPRE), иначе только свои записи. Возвращает (текст, виден ли системный)."""
+    r = run((JPRE or []) + ["journalctl"] + args, timeout)
+    return r, JPRE is not None and not DENIED.search(r)
 
 
 def events():
@@ -279,11 +289,13 @@ def events():
                      r"gpu hang|ring \S+ timeout|BUG:|Oops|panic|general protection", re.I)
     # все загрузки за SINCE_D суток, а не только текущая: «journalctl -k» означает -b, а зависания — в прошлых загрузках
     k, ok = journal(["_TRANSPORT=kernel", "--since", since, "-o", "short-iso", "--no-pager", "-q"])
+    src = f"ядро за {SINCE_D} сут"
     if not ok:
         k = run(["dmesg", "-T"], 30)
-        ok = not DENIED.search(k) and bool(k.strip())
+        ok = not DENIED.search(k) and bool(k.strip()) and not k.startswith("(")
+        src = "ядро с последней загрузки (dmesg)"
     hits = [ln for ln in k.splitlines() if pat.search(ln)] if ok else []
-    p(f"  ядро за {SINCE_D} сут (память, зависания, железо, диск, сеть): " + (f"{len(hits)} строк" if ok else "нет доступа (нужен sudo)"))
+    p(f"  {src} (память, зависания, железо, диск, сеть): " + (f"{len(hits)} строк" if ok else NO_SYS))
     for ln in hits[-25:]:
         p("    " + ln[:220])
     for title, units, pt in (("systemd-oomd (убийца процессов при нехватке памяти)", ["systemd-oomd"], r"."),
@@ -295,18 +307,17 @@ def events():
             args += ["-u", u]
         r, ok = journal(args)
         lines = [ln for ln in r.splitlines() if re.search(pt, ln) and not DENIED.search(ln)] if ok else []
-        p(f"  {title}: " + (f"{len(lines)} строк" if ok else "нет доступа (нужен sudo)"))
+        p(f"  {title}: " + (f"{len(lines)} строк" if ok else NO_SYS))
         for ln in lines[-12:]:
             p("    " + ln[:220])
     r, ok = journal(["--since", since, "-u", "systemd-journald", "-o", "short-iso", "--no-pager", "-q"])
     sup = [ln for ln in r.splitlines() if "Suppressed" in ln] if ok else []
     n = sum(int(m.group(1)) for ln in sup for m in [re.search(r"Suppressed (\d+)", ln)] if m)
-    p("  журнал systemd не успевал записывать (Suppressed): " + (f"{len(sup)} раз, отброшено строк {n}" if ok else "нет доступа (нужен sudo)"))
+    p("  журнал systemd не успевал записывать (Suppressed): " + (f"{len(sup)} раз, отброшено строк {n}" if ok else NO_SYS))
     for ln in [ln for ln in sup if "margin" in ln][-5:]:
         p("    " + ln[:220])
-    boots, ok = journal(["--list-boots", "--no-pager", "-q"], 30)
-    if ok:
-        p("  последние загрузки системы: " + " | ".join(" ".join(b.split()[2:5]) for b in boots.splitlines()[-4:]))
+    boots, _ = journal(["--list-boots", "--no-pager", "-q"], 30)
+    p("  последние загрузки системы: " + " | ".join(" ".join(b.split()[2:5]) for b in boots.splitlines()[-4:]))
 
 
 LOG_KEYS = (("канал недоступен", r"канал недоступен"), ("сеть недоступна", r"Network is unreachable"),
@@ -457,11 +468,13 @@ def conns():
         p(f"  {n:4d} соединений — pid {pid}: {cmd[:150]}")
 
 
+WHO = ((r"Power key pressed|Power button", "нажата кнопка питания — перезагрузка или выключение из панели хостинга"),
+       (r"System is (rebooting|powering down)|The system will (reboot|power off)", "команда из системы (меню или reboot)"),
+       (r"[Uu]nattended-upgrade", "автообновление Ubuntu"))
+
+
 def boots():
-    r, ok = journal(["--list-boots", "--no-pager", "-q"], 60)
-    if not ok:
-        p("  нет доступа к журналу системы (нужен sudo)")
-        return
+    r, vis = journal(["--list-boots", "--no-pager", "-q"], 60)
     rows = []
     for ln in r.splitlines():
         m = re.match(r"\s*(-?\d+)\s+\S+\s+\w{3} (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)(?: \S+)?\s+\w{3} (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)", ln)
@@ -472,6 +485,9 @@ def boots():
         box += read(os.path.join(state_dir, fn)).splitlines()
     rows = rows[-7:]
     p(f"  загрузок в журнале {len(rows)} последних (UTC):")
+    if not vis:
+        p("  системный журнал не виден (пользователь не в группе adm): штатность выключения — по остановке своих служб; кто "
+          "перезагрузил, ядро и SSH — не видно. Открыть один раз: sudo usermod -aG adm $USER, затем выйти из сеанса и войти")
     if len(rows) < 2 and not os.path.isdir("/var/log/journal"):
         p("  журнал системы не хранится на диске (нет /var/log/journal) — что было перед зависаниями, по нему не узнать")
     pat = (r"Under memory pressure|lockup|blocked for more than|rcu.*stall|Out of memory|oom|page allocation|I/O error|"
@@ -488,8 +504,13 @@ def boots():
         clean = re.search(r"systemd-shutdown|Reached target .*(Reboot|Power-Off|Shutdown|Halt)|System is (rebooting|powering)|"
                           r"Journal stopped|reboot: Restarting system|Power key pressed|Stopped target", tail)
         p(f"  ── загрузка {idx}: {first} → {last}" + (f", до следующей {gap:.0f} мин" if gap is not None else "")
-          + ("; выключение штатное (перезагрузка из системы)" if clean
+          + ("; выключение штатное: службы остановлены по порядку — перезагрузили или выключили, это не зависание" if clean
              else "; ОБОРВАЛАСЬ — журнал кончается без выключения: сервер завис или его сбросили кнопкой"))
+        if vis:
+            wh, _ = journal(["-b", str(idx), "-g", "|".join(rx for rx, _ in WHO), "-o", "short-iso", "--no-pager", "-q"], 60)
+            hit = next(((ln, lbl) for ln in wh.splitlines() for rx, lbl in WHO if re.search(rx, ln)), None)
+            if hit:
+                p(f"    кто: {hit[1]} ({hit[0][11:19]})")
         since = (t_last - datetime.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
         w, _ = journal(["-b", str(idx), "--since", since, "-p", "warning", "-o", "short-iso", "--no-pager", "-q"], 60)
         wl = [ln for ln in w.splitlines() if ln.strip() and not DENIED.search(ln) and not ln.startswith("--")]
@@ -514,7 +535,7 @@ def boots():
               + (f"на {lag:.0f} мин позже конца журнала" if lag >= 2 else f"на {-lag:.0f} мин раньше конца журнала" if lag <= -2
                  else "вместе с концом журнала") + ":")
             for ln in bx[-3:]:
-                p("      " + ln[:300])
+                p("      " + ln[:420])
         elif box and box[0][:19] <= last:
             p("    самописец за последний час: записей нет — бот не работал")
 
@@ -528,6 +549,8 @@ def box_trend(lines):
     parts += [f"подкачка до {max(sw):.0f} МБ"] if sw else []
     parts += [f"нехватка памяти (PSI) до {max(pm):.0f}%"] if pm else []
     parts += [f"диска до {max(pio):.0f}%"] if pio else []
+    rx, tx, rt = nums(r"приём ([\d.]+) Мбит"), nums(r"отдача ([\d.]+)"), nums(r"повторы TCP ([\d.]+)%")
+    parts += [f"сеть: приём до {max(rx):.1f} Мбит/с, отдача до {max(tx):.1f}, повторы TCP до {max(rt):.1f}%"] if rt else []
     return ", ".join(parts) or "чисел нет"
 
 
@@ -586,9 +609,20 @@ def blackbox():
         ps = [x for x in ps if x[0] is not None]
         if ps and max(ps)[0] >= 5:
             p(f"  сильнее всего не хватало {res} ({max(ps)[0]:.0f}% времени): " + max(ps)[1][:300])
+    # сеть (в самописце с 28.10): потери считаем по минутам, где отправлено ≥ 200 TCP-сегментов, — иначе 1 повтор из 3 = 33%
+    rt = [(float(m.group(1)), ln) for ln in recent for m in [re.search(r"повторы TCP ([\d.]+)% из (\d+)", ln)]
+          if m and int(m.group(2)) >= 200]
+    if rt:
+        bad = sum(1 for v, _ in rt if v >= 2)
+        p(f"  сеть за сутки: минут с потерями (повторы TCP ≥ 2%) — {bad} из {len(rt)}; хуже всего ({max(rt)[0]:.1f}%): "
+          + max(rt)[1][:400])
+        rx = [(num(r"приём ([\d.]+) Мбит", ln), ln) for ln in recent]
+        rx = [x for x in rx if x[0] is not None]
+        if rx:
+            p(f"  больше всего трафика (приём {max(rx)[0]:.1f} Мбит/с): " + max(rx)[1][:400])
     p("  последние записи:")
     for ln in lines[-4:]:
-        p("    " + ln[:300])
+        p("    " + ln[:420])
 
 
 section("ПРЕДЫДУЩИЕ ЗАГРУЗКИ: чем закончилась каждая", boots)
