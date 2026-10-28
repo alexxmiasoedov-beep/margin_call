@@ -1,17 +1,22 @@
 """Проверка сервера бота: почему виснет и обрывает SSH — чем закончилась каждая прошлая загрузка (штатно или оборвалась,
-что было в последний час), записи самописца бота перед зависаниями, память и подкачка, процессор, диск, сеть,
-события ядра, нагрузка от бота по дням.
+что было в последний час, память по самописцу бота), память и подкачка, защита от её нехватки, температуры, процессор,
+диск, сеть, события ядра за все загрузки, нагрузка от бота по дням.
 
 Запуск на сервере одной строкой из любой папки (около минуты):
   curl -sL https://raw.githubusercontent.com/alexxmiasoedov-beep/margin_call/main/tools/server_health.py | python3
 
-Только читает: ничего не меняет и не перезапускает. Ключи и токены не печатаются. Копия вывода — в ~/margin_server_health.txt.
+Только читает: ничего не меняет и не перезапускает. Ключи, токены, логины, имя сервера и IP-адреса не печатаются —
+вывод можно целиком вставить в чат. Копия вывода — в ~/margin_server_health.txt.
 """
 import collections
 import datetime
+import glob
 import json
 import os
+import pwd
 import re
+import shutil
+import socket
 import subprocess
 import time
 
@@ -21,9 +26,53 @@ SECRET = re.compile(r"\d{8,10}:[A-Za-z0-9_-]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|(?<
 SINCE_D = 3                                                 # сутки журнала бота для разбора
 os.environ["TZ"] = "UTC"                                    # journalctl — всё время в UTC, как в самописце бота
 
+# Логины людей (uid ≥ 1000) и имя сервера — в выводе «***», их домашние папки — «~»; IP: локальные — первые две части
+# (192.168.x.x), публичные — целиком «x.x.x.x», кроме известных DNS; IPv6 и MAC — «x:x».
+try:
+    _people = [u for u in pwd.getpwall() if 1000 <= u.pw_uid < 65534]
+    _me = pwd.getpwuid(os.getuid())
+    if _me.pw_uid != 0 and _me not in _people:
+        _people.append(_me)
+except (KeyError, OSError):
+    _people = []
+HOMES = sorted({u.pw_dir.rstrip("/") for u in _people if len(u.pw_dir.rstrip("/")) > 1}
+               | ({home.rstrip("/")} if home.rstrip("/") not in ("", "/root") else set()), key=len, reverse=True)
+_host = socket.gethostname()                                # типовые и короткие имена ничего не выдают — их не трогаем
+_names = {u.pw_name for u in _people if len(u.pw_name) > 1} | {h for h in (_host, _host.split(".")[0]) if len(h) > 2 and h.lower()
+                                                               not in ("localhost", "ubuntu", "debian", "server", "desktop", "linux")}
+NAMES = re.compile(r"(?<![A-Za-z0-9_])(?:" + "|".join(sorted(map(re.escape, _names), key=len, reverse=True))
+                   + r")(?![A-Za-z0-9_])") if _names else None
+IP4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d)")
+HEXC = re.compile(r"[0-9A-Fa-f:]{2,}")
+DNS_OK = {"1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112", "77.88.8.8", "77.88.8.1",
+          "208.67.222.222", "208.67.220.220"}
+
+
+def _ip4(m):
+    ip = m.group(0); a, b = (int(x) for x in ip.split(".")[:2])
+    if ip in DNS_OK or a == 127 or ip == "0.0.0.0" or max(int(x) for x in ip.split(".")) > 255:
+        return ip
+    local = a == 10 or (a, b) in ((192, 168), (169, 254)) or (a == 172 and 16 <= b <= 31) or (a == 100 and 64 <= b <= 127)
+    return f"{a}.{b}.x.x" if local else "x.x.x.x"
+
+
+def _hexc(m):
+    s = m.group(0)                                           # время 10:00:00 и адреса PCI 0000:00:1f не трогаем
+    return "x:x" if s not in ("::", "::1") and ("::" in s or s.count(":") >= 3) else s
+
+
+def mask(line):
+    line = SECRET.sub("***", line)
+    for h in HOMES:
+        line = line.replace(h + "/", "~/").replace(h, "~")
+    if NAMES:
+        line = NAMES.sub("***", line)
+    line = IP4.sub(_ip4, re.sub(r"::ffff:(?=\d)", "", line))
+    return HEXC.sub(_hexc, line)
+
 
 def p(line=""):
-    line = SECRET.sub("***", str(line))
+    line = mask(str(line))
     out.append(line)
     print(line, flush=True)
 
@@ -93,9 +142,17 @@ state_dir = os.path.dirname(os.path.abspath(state_path))
 
 up = float(read("/proc/uptime").split()[0] or 0) if read("/proc/uptime") else 0
 osr = dict(re.findall(r'^(\w+)="?([^"\n]*)"?', read("/etc/os-release"), re.M))
-p(f"SERVER-HEALTH v3 | сейчас {fmt(time.time())} UTC | работает без перезагрузки {up / 86400:.1f} сут | загрузка "
+virt = run(["systemd-detect-virt"], 10).strip().splitlines() or ["?"]
+cpu = re.search(r"^model name\s*:\s*(.+)$", read("/proc/cpuinfo"), re.M)
+p(f"SERVER-HEALTH v4 | сейчас {fmt(time.time())} UTC | работает без перезагрузки {up / 86400:.1f} сут | загрузка "
   f"{' '.join(read('/proc/loadavg').split()[:3])} | ядер {os.cpu_count()} | {os.uname().machine} | {osr.get('PRETTY_NAME', '?')}")
-p(f"бот: {bot or 'папка не найдена'} | state: {state_path}")
+p(f"ядро {os.uname().release} | " + ("свой компьютер, не виртуалка" if virt[0] == "none" else f"виртуалка: {virt[0]}")
+  + f" | {cpu.group(1).strip() if cpu else '?'}")
+halt = re.search(r'^HALT = "(.*)"', read(os.path.join(bot, "scanner.py")) if bot else "", re.M)
+nt = re.search(r'^NO_TRADE = "(.*)"', read(os.path.join(bot, "trader.py")) if bot else "", re.M)
+p(f"бот: {bot or 'папка не найдена'} | state: {state_path} | выключатель бота HALT: "
+  + (f"стоит ({halt.group(1)})" if halt and halt.group(1) else "снят" if halt else "?")
+  + " | реальная торговля: " + (f"выключатель в коде — {nt.group(1)}" if nt and nt.group(1) else f"по TRADE_MODE={env.get('TRADE_MODE', '?')}"))
 
 
 def mem():
@@ -160,10 +217,10 @@ def procs():
     p("  память по программам (сумма по процессам, МБ): "
       + ", ".join(f"{n} {b // 1048576}" + (f" ({cnt[n]} проц.)" if cnt[n] > 1 else "") for n, b in mem.most_common(10)))
     p("  больше всего памяти:")
-    for ln in run(["ps", "-eo", "pid,user,stat,pcpu,pmem,rss,etime,args", "--sort=-rss"], 15).splitlines()[:12]:
+    for ln in run(["ps", "-eo", "pid,uid,stat,pcpu,pmem,rss,etime,args", "--sort=-rss"], 15).splitlines()[:12]:
         p("    " + ln[:170])
     p("  больше всего процессора (с запуска процесса):")
-    for ln in run(["ps", "-eo", "pid,user,stat,pcpu,pmem,rss,etime,args", "--sort=-pcpu"], 15).splitlines()[:8]:
+    for ln in run(["ps", "-eo", "pid,uid,stat,pcpu,pmem,rss,etime,args", "--sort=-pcpu"], 15).splitlines()[:8]:
         p("    " + ln[:170])
     allp = run(["ps", "-eo", "stat,nlwp,args"], 15).splitlines()[1:]
     p(f"  процессов {len(allp)}, потоков {sum(int(x.split()[1]) for x in allp if len(x.split()) > 1 and x.split()[1].isdigit())}, "
@@ -218,13 +275,15 @@ def journal(args, timeout=90):
 def events():
     since = f"-{SINCE_D}d"
     pat = re.compile(r"out of memory|oom|killed process|hung_task|blocked for more than|I/O error|EXT4-fs error|link is down|"
-                     r"link is up|carrier|soft lockup|segfault|thrott", re.I)
-    k, ok = journal(["-k", "--since", since, "-o", "short-iso", "--no-pager", "-q"])
+                     r"link is up|carrier|lockup|rcu.*stall|segfault|thrott|temperature|machine check|mce:|hardware error|EDAC|"
+                     r"gpu hang|ring \S+ timeout|BUG:|Oops|panic|general protection", re.I)
+    # все загрузки за SINCE_D суток, а не только текущая: «journalctl -k» означает -b, а зависания — в прошлых загрузках
+    k, ok = journal(["_TRANSPORT=kernel", "--since", since, "-o", "short-iso", "--no-pager", "-q"])
     if not ok:
         k = run(["dmesg", "-T"], 30)
         ok = not DENIED.search(k) and bool(k.strip())
     hits = [ln for ln in k.splitlines() if pat.search(ln)] if ok else []
-    p(f"  ядро за {SINCE_D} сут (память, зависания, диск, сеть): " + (f"{len(hits)} строк" if ok else "нет доступа (нужен sudo)"))
+    p(f"  ядро за {SINCE_D} сут (память, зависания, железо, диск, сеть): " + (f"{len(hits)} строк" if ok else "нет доступа (нужен sudo)"))
     for ln in hits[-25:]:
         p("    " + ln[:220])
     for title, units, pt in (("systemd-oomd (убийца процессов при нехватке памяти)", ["systemd-oomd"], r"."),
@@ -413,8 +472,11 @@ def boots():
         box += read(os.path.join(state_dir, fn)).splitlines()
     rows = rows[-7:]
     p(f"  загрузок в журнале {len(rows)} последних (UTC):")
-    pat = (r"Under memory pressure|soft lockup|blocked for more than|rcu.*stall|Out of memory|oom|page allocation|I/O error|"
-           r"Time jumped|clock.*(wrong|jump|unstable)|hung|xrdp")
+    if len(rows) < 2 and not os.path.isdir("/var/log/journal"):
+        p("  журнал системы не хранится на диске (нет /var/log/journal) — что было перед зависаниями, по нему не узнать")
+    pat = (r"Under memory pressure|lockup|blocked for more than|rcu.*stall|Out of memory|oom|page allocation|I/O error|"
+           r"Time jumped|clock.*(wrong|jump|unstable)|hung|xrdp|machine check|mce:|Hardware Error|EDAC|temperature|"
+           r"BUG:|Oops|panic|gpu hang")
     for i, (idx, first, last) in enumerate(rows):
         if idx == 0:
             p(f"  ── текущая загрузка: с {first}")
@@ -438,17 +500,57 @@ def boots():
         k, kok = journal(["-b", str(idx), "--since", since, "-g", pat, "--case-sensitive=false", "-o", "short-iso", "--no-pager", "-q"], 60)
         kl = [ln for ln in k.splitlines() if ln.strip() and not ln.startswith("--") and "pattern" not in ln] if kok else []
         if kl:
-            p(f"    память, зависания, часы, xrdp за последний час: {len(kl)}")
+            p(f"    память, зависания, железо, часы, xrdp за последний час: {len(kl)}")
             for ln in kl[-5:]:
                 p("      " + ln[:200])
         p("    последние строки журнала:")
         for ln in [ln for ln in tail.splitlines() if ln.strip()][-4:]:
             p("      " + ln[:200])
-        bx = [ln for ln in box if since <= ln[:19] <= last]
+        # самописец — до начала следующей загрузки: записи позже конца журнала значат, что сервер ещё жил без journald
+        bx = [ln for ln in box if since <= ln[:19] < (nxt or "9999")]
         if bx:
-            p(f"    самописец за последний час: {len(bx)} записей, последние:")
+            lag = (datetime.datetime.strptime(bx[-1][:19], "%Y-%m-%d %H:%M:%S") - t_last).total_seconds() / 60
+            p(f"    самописец за последний час: {len(bx)} записей; {box_trend(bx)}; последняя запись "
+              + (f"на {lag:.0f} мин позже конца журнала" if lag >= 2 else f"на {-lag:.0f} мин раньше конца журнала" if lag <= -2
+                 else "вместе с концом журнала") + ":")
             for ln in bx[-3:]:
                 p("      " + ln[:300])
+        elif box and box[0][:19] <= last:
+            p("    самописец за последний час: записей нет — бот не работал")
+
+
+def box_trend(lines):
+    """Сводка записей самописца: свободная память (разброс и в последней записи), подкачка, нехватка памяти и диска (PSI)."""
+    def nums(rx):
+        return [float(m.group(1)) for ln in lines for m in [re.search(rx, ln)] if m]
+    av, sw, pm, pio = nums(r"доступно (\d+) МБ"), nums(r"подкачка (\d+) МБ"), nums(r"memory ([\d.]+)"), nums(r" io ([\d.]+)")
+    parts = [f"свободно памяти от {min(av):.0f} до {max(av):.0f} МБ, в последней записи {av[-1]:.0f} МБ"] if av else []
+    parts += [f"подкачка до {max(sw):.0f} МБ"] if sw else []
+    parts += [f"нехватка памяти (PSI) до {max(pm):.0f}%"] if pm else []
+    parts += [f"диска до {max(pio):.0f}%"] if pio else []
+    return ", ".join(parts) or "чисел нет"
+
+
+def protect():
+    for unit in ("earlyoom", "systemd-oomd"):
+        installed = shutil.which(unit) or os.path.exists(f"/usr/lib/systemd/{unit}")
+        p(f"  {unit}: " + (run(["systemctl", "is-active", unit], 10).strip() if installed else "не установлен"))
+    sw = run(["swapon", "--show", "--noheadings"], 10).strip()
+    p("  подкачка: " + (" | ".join(" ".join(x.split()[:4]) for x in sw.splitlines()) if sw and "swapon" not in sw else "нет"))
+    vm = {k: read(f"/proc/sys/vm/{k}").strip() for k in ("swappiness", "overcommit_memory", "min_free_kbytes")}
+    kn = {k: read(f"/proc/sys/kernel/{k}").strip() for k in ("panic", "softlockup_panic", "hung_task_panic", "panic_on_oops")}
+    p("  vm: " + ", ".join(f"{k} {v or '?'}" for k, v in vm.items()) + "; ядро: " + ", ".join(f"{k} {v or '?'}" for k, v in kn.items()))
+    wd = [read(f"/sys/class/watchdog/{d}/identity").strip() or d for d in sorted(os.listdir("/sys/class/watchdog"))] \
+        if os.path.isdir("/sys/class/watchdog") else []
+    p("  сторожевой таймер (сам перезагрузит зависший сервер): " + (", ".join(wd) if wd else "не найден") + "; systemd "
+      + (run(["systemctl", "show", "-p", "RuntimeWatchdogUSec"], 10).strip().splitlines() or ["?"])[0])
+    temps = []
+    for d in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
+        vals = [int(v) / 1000 for v in (read(f).strip() for f in glob.glob(f"{d}/temp*_input")) if v.lstrip("-").isdigit()]
+        crit = read(f"{d}/temp1_crit").strip()
+        if vals:
+            temps.append(f"{read(f'{d}/name').strip() or '?'} {max(vals):.0f}°C" + (f" (предел {int(crit) / 1000:.0f})" if crit.isdigit() else ""))
+    p("  температуры сейчас (максимум по датчику): " + (", ".join(temps) if temps else "датчиков нет"))
 
 
 def blackbox():
@@ -492,6 +594,7 @@ def blackbox():
 section("ПРЕДЫДУЩИЕ ЗАГРУЗКИ: чем закончилась каждая", boots)
 section("САМОПИСЕЦ БОТА: состояние сервера раз в минуту", blackbox)
 section("ПАМЯТЬ И ПРОЦЕССОР", mem)
+section("ЗАЩИТА ОТ ЗАВИСАНИЙ: память, сторожевой таймер, температуры", protect)
 section("ПРОЦЕССЫ", procs)
 section("ДИСК", disk)
 section("СЛУЖБА БОТА", service)
@@ -504,6 +607,6 @@ section("СОЕДИНЕНИЯ ПО ПРОЦЕССАМ (свои процессы
 try:
     with open(os.path.join(home, "margin_server_health.txt"), "w") as f:
         f.write("\n".join(out) + "\n")
-    print(f"\nкопия: {os.path.join(home, 'margin_server_health.txt')}")
+    print(mask(f"\nкопия: {os.path.join(home, 'margin_server_health.txt')}"))
 except OSError:
     pass
