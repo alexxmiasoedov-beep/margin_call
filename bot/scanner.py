@@ -2022,9 +2022,41 @@ def _proc_name(cmd):
     return exe
 
 
+_net_prev = {}                                          # счётчики сети на прошлом снимке самописца
+
+
+def net_snapshot():
+    """Сеть всего сервера с прошлого снимка: приём и отдача (Мбит/с) по интерфейсам, кроме lo; доля TCP-сегментов,
+    отправленных повторно (потери пакетов — на них виснут удалённый стол и SSH), повторы SYN (соединение не открылось
+    с первого раза). Первый снимок и сбой чтения — пустая строка."""
+    try:
+        c = {"t": time.time(), "rx": 0, "tx": 0}
+        with open("/proc/net/dev") as f:
+            for ln in f.readlines()[2:]:
+                name, _, v = ln.partition(":")
+                v = v.split()
+                if name.strip() != "lo" and len(v) >= 9:
+                    c["rx"] += int(v[0]); c["tx"] += int(v[8])
+        for path, sect in (("/proc/net/snmp", "Tcp:"), ("/proc/net/netstat", "TcpExt:")):
+            with open(path) as f:
+                rows = [ln.split() for ln in f if ln.startswith(sect)]
+            if len(rows) >= 2:
+                c.update(zip(rows[0][1:], (int(x) for x in rows[1][1:])))
+    except (OSError, ValueError):
+        return ""
+    p = dict(_net_prev); _net_prev.clear(); _net_prev.update(c)
+    dt = c["t"] - p.get("t", c["t"])
+    if dt <= 0:
+        return ""
+    d = lambda k: max(0, c.get(k, 0) - p.get(k, 0))
+    out = d("OutSegs")
+    return (f"сеть: приём {d('rx') * 8 / dt / 1e6:.2f} Мбит/с, отдача {d('tx') * 8 / dt / 1e6:.2f}, "
+            f"повторы TCP {d('RetransSegs') / out * 100 if out else 0:.1f}% из {out}, SYN {d('TCPSynRetrans')}; ")
+
+
 def sys_snapshot():
     """Состояние сервера одной строкой: память и подкачка, нехватка памяти/диска/процессора (PSI за 10 с, % времени),
-    нагрузка, программы, больше всех занимающие память (RSS в МБ, процессы одной программы — суммой).
+    нагрузка, сеть (net_snapshot), программы, больше всех занимающие память (RSS в МБ, процессы одной программы — суммой).
     Возвращает (строка, памяти меньше 10%)."""
     mi = {}
     with open("/proc/meminfo") as f:
@@ -2059,7 +2091,7 @@ def sys_snapshot():
     av, tot = mi.get("MemAvailable", 0), mi.get("MemTotal", 0)
     return (f"доступно {av} МБ из {tot}, подкачка {mi.get('SwapTotal', 0) - mi.get('SwapFree', 0)} МБ из {mi.get('SwapTotal', 0)}, "
             f"ждёт записи {mi.get('Dirty', 0)} МБ; PSI {' '.join(psi)}; нагрузка {' '.join(load[:3])}, процессов {load[3]}; "
-            "память, МБ: " + ", ".join(f"{n} {b // 1048576}" for n, b in top)), av < tot * 0.1
+            + net_snapshot() + "память, МБ: " + ", ".join(f"{n} {b // 1048576}" for n, b in top)), av < tot * 0.1
 
 
 def sys_watch():
