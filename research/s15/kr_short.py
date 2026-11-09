@@ -5,7 +5,8 @@
 открытия (в пределах суток); держать 24/48/72/168 ч; стоп 25% или 50%. Проверка: по половинам истории, по биржам,
 первый корейский листинг монеты или второй, был ли на листинге памп +15% (такие поймал бы и 🇰🇷).
 
-Запуск из папки с данными: python3 s15/kr_short.py (нужны s15/kr_listings.pkl, s2/k2y.pkl, s2/fund2y.pkl)."""
+Запуск из папки с данными: python3 s15/kr_short.py [файлы листингов] (по умолчанию s15/kr_listings.pkl; нужны s2/k2y.pkl,
+s2/fund2y.pkl)."""
 import os
 import pickle
 import sys
@@ -15,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import BAR, K, fut_of, trade as sim
 from kr_listings import API, get
 
-L = pickle.load(open("s15/kr_listings.pkl", "rb"))
+L = [x for p in (sys.argv[1:] or ["s15/kr_listings.pkl"]) for x in pickle.load(open(p, "rb"))]
 MK = {ex: {m["market"][4:] for m in get(f"{API[ex]}/v1/market/all") or [] if m["market"].startswith("KRW-")} for ex in API}
 NEW = {(x["ex"], x["base"]) for x in L}
 

@@ -2,7 +2,7 @@
 01.10.2024 – 18.10.2026 — для доли Кореи в обороте и корейской премии на всей истории, а не только вокруг пампов.
 Результат — s15/kr_candles_<биржа>.pkl: {монета: {"t": начало часа, с; "c": закрытие, KRW; "v": оборот, KRW}}.
 
-Запуск из папки с данными: python3 s15/kr_candles.py"""
+Запуск из папки с данными: python3 s15/kr_candles.py [upbit|bithumb]"""
 import datetime
 import os
 import pickle
@@ -52,5 +52,6 @@ def exchange(ex):
 
 
 if __name__ == "__main__":
-    with ThreadPoolExecutor(2) as pool:
-        list(pool.map(exchange, ("upbit", "bithumb")))
+    exs = sys.argv[1:] or ["upbit", "bithumb"]
+    with ThreadPoolExecutor(len(exs)) as pool:
+        list(pool.map(exchange, exs))
