@@ -17,7 +17,7 @@ from kr_listings import API, get, iso, utc
 UTC = datetime.timezone.utc
 T0, T1 = datetime.datetime(2024, 10, 1, tzinfo=UTC), datetime.datetime(2026, 10, 18, tzinfo=UTC)
 K = pickle.load(open("s2/k2y.pkl", "rb"))
-THREADS = {"upbit": 9, "bithumb": 20}                          # ответ ~1 с; лимит свечей Upbit — 10 запросов в секунду с IP, у Bithumb выше
+THREADS = {"upbit": 12, "bithumb": 60}                         # ответ ~1 с; лимиты: Upbit — 10 запросов в секунду, Bithumb — 150
 
 
 def candles(ex, market):
