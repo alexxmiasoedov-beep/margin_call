@@ -81,8 +81,9 @@ def load(ex):
 
 if __name__ == "__main__":
     C = {ex: load(ex) for ex in EXS}
+    C = {ex: c if "USDT" in c else {} for ex, c in C.items()}            # без курса KRW-USDT биржу не считаем
     rate = {}
-    for ex in EXS:
+    for ex in [e for e in EXS if C[e]]:
         u = C[ex]["USDT"]
         ser = pd.Series(u["c"].astype(float), index=u["t"])
         rate[ex] = (lambda ser: lambda H: ser.reindex(np.union1d(ser.index, H)).ffill().bfill().reindex(H).values)(ser)

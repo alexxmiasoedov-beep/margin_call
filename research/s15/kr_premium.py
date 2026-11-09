@@ -15,11 +15,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import trade
 
 P = pickle.load(open("s15/kr_panel.pkl", "rb"))
+STABLE = {"USDC", "USDT", "USDE", "USD1", "DAI", "FDUSD", "TUSD", "PYUSD", "USDS", "RLUSD", "BUSD", "XUSD", "EURI"}
 
 
 def prep():
     out = []
     for s, d in P.items():
+        if s in STABLE:
+            continue
         d = d.copy()
         liq = d.kr >= 5e4
         d["prem_l"] = d.prem.where(liq)
@@ -47,8 +50,11 @@ def line(r, cut):
     if not len(r):
         return "нет сделок"
     h = r["T"] < cut
-    return (f"n={len(r):4d} | {r.net.mean() * 100:+5.2f}% (в плюсе {(r.net > 0).mean():3.0%}, фандинг {r.fund.mean() * 100:+4.1f}%) | "
-            f"1-я/2-я половина {r.net[h].mean() * 100:+5.2f}/{r.net[~h].mean() * 100:+5.2f}%")
+    trim = r.net.sort_values().iloc[:-5].mean() if len(r) > 20 else np.nan
+    top = r.s.value_counts()
+    return (f"n={len(r):4d} | {r.net.mean() * 100:+5.2f}% (медиана {r.net.median() * 100:+5.2f}%, без 5 лучших {trim * 100:+5.2f}%, "
+            f"в плюсе {(r.net > 0).mean():3.0%}, фандинг {r.fund.mean() * 100:+4.1f}%) | 1-я/2-я половина {r.net[h].mean() * 100:+5.2f}/"
+            f"{r.net[~h].mean() * 100:+5.2f}% | монет {len(top)}, чаще всех {top.index[0]} ({top.iloc[0]})")
 
 
 if __name__ == "__main__":
@@ -79,6 +85,8 @@ if __name__ == "__main__":
             if sh and lo:
                 rows.append(dict(T=T, short=np.mean(sh), long=np.mean(lo)))
         R = pd.DataFrame(rows)
+        if not len(R):
+            print(f"  {hold} ч: мало монет в срезах"); continue
         h = R["T"] < cut
         R["pair"] = (R.short + R.long) / 2
         print(f"  {hold} ч, дней {len(R)}: шорт-нога {R.short.mean() * 100:+.2f}%, лонг-нога {R.long.mean() * 100:+.2f}%, "

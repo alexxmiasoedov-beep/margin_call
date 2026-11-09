@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import K, trade
 
 P = pickle.load(open("s15/kr_panel.pkl", "rb")); PU = pickle.load(open("s15/kr_pumps.pkl", "rb"))
+P = {s: d for s, d in P.items() if s not in {"USDC", "USDT", "USDE", "USD1", "DAI", "FDUSD", "TUSD", "PYUSD", "USDS", "RLUSD"}}
 EXITS = {"🇹🇷 10/15/24ч": dict(tp=0.10, sl=0.15, hold_h=24), "🇰🇷 10/25/48ч": dict(tp=0.10, sl=0.25, hold_h=48)}
 
 
@@ -57,7 +58,9 @@ def line(r, cut):
     if not len(r):
         return "нет сделок"
     h = r["T"] < cut
-    return (f"n={len(r):4d} | {r.net.mean() * 100:+5.2f}% (в плюсе {(r.net > 0).mean():3.0%}, фандинг {r.fund.mean() * 100:+4.1f}%) | "
+    trim = r.net.sort_values().iloc[:-5].mean() if len(r) > 20 else np.nan
+    return (f"n={len(r):4d} | {r.net.mean() * 100:+5.2f}% (медиана {r.net.median() * 100:+5.2f}%, без 5 лучших {trim * 100:+5.2f}%, "
+            f"в плюсе {(r.net > 0).mean():3.0%}, фандинг {r.fund.mean() * 100:+4.1f}%) | "
             f"1-я/2-я половина {r.net[h].mean() * 100:+5.2f}/{r.net[~h].mean() * 100:+5.2f}% ({h.sum()}/{(~h).sum()})")
 
 
