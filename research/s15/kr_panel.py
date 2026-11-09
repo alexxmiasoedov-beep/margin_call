@@ -6,6 +6,7 @@
 Результат — s15/kr_panel.pkl: {фьючерс: DataFrame по часам}, s15/kr_pumps.pkl: {фьючерс: индексы 15-мин свечей пампов}.
 
 Запуск из папки с данными (после kr_candles.py): python3 s15/kr_panel.py"""
+import glob
 import os
 import pickle
 import sys
@@ -70,8 +71,16 @@ def coin(b, C, rate):
     return s, d.reset_index(drop=True)
 
 
+def load(ex):
+    """Свечи биржи: общий файл kr_candles.py или, пока сбор идёт, кэш по рынкам s15/kc/<биржа>/."""
+    p = f"s15/kr_candles_{ex}.pkl"
+    if os.path.exists(p):
+        return pickle.load(open(p, "rb"))
+    return {os.path.basename(f)[4:-4]: x for f in sorted(glob.glob(f"s15/kc/{ex}/KRW-*.pkl")) if (x := pickle.load(open(f, "rb")))}
+
+
 if __name__ == "__main__":
-    C = {ex: pickle.load(open(f"s15/kr_candles_{ex}.pkl", "rb")) for ex in EXS}
+    C = {ex: load(ex) for ex in EXS}
     rate = {}
     for ex in EXS:
         u = C[ex]["USDT"]

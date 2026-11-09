@@ -17,10 +17,22 @@ from kr_listings import API, get, iso, utc
 UTC = datetime.timezone.utc
 T0, T1 = datetime.datetime(2024, 10, 1, tzinfo=UTC), datetime.datetime(2026, 10, 18, tzinfo=UTC)
 K = pickle.load(open("s2/k2y.pkl", "rb"))
-THREADS = {"upbit": 4, "bithumb": 6}                           # лимит свечей Upbit — 10 запросов в секунду с IP, у Bithumb выше
+THREADS = {"upbit": 9, "bithumb": 20}                          # ответ ~1 с; лимит свечей Upbit — 10 запросов в секунду с IP, у Bithumb выше
 
 
 def candles(ex, market):
+    """Свечи рынка с кэшем по рынку в s15/kc/<биржа>/ — прерванный сбор продолжается с места остановки."""
+    path = f"s15/kc/{ex}/{market}.pkl"
+    if os.path.exists(path):
+        return pickle.load(open(path, "rb"))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    res = _candles(ex, market)
+    if res is not None:                                        # сбой сети не кэшируем — при повторном запуске рынок докачается
+        pickle.dump(res, open(path, "wb"))
+    return res
+
+
+def _candles(ex, market):
     rows, to = {}, T1
     while to > T0:
         c = get(f"{API[ex]}/v1/candles/minutes/60?market={market}&count=200&to={iso(to, ex)}"); time.sleep(0.12)
