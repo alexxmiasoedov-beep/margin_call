@@ -2,7 +2,7 @@
 01.10.2024 – 18.10.2026 — для доли Кореи в обороте и корейской премии на всей истории, а не только вокруг пампов.
 Результат — s15/kr_candles_<биржа>.pkl: {монета: {"t": начало часа, с; "c": закрытие, KRW; "v": оборот, KRW}}.
 
-Запуск из папки с данными: python3 s15/kr_candles.py [upbit|bithumb]"""
+Запуск из папки с данными: python3 s15/kr_candles.py [upbit|bithumb] [rev — с конца списка, 8 потоков]"""
 import datetime
 import os
 import pickle
@@ -28,7 +28,8 @@ def candles(ex, market):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     res = _candles(ex, market)
     if res is not None:                                        # сбой сети не кэшируем — при повторном запуске рынок докачается
-        pickle.dump(res, open(path, "wb"))
+        tmp = f"{path}.{os.getpid()}.tmp"
+        pickle.dump(res, open(tmp, "wb")); os.replace(tmp, path)   # атомарно: второй сборщик может писать тот же рынок
     return res
 
 
@@ -56,7 +57,9 @@ def exchange(ex):
         return
     mk = [m["market"] for m in get(f"{API[ex]}/v1/market/all") or [] if m["market"].startswith("KRW-")]
     keep = [m for m in mk if m == "KRW-USDT" or any(k in K for k in (m[4:], "1000" + m[4:], "1000000" + m[4:]))]
-    with ThreadPoolExecutor(THREADS[ex]) as pool:
+    if "rev" in sys.argv:                                      # второй сборщик идёт с конца списка навстречу первому
+        keep = keep[::-1]
+    with ThreadPoolExecutor(THREADS[ex] if "rev" not in sys.argv else 8) as pool:
         res = dict(zip([m[4:] for m in keep], pool.map(lambda m: candles(ex, m), keep)))
     res = {k: v for k, v in res.items() if v is not None}
     pickle.dump(res, open(path, "wb"))
@@ -64,6 +67,6 @@ def exchange(ex):
 
 
 if __name__ == "__main__":
-    exs = sys.argv[1:] or ["upbit", "bithumb"]
+    exs = [a for a in sys.argv[1:] if a in API] or ["upbit", "bithumb"]
     with ThreadPoolExecutor(len(exs)) as pool:
         list(pool.map(exchange, exs))
