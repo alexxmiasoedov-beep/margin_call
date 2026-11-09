@@ -20,6 +20,7 @@ D = pd.read_pickle("s10/daily_panel.pkl")
 K = pickle.load(open("s2/k2y.pkl", "rb")); FU = pickle.load(open("s2/fund2y.pkl", "rb"))
 BAR, HOLD = 900, 672                                                # 15 мин; 168 ч = 672 свечи
 FEE = 0.001                                                         # комиссия за круг на одну ногу
+STOP_X = 2.0                                                        # стоп шорта: цена ×2 = +100% (как в боте)
 
 # Набор дня — ровно как в research/s10/journal_sim2.py (5 из топ-10) и в боте (scanner.borrow_factor_rule)
 d = D[(D.v >= 10e6) & D.ret7.notna()]
@@ -42,9 +43,11 @@ FC = {}
 B = K["BTC"]; FB = fcum("BTC")
 
 
-def trade(s, t0, tp, stop_on=True):
+def trade(s, t0, tp, stop_on=True, mark=None):
     """Шорт s с t0 (начало 15-мин свечи) + лонг BTC на ту же сумму. Возвращает (время выхода, итог с хеджем, итог шорта,
-    причина, максимум итога с хеджем за срок) или None, если свечей нет. tp=None — без тейка (как 🏦)."""
+    причина, максимум итога с хеджем за срок) или None, если свечей нет. tp=None — без тейка (как 🏦).
+    mark(s, t0) → (максимумы 672 свечей, цена входа) — по чему считать стоп +100% (bf_markstop.py: марк-цена, как в боте);
+    без mark — по цене сделок."""
     a = K[s]; j0 = np.searchsorted(a["t"], t0); b0 = np.searchsorted(B["t"], t0)
     if j0 + HOLD >= len(a["t"]) or b0 + HOLD >= len(B["t"]) or a["t"][j0] != t0 or B["t"][b0] != t0 \
             or a["t"][j0 + HOLD] != t0 + HOLD * BAR or B["t"][b0 + HOLD] != t0 + HOLD * BAR:
@@ -55,12 +58,13 @@ def trade(s, t0, tp, stop_on=True):
     c = a["c"][j0:j0 + HOLD].astype(float); cb = B["c"][b0:b0 + HOLD].astype(float)
     short = -(c / p0 - 1) + F(t0, te) - FEE
     comb = short + (cb / q0 - 1) - FB(t0, te) - FEE
-    stop = (a["h"][j0:j0 + HOLD].astype(float) >= 2 * p0) & stop_on
+    hi, ref = mark(s, t0) if mark else (a["h"][j0:j0 + HOLD].astype(float), p0)
+    stop = (hi >= STOP_X * ref) & stop_on
     hit = np.flatnonzero((comb >= tp) | stop) if tp is not None else np.flatnonzero(stop)
     if len(hit):
         k = hit[0]
         if stop[k] and not (tp is not None and comb[k] >= tp):
-            sh = -1.0 + F(t0, te[k]) - FEE                          # стоп +100%: шорт при ×1 теряет всю маржу
+            sh = -(STOP_X - 1) + F(t0, te[k]) - FEE                 # стоп +100%: шорт при ×1 теряет всю маржу
             return te[k], sh + (cb[k] / q0 - 1) - FB(t0, te[k]) - FEE, sh, "стоп", comb[:k + 1].max()
         return te[k], comb[k], short[k], "тейк", comb[:k + 1].max()
     t1 = t0 + HOLD * BAR                                            # 168 ч — по открытию свечи, как в research/s10
@@ -68,7 +72,7 @@ def trade(s, t0, tp, stop_on=True):
     return t1, sh + (float(B["o"][b0 + HOLD]) / q0 - 1) - FB(t0, t1) - FEE, sh, "168 ч", comb.max()
 
 
-def journal(tp=None, policy="A", stop_on=True):
+def journal(tp=None, policy="A", stop_on=True, mark=None):
     busy, tr = {}, []                                               # монета → до какого времени занята
     for T in sorted(DAYS):
         for s in DAYS[T]:
@@ -76,7 +80,7 @@ def journal(tp=None, policy="A", stop_on=True):
                 continue
             t0, n = T, 0
             while True:
-                r = trade(s, t0, tp, stop_on)
+                r = trade(s, t0, tp, stop_on, mark)
                 if r is None:
                     break
                 t1, h, sh, why, mx = r
