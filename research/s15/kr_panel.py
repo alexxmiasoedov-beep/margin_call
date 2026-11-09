@@ -13,7 +13,7 @@ import sys
 import numpy as np, pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import K, fut_of
+from common import K, fut_of, live
 
 EXS = ("upbit", "bithumb")
 
@@ -32,6 +32,11 @@ def pumps(a):
         base = np.r_[np.full(L, np.nan), c[:-L]]
         cb = np.r_[np.zeros(L, bool), calm[:-L]]
         hit |= cb & (mx >= base * 1.15) & (np.arange(n) - L >= 8)
+    nz = np.flatnonzero(a["qv"] > 0)
+    if not len(nz):
+        return np.array([], dtype=np.int64)
+    hit &= (np.arange(n) >= nz[0] + 96) & (np.arange(n) <= nz[-1])   # фьючерс торгуется ≥ суток, не после делистинга
+    hit &= a["qv"] > 0
     out, last = [], -10 ** 9
     for j in np.flatnonzero(hit):
         if j - last >= 96:
@@ -61,7 +66,7 @@ def coin(b, C, rate):
         v = np.where(ok, x["v"][i2].astype(float) / r, 0.0)
         p = np.where(ok, x["c"][i2].astype(float) * mult / r / c[j] - 1, 0.0)
         kv += v; pw += p * v; pv += v
-    keep = H >= first
+    keep = (H >= first) & (bvol > 0)                          # фьючерс торговался в этот час (не заглушка)
     d = pd.DataFrame({"T": T, "j": j, "kr": kv, "bin": bvol, "prem": np.where(pv > 0, pw / np.maximum(pv, 1e-9), np.nan)})[keep]
     d["share"] = d.kr / (d.kr + d.bin).clip(lower=1.0)
     d["norm"] = d.share.shift(1).rolling(168, min_periods=120).median()

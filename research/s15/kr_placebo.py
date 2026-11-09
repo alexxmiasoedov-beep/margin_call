@@ -6,7 +6,7 @@ import sys
 import numpy as np, pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import BAR, K, fut_of
+from common import BAR, K, fut_of, live
 from kr_short3 import signals
 
 H = 168
@@ -19,6 +19,9 @@ def short_at(s, T):
     k = i + 4 * H
     if i < 0 or k >= len(t) or t[k] != t[i] + 4 * H * BAR or t[i] < T - BAR:
         return np.nan
+    lo_t, hi_t = live(s)
+    if t[i] < lo_t + 86400 or t[k] > hi_t:
+        return np.nan
     return 1 - float(c[k]) / float(c[i])
 
 
@@ -26,7 +29,7 @@ if __name__ == "__main__":
     rows = []
     for e in signals():
         s, _ = fut_of(e["base"])
-        if s is None or float(K[s]["t"][0]) > e["t"] - 86400:
+        if s is None or live(s)[0] > e["t"] - 86400:
             continue
         real = short_at(s, e["t"])
         if np.isnan(real):

@@ -13,7 +13,7 @@ import sys
 import numpy as np, pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import BAR, K, fut_of, trade as sim
+from common import BAR, K, fut_of, live, trade as sim
 from kr_listings import API, get
 
 L = [x for p in (sys.argv[1:] or ["s15/kr_listings.pkl"]) for x in pickle.load(open(p, "rb"))]
@@ -44,7 +44,7 @@ def trade(e, delay_h=0, retrace=None, hold_h=48, sl=0.25, tp=None, min_age_d=1):
     if s is None:
         return None
     a = K[s]; t = a["t"]
-    if float(t[0]) > e["t"] - min_age_d * 86400:             # фьючерс моложе min_age_d — листинг Binance вместе с Кореей
+    if live(s)[0] > e["t"] - min_age_d * 86400:              # фьючерс моложе min_age_d — листинг Binance вместе с Кореей
         return None
     j = int(np.searchsorted(t, e["t"], side="right")) - 1   # свеча, в которой открылись торги
     if j < 8 or t[j] < e["t"] - BAR:
@@ -62,7 +62,7 @@ def trade(e, delay_h=0, retrace=None, hold_h=48, sl=0.25, tp=None, min_age_d=1):
     pump = float(a["h"][j:j + 9].max()) / float(a["c"][max(j - 1, 0)]) - 1   # памп за 2 ч с открытия
     pre = float(a["c"][j - 1]) / float(a["c"][max(j - 1 - 96, 0)]) - 1       # рост за сутки до открытия (объявление)
     return dict(r, t=e["t"], base=e["base"], sym=s, ex=e["ex"], both=e["both"], second=e["second"], pump2h=pump, pre24=pre,
-                age_d=(e["t"] - float(t[0])) / 86400)
+                age_d=(e["t"] - live(s)[0]) / 86400)
 
 
 def stats(r):

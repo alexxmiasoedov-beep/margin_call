@@ -11,7 +11,7 @@ import sys
 import numpy as np, pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import BAR, FEE, K, fut_of, funding, trade
+from common import BAR, FEE, K, fut_of, funding, live, trade
 from kr_short import L, MK, NEW
 
 BT = K["BTC"]["t"]
@@ -49,7 +49,7 @@ def journal(S, hold_h=168, sl=0.5, tp=None, min_age_d=1, only_second=False):
         if s is None or busy.get(s, -1) > e["t"]:
             continue
         a = K[s]; t = a["t"]
-        if float(t[0]) > e["t"] - min_age_d * 86400:
+        if live(s)[0] > e["t"] - min_age_d * 86400:
             continue
         j = int(np.searchsorted(t, e["t"], side="right")) - 1
         if j < 8 or t[j] < e["t"] - BAR:

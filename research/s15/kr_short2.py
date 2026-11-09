@@ -22,7 +22,7 @@ def market(t0, t1):
         if t[0] > t0 or t[-1] < t1:
             continue
         i0, i1 = np.searchsorted(t, t0), np.searchsorted(t, t1)
-        if t[i0] == t0 and t[i1] == t1:
+        if t[i0] == t0 and t[i1] == t1 and K[s]["qv"][i0] > 0 and K[s]["qv"][i1] > 0:
             r.append(1 - float(K[s]["c"][i1]) / float(K[s]["c"][i0]))
     return float(np.median(r)) if len(r) > 50 else np.nan
 
