@@ -1410,13 +1410,21 @@ def borrow_factor_rule(state):
         "за сутки): " + ", ".join(f"{x[1]} {x[2] / n * 100:.0f}%/{x[4] * 100:.1f}%" for x in top)
         + (f"; без свечей Binance: {', '.join(miss)}" if miss else ""))
     msgs = []
+
+    def is_open(key, fs):
+        return any(t["sym"] == fs and not t.get("closed") for t in state.get(key, {}).get("trades", []))
     for c, fs, k, v7, vola, f8, px in keep:
         note = (f"в канале {k / n * 100:.0f}% постов за 7 суток ({k} из {n}, место {rank[c]}), объём {v7 / 1e6:.0f} млн $/сут, "
                 f"волатильность {vola * 100:.1f}%/сут, фандинг " + (f"{f8 * 100:+.3f}%/8 ч" if f8 is not None else "нет данных"))
+        was = is_open("virtual_BF", fs), is_open("virtual_BF3", fs)
         m = trader.virt_open(state, "virtual_BF", fs, "BF", note, price=px)
-        log("ФАКТОР ЗАЙМА", fs, note + ("" if m else " — уже открыта"))
-        if m:
-            msgs.append(m)
+        m3 = trader.virt_open(state, "virtual_BF3", fs, "BF", note, price=px)    # 🏦³: те же входы, стоп +300%
+        new = not was[0] and is_open("virtual_BF", fs), not was[1] and is_open("virtual_BF3", fs)
+        log("ФАКТОР ЗАЙМА", fs, note + ("" if new[0] else " — 🏦 уже открыта") + ("" if new[1] else "; 🏦³ уже открыта"))
+        if all(new):
+            msgs.append(m + "\n🏦³ тот же шорт, стоп +300%")         # обычно журналы входят вместе — одной строкой
+        else:
+            msgs += [x for x in (m, m3) if x]
     if not msgs:
         return []
     return [f"🏦 Фактор займа на {day}: 5 самых волатильных из 10 монет, чаще всех бывших в маржинальном канале за 7 суток\n"

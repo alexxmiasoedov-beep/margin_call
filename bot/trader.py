@@ -958,6 +958,12 @@ VIRTUALS = {
                             "волатильных; шорт на 7 суток без тейка, стоп +100%, плечо ×1",
                    "icon": "🏦", "params": lambda fh: (None, 100.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
                    "hold_h": 168.0, "lev": 1, "hedge": "BTC"},
+    # то же, что 🏦, но стоп +300% (research/s13/ВЫВОДЫ.md: стоп +100% срезает сквизы, которые к концу недели обычно
+    # откатываются; бэктест за 19 месяцев — +27,4 USDT против +19,7). Входы — тот же набор в 01:00 UTC. twin: закрытие
+    # той же монеты в том же проходе — строкой к сообщению 🏦, в /virtual — итог 🏦 за то же время
+    "virtual_BF3": {"title": "фактор займа, те же входы, что у 🏦, но стоп +300%: шорт на 7 суток без тейка, плечо ×1",
+                    "icon": "🏦³", "params": lambda fh: (None, 300.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
+                    "hold_h": 168.0, "lev": 1, "hedge": "BTC", "twin": "virtual_BF"},
     # первый займ свежего токена (research/s12/ВЫВОДЫ.md, стратегия A): scanner.newtoken_rule
     "virtual_NT": {"title": "первый займ свежего токена: монета впервые в маржинальном канале, спотовый листинг Binance ±10 суток, "
                             "через 24 ч после первого поста (фандинг не дешевле −0,1%/8 ч); шорт на 21 сутки без тейка, стоп +60%, "
@@ -1123,12 +1129,24 @@ def virt_manage(state):
     """Виртуальные стоп (марк-цена), тейк (цена сделок) по минутным свечам после входа и выход по времени. Сделка
     проверяется раз в 5 мин (VIRT["check_s"]) и в момент выхода по времени: свечи докачиваются с места прошлой проверки,
     так что стоп и тейк ловятся так же точно, а запросов к Binance в разы меньше. Текущая цена — только для выхода."""
-    msgs = []; now = time.time(); cache = {}; dropped = {}
+    msgs = []; now = time.time(); cache = {}; dropped = {}; shut = {}    # (журнал, монета) → номер сообщения о закрытии
 
     def price(sym):
         if sym not in cache:
             cache[sym] = mark_price(sym)
         return cache[sym]
+
+    def close(key, cfg, v, t, px, reason):
+        """Закрытие сделки. У журнала-близнеца (🏦³ при 🏦): если та же монета закрылась у основного журнала в этом же
+        проходе — строка к его сообщению вместо отдельного."""
+        text = _virt_close(v, t, px, reason, cfg["icon"])
+        i = shut.get((cfg.get("twin"), t["sym"]))
+        if i is None:
+            shut[(key, t["sym"])] = len(msgs); msgs.append(text)
+        else:
+            msgs[i] += (f"\n{cfg['icon']} {reason}: итого {t['pnl_usdt']:+.2f} USDT"
+                        + (f", с хеджем {t['pnl_usdt'] + t['hedge_usdt']:+.2f}" if "hedge_usdt" in t else "")
+                        + f"; баланс {v['balance']:.2f} USDT")
 
     for key, cfg in VIRTUALS.items():
         v = _virt(state, key)
@@ -1147,15 +1165,15 @@ def virt_manage(state):
                 fr = funding_rates(t["sym"], t["opened"])
                 fbad = bool(fr) and any(a[1] <= fx and b[1] <= fx for a, b in zip(fr, fr[1:]))
             if ev == "стоп":
-                msgs.append(_virt_close(v, t, t["sl"], "стоп", cfg["icon"]))
+                close(key, cfg, v, t, t["sl"], "стоп")
             elif ev == "тейк":
-                msgs.append(_virt_close(v, t, t["tp"], "тейк", cfg["icon"]))
+                close(key, cfg, v, t, t["tp"], "тейк")
             elif fbad:
-                msgs.append(_virt_close(v, t, price(t["sym"]), f"фандинг ≤ {fx * 100:g}%/8 ч два раза подряд", cfg["icon"]))
+                close(key, cfg, v, t, price(t["sym"]), f"фандинг ≤ {fx * 100:g}%/8 ч два раза подряд")
             elif now >= t_end:
                 px = price(t["sym"])
                 if px:
-                    msgs.append(_virt_close(v, t, px, f"выход по времени ({t.get('hold_h', VIRT['hold_h']):g} ч)", cfg["icon"]))
+                    close(key, cfg, v, t, px, f"выход по времени ({t.get('hold_h', VIRT['hold_h']):g} ч)")
                 elif contract(t["sym"]) is None and _contracts:
                     # монеты нет на фьючерсах Binance (вход был по цене из канала): закрыть не по чему — убираем из журнала
                     t["drop"] = True; dropped.setdefault(t["sym"], []).append(cfg["icon"])
@@ -1203,6 +1221,14 @@ def _virt_block(state, key, cfg):
             lines.append(f"    {time.strftime('%d.%m', time.gmtime(t['closed']))} {t['sym']}: {t['reason']}, {t['pnl_usdt']:+.2f}")
     elif not op:
         lines.append("  сделок пока нет")
+    tw = cfg.get("twin")
+    if tw:                                                     # 🏦³: итог 🏦 по сделкам, открытым с запуска близнеца
+        w = [t for t in state.get(tw, {}).get("trades", []) if t.get("closed") and t["opened"] >= v["started"]]
+        hd = [t for t in w if "hedge_usdt" in t]
+        lines.append(f"  для сравнения {VIRTUALS[tw]['icon']} по сделкам с {time.strftime('%d.%m', time.gmtime(v['started']))}: "
+                     + (f"закрытых {len(w)}, итого {sum(t['pnl_usdt'] for t in w):+.2f} USDT"
+                        + (f", с хеджем {sum(t['pnl_usdt'] + t['hedge_usdt'] for t in hd):+.2f}" if hd else "") if w
+                        else "закрытых пока нет"))
     return lines, v["started"]
 
 
