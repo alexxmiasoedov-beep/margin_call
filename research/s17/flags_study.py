@@ -1,6 +1,6 @@
 """Флаги Upbit как сигнал (первый взгляд): что было с фьючерсом Binance после появления флага. Данные — выгрузка
 tools/upbit_flags.py с сервера (s17/flags_2026-11-03_10.txt, 03.11–10.11.2026: журнал службы хранит около недели).
-Цены — 15-мин свечи фьючерсов из архива data.binance.vision (дневные файлы по 09.11 включительно, кэш s17/k/).
+Цены — 15-мин свечи фьючерсов из архива data.binance.vision (дневные файлы до вчерашнего дня, кэш s17/k/).
 
 Для каждого появления флага (+) у монеты с фьючерсом: вход в закрытии 15-мин свечи, в которой бот увидел флаг; доходность
 шорта (только цена) через 4, 24 и 48 ч; «к рынку» — минус медиана шорта остальных монет выгрузки за то же окно.
@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np, pandas as pd
 
 UTC = datetime.timezone.utc
-DAYS = [f"2026-11-{d:02d}" for d in range(1, 10)]
+DAYS = []                                                    # дни свечей: от первого флага до последнего + 3 суток, не позже вчера
 NAME = {"W": "предупреждение", "P": "скачки цены", "V": "всплеск объёма", "D": "всплеск депозитов",
         "G": "разница с мировой ценой", "C": "концентрация мелких счетов"}
 
@@ -26,7 +26,8 @@ def parse(path):
         p = ln.split()
         if len(p) < 7 or not p[0].isdigit():
             continue
-        t = datetime.datetime(2026, int(p[0][:2]), int(p[0][2:]), int(p[1][:2]), int(p[1][2:]), tzinfo=UTC).timestamp()
+        y, md = (2000 + int(p[0][:2]), p[0][2:]) if len(p[0]) == 6 else (2026, p[0])     # v2: ГГММДД, v1: ММДД
+        t = datetime.datetime(y, int(md[:2]), int(md[2:]), int(p[1][:2]), int(p[1][2:]), tzinfo=UTC).timestamp()
         rows.append(dict(t=t, sign=p[2], flag=p[3], coin=p[4], fut=None if p[5] == "-" else p[5]))
     return pd.DataFrame(rows)
 
@@ -57,6 +58,11 @@ def series(sym):
 
 if __name__ == "__main__":
     F = parse(sys.argv[1] if len(sys.argv) > 1 else "s17/flags_2026-11-03_10.txt")
+    last = (datetime.datetime.now(UTC) - datetime.timedelta(days=1)).date()
+    d, end = datetime.datetime.fromtimestamp(F.t.min(), UTC).date() - datetime.timedelta(days=1), \
+        min(datetime.datetime.fromtimestamp(F.t.max(), UTC).date() + datetime.timedelta(days=3), last)
+    while d <= end:
+        DAYS.append(d.isoformat()); d += datetime.timedelta(days=1)
     syms = sorted(set(F.fut.dropna()) | {"BTC"})
     with ThreadPoolExecutor(8) as pool:
         S = dict(zip(syms, pool.map(series, syms)))

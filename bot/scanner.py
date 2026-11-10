@@ -1829,12 +1829,16 @@ def margin_rates_watch(state):
 
 UPBIT_FLAGS = ("warning", "PRICE_FLUCTUATIONS", "TRADING_VOLUME_SOARING", "DEPOSIT_AMOUNT_SOARING",
                "GLOBAL_PRICE_DIFFERENCES", "CONCENTRATION_OF_SMALL_ACCOUNTS")   # warning — «предупреждение», остальные — «внимание»
+# смены флагов — ещё и в файл рядом с state.json: журнал службы на сервере хранит около недели (research/s17/ВЫВОДЫ.md)
+UPF_FILE = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "upbit_flags.csv")
+UPF_HEAD = "ts,sign,flag,coin,fut,price,held_h,gap_min\n"
 
 
 def upbit_flags_watch(state, every=300):
     """Флаги Upbit по KRW-рынкам (research/s3/ВЫВОДЫ.md): предупреждение, скачки цены, всплеск объёма, всплеск депозитов,
     разница с мировой ценой, концентрация мелких счетов. Раз в 5 мин — /v1/market/all?is_details=true; в журнал службы —
     строки «UPBIT»: появление (+) и снятие (−) флага с ценой фьючерса Binance; если прошлых флагов нет — снимок (=).
+    Те же смены — строками в upbit_flags.csv рядом с state.json (UPF_FILE; выгрузка — tools/upbit_flags.py).
     Только запись для будущей проверки: сделок и сообщений в чат нет."""
     now = time.time()
     if now - state.get("upf_try", 0) < every:
@@ -1870,10 +1874,19 @@ def upbit_flags_watch(state, every=300):
     px = http_json("https://fapi.binance.com/fapi/v1/ticker/price", 15)
     price = {x.get("symbol"): x.get("price") for x in px} if isinstance(px, list) else {}
     gap = f", прошлый опрос {(now - last) / 60:.0f} мин назад" if old is not None and now - last > 900 else ""
+    rows = []
     for sign, c, f, since in ch:
         s = perp.get(c)
         fut = (f"фьючерс {s} {price[s]}" if price.get(s) else f"фьючерс {s}") if s else "фьючерса нет"
         log("UPBIT", f"{sign}{f}", f"KRW-{c}", "|", fut + (f", держался {(now - since) / 3600:.1f} ч" if since else "") + gap)
+        rows.append(",".join((f"{now:.0f}", "-" if sign == "−" else sign, f, c, s or "", str(price.get(s) or ""),
+                              f"{(now - since) / 3600:.2f}" if since else "", f"{(now - last) / 60:.0f}" if gap else "")))
+    try:
+        head = not os.path.exists(UPF_FILE)
+        with open(UPF_FILE, "a", encoding="utf-8") as fh:
+            fh.write((UPF_HEAD if head else "") + "\n".join(rows) + "\n")
+    except OSError as e:
+        log("UPBIT", "файл флагов не записан:", repr(e))
 
 
 def status_text(cands):
