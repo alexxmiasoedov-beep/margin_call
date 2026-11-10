@@ -209,6 +209,9 @@ def fmt(st):
 if __name__ == "__main__":
     J = journals()
     FE = features(J)
+    T = pd.concat([pd.concat([j, pd.DataFrame([FE[(s, te)] for s, te in zip(j.s, j.te)])], axis=1).assign(journal=name)
+                   for name, j in J.items()], ignore_index=True)
+    T.to_pickle("s20/trades.pkl")
     rows = []
     for name, j in J.items():
         X = pd.DataFrame([FE[(s, te)] for s, te in zip(j.s, j.te)])
