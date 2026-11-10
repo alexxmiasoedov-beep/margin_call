@@ -1640,6 +1640,155 @@ def newtoken_rule(state):
     return msgs
 
 
+KL_EVERY, KL_WAIT_D, KL_LATE_H, KL_BURST, KL_PAGES = 300, 7, 24, 10, 8   # 🇰🇷🆕: опрос раз в 5 мин; ждать первой сделки
+# до 7 суток; входить не позже суток после неё; больше 10 «новых» рынков за опрос — сбой списка биржи, а не листинги;
+# первая сделка ищется не дальше 8 страниц минутных свечей (1600 минут со сделками)
+KL_API = {"upbit": "https://api.upbit.com", "bithumb": "https://api.bithumb.com"}
+KL_NAME = {"upbit": "Upbit", "bithumb": "Bithumb"}
+KL_STABLE = {"USDT", "USDC", "USDE", "USD1", "USDS", "DAI", "FDUSD", "TUSD", "PYUSD", "RLUSD"}
+
+
+def _kl_utc(x):
+    return datetime.fromisoformat(str(x["candle_date_time_utc"])).replace(tzinfo=timezone.utc).timestamp()
+
+
+def _kl_candles(url):
+    """Свечи корейской биржи: list; «Code not found» (Upbit — HTTP 404, Bithumb — 200 с ошибкой) → [] — рынок в списке,
+    но свечей ещё нет; сбой → None (без строки в журнал — повтор через 5 мин)."""
+    try:
+        j = json.loads(http(url, timeout=15))
+    except urllib.error.HTTPError as e:
+        return [] if e.code == 404 else None
+    except Exception:
+        return None
+    if isinstance(j, dict) and str((j.get("error") or {}).get("name")) == "404":
+        return []
+    return j if isinstance(j, list) else None
+
+
+def _kl_to(ex, ts):
+    """Граница to для свечей: Upbit ждёт UTC с «Z», Bithumb — время Сеула без зоны (с «Z» отвечает 400); не включительно."""
+    if ex == "bithumb":
+        return datetime.fromtimestamp(ts + 9 * 3600, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _kl_first_trade(ex, coin):
+    """Время первой сделки KRW-рынка: 0 — торгов ещё нет, −1 — торги идут дольше KL_PAGES × 200 минут со сделками (больше
+    суток: рынок не новый или вход опоздал), None — биржа не ответила. Минутные свечи есть только у минут со сделками:
+    страница из 200 свечей листается назад, пока не придёт неполная — её самая ранняя свеча и есть первая сделка."""
+    url = f"{KL_API[ex]}/v1/candles/minutes/1?market=KRW-{coin}&count=200"
+    first, to = None, ""
+    for _ in range(KL_PAGES):
+        m = _kl_candles(url + to)
+        if m is None:
+            return None
+        if not m:
+            return first or 0.0                              # торгов нет или первая сделка — на прошлой странице
+        try:
+            first = min(_kl_utc(x) for x in m)
+        except (KeyError, TypeError, ValueError):
+            return None
+        if len(m) < 200:
+            return first
+        to = f"&to={_kl_to(ex, first)}"
+    return -1.0
+
+
+def kr_listing_rule(state):
+    """Корейский листинг (журнал 🇰🇷🆕, research/s15/ВЫВОДЫ.md): раз в 5 мин — списки KRW-рынков Upbit и Bithumb. Новый рынок
+    ждёт первой сделки (до 7 суток); когда торги начались — если с первой сделки прошло не больше суток и у монеты есть
+    бессрочный фьючерс Binance, запущенный не меньше суток назад, — виртуальный шорт фьючерса на 7 суток без тейка, стоп +50%,
+    плечо ×1. Первый опрос биржи только запоминает её рынки. Запросы — к корейским биржам, Binance — только цена на входе.
+    Возвращает сообщения для чата."""
+    now = time.time()
+    if now - state.get("kl_try", 0) < KL_EVERY:
+        return []
+    state["kl_try"] = now
+    known = state.setdefault("kl_known", {}); wait = state.setdefault("kl_wait", {})
+    for ex, base in KL_API.items():
+        j = http_json(f"{base}/v1/market/all", 15)
+        cur = {str(x.get("market", ""))[4:] for x in j if isinstance(x, dict) and str(x.get("market", "")).startswith("KRW-")} \
+            if isinstance(j, list) else set()
+        if not cur:
+            continue                                         # биржа не ответила — повтор через 5 мин
+        if ex not in known:
+            known[ex] = sorted(cur)
+            log("КОРЕЯ ЛИСТИНГ", f"{KL_NAME[ex]}: первый опрос — рынков к воне {len(cur)}, они считаются старыми, сделок нет")
+            continue
+        old = set(known[ex]); new = sorted(cur - old)
+        known[ex] = sorted(old | cur)                        # снятые рынки не забываются — их возврат не считается листингом
+        if len(new) > KL_BURST:
+            log("КОРЕЯ ЛИСТИНГ", f"{KL_NAME[ex]}: сразу {len(new)} новых рынков — похоже на сбой списка, сделок нет: "
+                                 + ", ".join(new[:20]))
+            continue
+        for c in new:
+            wait.setdefault(f"{ex}:{c}", now)
+            log("КОРЕЯ ЛИСТИНГ", f"{KL_NAME[ex]}: новый рынок KRW-{c} — жду первой сделки")
+    msgs = []
+    if wait:
+        trader.contract("BTC")                               # загружает список бессрочных контрактов USDT
+    if wait and not trader._contracts:
+        log("КОРЕЯ ЛИСТИНГ", f"Binance не отдал список контрактов — {len(wait)} рынков ждут, повтор через 5 мин")
+        return msgs
+    for key, seen in sorted(wait.items(), key=lambda kv: kv[1]):
+        ex, c = key.split(":", 1)
+        name = f"{KL_NAME.get(ex, ex)} KRW-{c}"
+        if ex not in KL_API:
+            del wait[key]
+            continue
+        if c in KL_STABLE:
+            del wait[key]
+            log("КОРЕЯ ЛИСТИНГ", f"{name}: стейблкоин — пропуск")
+            continue
+        ft = _kl_first_trade(ex, c)
+        if ft is None:
+            continue                                         # биржа не ответила — повтор через 5 мин
+        if ft == 0:
+            if now - seen > KL_WAIT_D * 86400:
+                del wait[key]
+                log("КОРЕЯ ЛИСТИНГ", f"{name}: за {KL_WAIT_D} суток торги не начались — больше не жду")
+            continue
+        del wait[key]
+        if ft < 0:
+            log("КОРЕЯ ЛИСТИНГ", f"{name}: торги идут дольше {KL_PAGES * 200} минут со сделками — рынок не новый или вход "
+                                 "опоздал, пропуск")
+            continue
+        age_h = (now - ft) / 3600
+        when = f"первая сделка {datetime.fromtimestamp(ft, timezone.utc):%d.%m %H:%M} UTC"
+        if age_h > KL_LATE_H:
+            log("КОРЕЯ ЛИСТИНГ", f"{name}: {when}, {age_h:.0f} ч назад — позже {KL_LATE_H} ч, пропуск")
+            continue
+        fs = _fut_sym(c)
+        if not fs and now - state.get("kl_reload", 0) >= 600:    # список контрактов грузится при запуске бота — фьючерс
+            state["kl_reload"] = now                          # мог появиться позже: перезагрузка (вес 1) не чаще раза в 10 мин
+            trader._contracts.clear()
+            fs = _fut_sym(c)
+            if not trader._contracts:
+                wait[key] = seen
+                log("КОРЕЯ ЛИСТИНГ", f"{name}: Binance не отдал список контрактов — повтор через 5 мин")
+                break
+        if not fs:
+            log("КОРЕЯ ЛИСТИНГ", f"{name}: {when} — нет фьючерса Binance, пропуск")
+            continue
+        on = (trader.contract(fs) or {}).get("onboard") or 0
+        if on and now - on < 86400:
+            log("КОРЕЯ ЛИСТИНГ", f"{name}: {when} — фьючерс {fs} запущен {(now - on) / 3600:.0f} ч назад, моложе суток, пропуск")
+            continue
+        note = (f"{KL_NAME[ex]}: новая монета к воне KRW-{c}, {when}"
+                + (f" ({age_h * 60:.0f} мин назад)" if age_h < 2 else f" ({age_h:.0f} ч назад)"))
+        m = trader.virt_open(state, "virtual_KL", fs, "KL", note)
+        if m:
+            log("КОРЕЯ ЛИСТИНГ", fs, note)
+            msgs.append(m)
+        elif any(t["sym"] == fs and not t.get("closed") for t in state.get("virtual_KL", {}).get("trades", [])):
+            log("КОРЕЯ ЛИСТИНГ", fs, note + " — сделка по монете уже открыта")
+        else:                                                # Binance не отдал цену — повтор через 5 мин (до суток)
+            wait[key] = seen
+            log("КОРЕЯ ЛИСТИНГ", fs, note + " — Binance не отдал цену, повтор через 5 мин")
+    return msgs
+
+
 MR_URL = "https://www.binance.com/bapi/margin/v1/public/margin/vip/spec/list-all"
 MR_DIR = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "margin_rates")
 
@@ -1863,6 +2012,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила нового токена:", repr(e))
+    try:
+        for msg in kr_listing_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила корейского листинга:", repr(e))
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
