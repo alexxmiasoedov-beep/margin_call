@@ -1852,6 +1852,58 @@ def margin_rates_watch(state):
     state["mr_cnt"] = state.get("mr_cnt", 0) + 1
 
 
+MP_DIR = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "margin_pool")
+MP_EVERY = 600                          # пул займа — раз в 10 мин (вес запроса 50 из 12 000 в минуту на IP у api.binance.com)
+_mp = {"last": None, "nokey": False}    # прошлый снимок пула в памяти: после перезапуска бота — снова полный снимок
+
+
+def margin_pool_watch(state):
+    """Доступный пул займа на кросс-марже Binance («выкачка пула», research/s21): раз в 10 мин — подписанный запрос
+    /sapi/v1/margin/available-inventory?type=MARGIN ключом бота: сколько каждого актива ещё можно занять. Строки
+    «время,время Binance,актив,доступно» в margin_pool/ГГГГ-ММ.csv.gz рядом с state.json: после запуска бота и в первом
+    снимке суток — все активы, иначе только изменившиеся (пропавший актив — пустое «доступно»). Только запись для
+    проверки: сделок и сообщений в чат нет. Сбой — в журнал службы не чаще раза в 6 ч; раз в сутки — сводка «ПУЛ»."""
+    now = time.time()
+    if now - state.get("mp_try", 0) < MP_EVERY:
+        return
+    state["mp_try"] = now
+    if not trader.KEY or not trader.SECRET:
+        if not _mp["nokey"]:
+            _mp["nokey"] = True
+            log("ПУЛ", "ключа Binance нет — пул займа не пишется")
+        return
+    j = trader.sapi_get("/sapi/v1/margin/available-inventory", {"type": "MARGIN"})
+    assets = j.get("assets") if isinstance(j, dict) else None
+    cur = {}
+    for a, v in (assets.items() if isinstance(assets, dict) else ()):
+        try:
+            cur[str(a)] = float(v)
+        except (TypeError, ValueError):
+            pass
+    if len(cur) < 20:
+        if now - state.get("mp_err", 0) >= 6 * 3600:
+            state["mp_err"] = now
+            why = f"{j.get('code')} {j.get('msg')}" if isinstance(j, dict) and j.get("code") else f"активов в ответе {len(cur)}"
+            log("ПУЛ", "доступный пул займа не получен:", why)
+        return
+    day, last = int(now // 86400), _mp["last"]
+    full = last is None or state.get("mp_day") != day
+    upd = j.get("updateTime") or ""
+    rows = [f"{now:.0f},{upd},{a},{x:.10g}" for a, x in sorted(cur.items()) if full or last.get(a) != x]
+    rows += [f"{now:.0f},{upd},{a}," for a in sorted(set(last or {}) - set(cur))]
+    if rows:
+        os.makedirs(MP_DIR, exist_ok=True)
+        fn = os.path.join(MP_DIR, datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m") + ".csv.gz")
+        with gzip.open(fn, "at", encoding="utf-8") as f:
+            f.write("\n".join(rows) + "\n")
+    _mp["last"] = cur
+    if state.get("mp_day") != day:
+        if state.get("mp_day") is not None:
+            log("ПУЛ", f"за прошлые сутки снимков {state.get('mp_cnt', 0)} из {86400 // MP_EVERY}; сейчас активов {len(cur)}")
+        state["mp_day"], state["mp_cnt"] = day, 0
+    state["mp_cnt"] = state.get("mp_cnt", 0) + 1
+
+
 UPBIT_FLAGS = ("warning", "PRICE_FLUCTUATIONS", "TRADING_VOLUME_SOARING", "DEPOSIT_AMOUNT_SOARING",
                "GLOBAL_PRICE_DIFFERENCES", "CONCENTRATION_OF_SMALL_ACCOUNTS")   # warning — «предупреждение», остальные — «внимание»
 # смены флагов — ещё и в файл рядом с state.json: журнал службы на сервере хранит около недели (research/s17/ВЫВОДЫ.md)
@@ -2151,6 +2203,10 @@ def cycle(dry, state=None):
         margin_rates_watch(state)
     except Exception as e:
         log("ошибка сборщика ставок:", repr(e))
+    try:
+        margin_pool_watch(state)
+    except Exception as e:
+        log("ошибка сборщика пула займа:", repr(e))
     try:
         for msg in trader.manage(state):
             log(msg)

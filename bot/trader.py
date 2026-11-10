@@ -145,6 +145,39 @@ def banned(host):
     return max(0.0, BAN.get(host, 0) - time.time())
 
 
+SAPI = "https://api.binance.com"
+
+
+def sapi_get(path, params=None):
+    """Подписанный GET к маржинальному API Binance (api.binance.com/sapi) ключом бота — для сборщика пула займа
+    (scanner.margin_pool_watch). Пауза после 403/418/429 — как у фьючерсов. Ошибка — dict с code."""
+    host = "api.binance.com"
+    wait = banned(host)
+    if wait:
+        return {"code": -1003, "msg": f"пауза после ответа Binance 418/429, ещё {wait:.0f} с"}
+    p = dict(params or {})
+    p["timestamp"] = int(time.time() * 1000) + _time_offset
+    p["recvWindow"] = 20000
+    qs = urllib.parse.urlencode(p)
+    qs += "&signature=" + hmac.new(SECRET.encode(), qs.encode(), hashlib.sha256).hexdigest()
+    req = urllib.request.Request(f"{SAPI}{path}?{qs}", headers={"X-MBX-APIKEY": KEY, "User-Agent": "margin-call"})
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            j = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 418, 429):
+            ban_note(host, e.code, e.headers)
+        try:
+            j = json.loads(e.read().decode())
+        except Exception:
+            j = {"code": e.code, "msg": str(e)}
+    except Exception as e:
+        j = {"code": -1, "msg": repr(e)}
+    net_note(host, time.time() - t0, not (isinstance(j, dict) and j.get("code") == -1))
+    return j
+
+
 def _request(method, path, params=None, signed=True, _retry=True):
     """Binance USDT-M futures. Ошибка — dict с отрицательным code; успех может быть list, dict или {"code": 200}."""
     wait = banned("fapi.binance.com")
