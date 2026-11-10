@@ -1079,6 +1079,33 @@ def ticker24():
     return _t24["data"]
 
 
+KRF_FUND_MIN = -0.001                  # 🇰🇷ᶠ: не входить при фандинге на последнем начислении ниже −0,1% за 8 ч (research/s20)
+
+
+def _virt_is_open(state, key, sym):
+    return any(t["sym"] == sym and not t.get("closed") for t in state.get(key, {}).get("trades", []))
+
+
+def kr_open(state, s, note, c, T):
+    """Вход 🇰🇷 и его двойника 🇰🇷ᶠ (research/s20/ВЫВОДЫ.md). 🇰🇷ᶠ входит в ту же сделку, если фандинг монеты на последнем
+    начислении (в пересчёте на 8 ч) не ниже −0,1% или Binance его не отдал (как в бэктесте). Совместный вход — одной
+    строкой к сообщению 🇰🇷. Возвращает сообщения для чата."""
+    fr = trader.funding_rates(s, T - 2 * 86400)
+    f8 = fr[-1][1] if fr else None
+    fnote = f"фандинг на последнем начислении {f8 * 100:+.3f}%/8 ч" if f8 is not None else "фандинг: Binance не отдал"
+    twin = f8 is None or f8 > KRF_FUND_MIN
+    was = _virt_is_open(state, "virtual_KR", s), _virt_is_open(state, "virtual_KRF", s)
+    m = trader.virt_open(state, "virtual_KR", s, "KR", note, price=c)
+    mf = trader.virt_open(state, "virtual_KRF", s, "KR", f"{note}; {fnote}", price=c) if twin else None
+    new = not was[0] and _virt_is_open(state, "virtual_KR", s), not was[1] and _virt_is_open(state, "virtual_KRF", s)
+    log("КОРЕЯ ᶠ", s, fnote + (" → 🇰🇷ᶠ вход" if new[1] else " → 🇰🇷ᶠ без входа" if not twin else " → 🇰🇷ᶠ сделка уже открыта"))
+    if new[0] and new[1]:
+        return [m + f"\n🇰🇷ᶠ тот же шорт ({fnote})"]
+    if new[0] and not twin:
+        return [m + f"\n🇰🇷ᶠ без входа: {fnote}, ниже −0,1%"]
+    return [x for x in (m, mf) if x]
+
+
 def korea_rule(state):
     """Корейский шорт (журнал 🇰🇷, research/mm2/ВЫВОДЫ.md): раз в 15 мин, на закрытии свечи, по всем фьючерсам Binance —
     памп +15% за ≤ 2 ч из покоя; если за последний час Upbit + Bithumb дали ≥ 20% объёма (вместе с фьючерсом Binance) —
@@ -1144,9 +1171,7 @@ def korea_rule(state):
                     + f", фьючерс Binance {fut / 1e6:.2f} млн $)")
             log("КОРЕЯ", s, note)
             if share >= KR_SHARE_MIN:
-                m = trader.virt_open(state, "virtual_KR", s, "KR", note, price=c)
-                if m:
-                    msgs.append(m)
+                msgs += kr_open(state, s, note, c, T)
                 if btc24 is None:                             # BTC за сутки — один раз за проход (98: текущая незакрытая свеча отбрасывается)
                     kb = _closed_15m("BTC", T, 98)
                     btc24 = float(kb[-1][4]) / float(kb[-97][4]) - 1 if kb and len(kb) >= 97 else float("nan")
