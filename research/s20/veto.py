@@ -90,7 +90,7 @@ def metrics_day(sym, day):
 
 
 def oi_series(sym, t0, t1):
-    days = sorted({datetime.datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%d") for t in np.arange(t0, t1 + DAY, DAY)})
+    days = sorted({datetime.datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%d") for t in list(np.arange(t0, t1, DAY)) + [t1]})
     a = [metrics_day(sym, d) for d in days]
     a = [x for x in a if len(x)]
     return np.concatenate(a) if a else np.zeros((0, 3))
@@ -145,7 +145,7 @@ def features(J):
     pairs = sorted({(s, te) for j in J.values() for s, te in zip(j.s, j.te)})
     syms = sorted({s for s, _ in pairs})
     need = sorted({(s, datetime.datetime.fromtimestamp(t, UTC).strftime("%Y-%m-%d")) for s, te in pairs
-                   for t in np.arange(te - 3 * DAY, te + DAY, DAY)})
+                   for t in (te - DAY - 3600, te - DAY, te)})
     print(f"сделок {sum(len(j) for j in J.values())}, пар монета-время {len(pairs)}, файлов метрик {len(need)}", flush=True)
     with ThreadPoolExecutor(16) as pool:
         list(pool.map(lambda x: metrics_day(*x), need))
@@ -164,7 +164,7 @@ def features(J):
             fmin = min(fr[i, 1] * 8 / gap(i) for i in ks if i >= 1) if len(ks) else f8
             k3 = int(np.searchsorted(ft, te - 3 * DAY, side="right")) - 1
             short = k3 >= 1 and gap(k) < gap(k3)
-        arr = oi_series(s, te - 3 * DAY - 3600, te)
+        arr = oi_series(s, te - DAY - 3600, te)
         o0, o24 = oi_at(arr, te), oi_at(arr, te - DAY)
         oi24 = o0[1] / o24[1] - 1 if o0 is not None and o24 is not None and o24[1] > 0 else np.nan
         coin = PREF.sub("", s); mult = float(s[:len(s) - len(coin)] or 1)
