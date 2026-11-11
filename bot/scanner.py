@@ -777,10 +777,11 @@ def _closed_15m(sym, T, n=99):
 _skip_why = {}   # 15-мин правило → почему последняя свеча ещё не проверена (сбой ключевых данных)
 
 
-def candle_due(state, key, name):
+def candle_due(state, key, name, step=900):
     """Время закрытия T свечи, которую 15-мин правило (отметка state[key]) ещё не проверило, если с закрытия прошло ≤ 10 мин;
-    иначе None. Свеча, не проверенная за 10 мин, — одна строка в журнал службы: сбой данных или поздний проход."""
-    T = int(time.time() // 900 * 900)
+    иначе None. Свеча, не проверенная за 10 мин, — одна строка в журнал службы: сбой данных или поздний проход.
+    step=3600 — то же для часового правила (💸)."""
+    T = int(time.time() // step * step)
     if state.get(key) == T:
         return None
     if time.time() - T <= 600:
@@ -925,9 +926,101 @@ def repay_rule(state, posts):
             log("ОТДАЧА", fs, note, f"— ход цены за сутки меньше {RP_MOVE * 100:g}%")
             continue
         log("ОТДАЧА", fs, note)
+        was = _virt_is_open(state, "virtual_RP", fs), _virt_is_open(state, "virtual_RP7", fs)
         m = trader.virt_open(state, "virtual_RP", fs, "RP", note, price=c)
+        m7 = trader.virt_open(state, "virtual_RP7", fs, "RP", note, price=c)   # ↩️⁷: те же входы, выход через 7 суток
+        new = not was[0] and _virt_is_open(state, "virtual_RP", fs), not was[1] and _virt_is_open(state, "virtual_RP7", fs)
+        if not new[1]:
+            log("ОТДАЧА", fs, "↩️⁷ без входа: " + ("сделка ещё открыта" if was[1] else "кулдаун или баланс"))
+        if all(new):
+            msgs.append(m + "\n↩️⁷ тот же шорт, выход через 7 суток")        # обычно журналы входят вместе — одной строкой
+        else:
+            msgs += [x for x in (m, m7) if x]
+    return msgs
+
+
+RW_X, RW_REP_MIN, RW_MOVE = 1.5, 20e3, 0.05   # 💸: отдача за 4 ч ×1,5 и не меньше 20 тыс. $, ход цены за 4 ч ±5% (research/s21)
+RW_BOR_X, RW_BOR_MIN = 1.5, 50e3              # 💸: займ за 4 ч тоже вырос ×1,5 до 50+ тыс. $ — это набор позиций, а не выход
+RW_FRESH = 1800                               # 💸: пост с монетой не старше 30 мин к закрытию часа и к отметке 4 ч назад
+RW_STABLE = {"USDT", "USDC", "USDE", "USD1", "USDS", "DAI", "FDUSD", "TUSD", "USDP", "BUSD", "PYUSD", "RLUSD"}
+
+
+def wide_due(state):
+    """💸 проверяется раз в час: первый проход в течение 10 мин после закрытия часа."""
+    T = int(time.time() // 3600 * 3600)
+    return state.get("rw_last_T") != T and time.time() - T <= 600
+
+
+def repay_wide_rule(state, posts):
+    """Широкая отдача (журнал 💸, research/s21/ВЫВОДЫ.md, раздел 4): раз в час, на закрытии часа T, по монетам маржинального
+    канала. Пост с монетой есть не раньше T − 30 мин и не раньше чем за 30 мин до T − 4 ч (как в бэктесте — последний пост не
+    позже отметки); отдача за 24 ч (REP) выросла к значению 4 ч назад в ≥ 1,5 раза и не меньше 20 тыс. $; займ (BOR) при этом
+    не вырос в 1,5 раза до 50+ тыс. $; цена фьючерса за 4 ч изменилась на ≥ 5% в любую сторону; у фьючерса есть свечи за
+    сутки → виртуальный шорт на 7 суток без тейка, стоп +50%, плечо ×1. Новая сделка по монете — когда прежняя закрыта и с её
+    входа прошло ≥ 24 ч (журнал). Только виртуальные сделки. Возвращает сообщения для чата."""
+    T = candle_due(state, "rw_last_T", "ОТДАЧА 4Ч", step=3600)
+    if T is None:
+        return []
+    if not posts or posts[-1]["ts"] > T - 4 * 3600 - RW_FRESH:   # проход начался до закрытия часа или канал не ответил
+        return candle_retry("rw_last_T", "посты канала не получены на нужную глубину")
+    ser = {}
+    for q in sorted(posts, key=lambda p: p["ts"]):              # от старых к новым, только посты не позже закрытия часа
+        if q["ts"] <= T:
+            for s, row in q.get("rows_all", {}).items():
+                ser.setdefault(s, []).append((q["ts"], row))
+    T4, cands = T - 4 * 3600, []
+    for s, sr in ser.items():
+        if s in RW_STABLE or T - sr[-1][0] > RW_FRESH:
+            continue
+        old = [x for x in sr if x[0] <= T4]
+        if not old or T4 - old[-1][0] > RW_FRESH:
+            continue
+        (_, r1), (_, r0) = sr[-1], old[-1]
+        bor, rep, bor0, rep0 = _num(r1[0]), _num(r1[1]), _num(r0[0]), _num(r0[1])
+        if None in (bor, rep, bor0, rep0) or rep < RW_X * rep0 or rep < RW_REP_MIN:
+            continue
+        if bor >= RW_BOR_X * bor0 and bor >= RW_BOR_MIN:
+            continue                                            # займ тоже вырос — монету набирают, а не отдают
+        cands.append((s, bor0, bor, rep0, rep))
+    msgs, flat, nofut, miss = [], [], [], []
+    for s, bor0, bor, rep0, rep in cands:
+        fs = _fut_sym(s)
+        k = _closed_15m(fs, T, 98) if fs else None
+        if not fs or (k and len(k) < 97):
+            nofut.append(s if not fs else f"{fs} (моложе суток)")
+            continue
+        if not k:
+            miss.append(fs)                                     # сбой сети или свеча ещё не закрыта — повтор
+            continue
+        c = float(k[-1][4]); r4 = c / float(k[-17][4]) - 1
+        if abs(r4) < RW_MOVE:
+            flat.append(f"{fs} {r4 * 100:+.1f}%")
+            continue
+        note = (f"отдача за 4 ч {rep0 / 1e3:.0f} → {rep / 1e3:.0f} тыс. $ "
+                + (f"(×{rep / rep0:.1f})" if rep0 >= 1e3 else "(4 ч назад отдачи не было)")
+                + f", займ {bor0 / 1e6:.2f} → {bor / 1e6:.2f} млн $, цена за 4 ч {r4 * 100:+.1f}%")
+        was = _virt_is_open(state, "virtual_RW", fs)
+        m = trader.virt_open(state, "virtual_RW", fs, "RW", note, price=c)
+        opened = not was and _virt_is_open(state, "virtual_RW", fs)
+        log("ОТДАЧА 4Ч", fs, note + ("" if opened else " — сделка ещё открыта" if was else " — без входа: кулдаун 24 ч или баланс"))
         if m:
             msgs.append(m)
+    if miss and time.time() - T < 480:
+        # свечи не получены: час не отмечается, следующий проход (до 8 мин после закрытия) повторит проверку; уже открытые
+        # сделки повторно не откроются (у монеты открыта сделка), остальные монеты проверятся заново
+        _skip_why["rw_last_T"] = "Binance не отдал свечи по " + ", ".join(miss)
+    else:
+        candle_done(state, "rw_last_T", T)
+        hh = f"{datetime.fromtimestamp(T, timezone.utc):%d.%m %H:%M}"
+        if flat:
+            log("ОТДАЧА 4Ч", f"{hh}: отдача выросла, но ход цены за 4 ч меньше {RW_MOVE * 100:g}% —", ", ".join(flat))
+        if nofut:
+            log("ОТДАЧА 4Ч", f"{hh}: отдача выросла, но нет фьючерса Binance —", ", ".join(nofut))
+        if miss:
+            log("ОТДАЧА 4Ч", f"{hh}: Binance так и не отдал свечи —", ", ".join(miss))
+    if len(msgs) > 1:                                           # всплески отдачи идут волнами — одно сообщение на час
+        return [f"💸 Широкая отдача на закрытии часа {datetime.fromtimestamp(T, timezone.utc):%d.%m %H:%M} UTC: "
+                f"{len(msgs)} шорт(ов)\n" + "\n".join(msgs)]
     return msgs
 
 
@@ -2011,7 +2104,7 @@ def followups(state, dry):
 
 
 def scan(state, dry):
-    posts = fetch_posts(max(LOOKBACK_H, LOOKBACK_RP_H) if repay_due(state) else LOOKBACK_H)
+    posts = fetch_posts(max(LOOKBACK_H, LOOKBACK_RP_H) if repay_due(state) or wide_due(state) else LOOKBACK_H)
     try:
         bf_record(posts)                                    # журнал постов для 🏦 (фактор займа)
     except Exception as e:
@@ -2077,6 +2170,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила отдачи займа:", repr(e))
+    try:
+        for msg in repay_wide_rule(state, posts):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила широкой отдачи:", repr(e))
     try:
         for msg in korea_rule(state):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
