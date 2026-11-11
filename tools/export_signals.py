@@ -142,7 +142,8 @@ p()
 p("# ВИРТУАЛЬНЫЕ ЖУРНАЛЫ")
 for key, icon in JOURNALS + OWN:
     v = state.get(key) or {}
-    p(f"{icon} с {fmt(v.get('started'))}, баланс {v.get('balance', 20):.2f} с {fmt(v.get('bal_since'))}, сделок {len(v.get('trades', []))}")
+    p(f"{icon} с {fmt(v.get('started'))}, баланс {v.get('balance', 20):.2f}"
+      + (f" (с хеджем {v['balance_h']:.2f})" if "balance_h" in v else "") + f" с {fmt(v.get('bal_since'))}, сделок {len(v.get('trades', []))}")
 groups = {}
 for key, icon in JOURNALS:
     for t in (state.get(key) or {}).get("trades", []):
