@@ -20,6 +20,9 @@ UTC = datetime.timezone.utc
 CUT = 1764547200                                                    # 01.12.2025 — граница половин, как в s9 и s21
 PREF = re.compile(r"^(1000000|100000|10000|1000)")
 STABLE = {"DAI", "USDC", "FDUSD", "TUSD", "USDP", "BUSD"}
+NONCRYPTO = STABLE | {"USDE", "BTCDOM", "DEFI", "XAU", "XAG", "XPT", "XPD", "PAXG", "XAUT", "COPPER", "CL", "BZ", "AAPL", "AMD",
+                      "AMZN", "COIN", "CRCL", "GOOGL", "HOOD", "INTC", "META", "MSFT", "MSTR", "NVDA", "PLTR", "QQQ", "SPY",
+                      "TSLA"}                                       # стейблкоины, индексы, металлы, нефть, акции
 HSET = (24, 72, 168, 336, 720)                                      # горизонты профиля, ч
 G = pickle.load(open("s7/margin.pkl", "rb"))["G"]                   # архив MarginData: [t, bor, rep, br, rank]
 COIN_OF = {}                                                         # фьючерс → монета канала (для ставок маржи)
