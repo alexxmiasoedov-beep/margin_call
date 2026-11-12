@@ -46,11 +46,11 @@ def panel():
             ft = fr[:, 0]; gap = np.r_[8.0, np.maximum(1.0, np.round(np.diff(ft) / H))]
             cn = np.r_[0.0, np.cumsum(fr[:, 1] * 8 / gap)]; cr = np.r_[0.0, np.cumsum(fr[:, 1])]
             j0, j1 = np.searchsorted(ft, dd - 3 * DAY, "right"), np.searchsorted(ft, dd, "right")
-            f3 = np.where(j1 > j0, (cn[j1] - cn[j0]) / np.maximum(j1 - j0, 1), np.nan)
+            fav = np.where(j1 > j0, (cn[j1] - cn[j0]) / np.maximum(j1 - j0, 1), np.nan)
         else:
-            f3 = np.full(len(dd), np.nan)
+            fav = np.full(len(dd), np.nan)
         c14 = c[np.maximum(kk - 14 * 24, 0)]
-        r = dict(s=s, d=dd, turn=turn, prem=prem, f3=f3, mom=c[kk] / c14 - 1)
+        r = dict(s=s, d=dd, turn=turn, prem=prem, fav=fav, mom=c[kk] / c14 - 1)   # fav — фандинг за прошлые 3 сут; f1/f3/f7 — будущий
         for h in HD:
             px = c[kk + h * 24] / c[kk] - 1
             if len(fr):
@@ -78,13 +78,14 @@ def legs(g, col, h, w=None):
 if __name__ == "__main__":
     P = panel()
     print(f"монето-дней {len(P):,}, дней {P.d.nunique()}, монет в день {P.groupby('d').size().mean():.0f}; "
-          f"корреляция рангов премии и фандинга {P.groupby('d').apply(lambda g: g.prem.rank().corr(g.f3.rank())).mean():.2f}")
-    g, C = GR["grid"], GR["C"]                                       # BTC — из сетки (мог выпасть из корзины по обороту); cb = C[GR["row"]["BTC"]].astype(float); frb = funding("BTC")
+          f"корреляция рангов премии и фандинга {P.groupby('d').apply(lambda g: g.prem.rank().corr(g.fav.rank())).mean():.2f}")
+    g, C = GR["grid"], GR["C"]                                       # BTC — из сетки (мог выпасть из корзины по обороту)
+    cb = C[GR["row"]["BTC"]].astype(float); frb = funding("BTC")
     def btc_long(d, h):
         k = int(np.searchsorted(g, d)); px = cb[k + h * 24] / cb[k] - 1
         f = float(frb[(frb[:, 0] > d) & (frb[:, 0] <= d + h * DAY), 1].sum())
         return px - f - FEE
-    for col, nm in (("prem", "премия к индексу за 24 ч"), ("f3", "фандинг за 3 сут")):
+    for col, nm in (("prem", "премия к индексу за 24 ч"), ("fav", "фандинг за прошлые 3 сут")):
         print(f"\n=== сортировка: {nm} (верхний квинтиль = самые «перегруженные лонги») ===")
         for w in (False, True):
             for h in HD:
@@ -107,7 +108,7 @@ if __name__ == "__main__":
                       f"шорт: цена {R.sp.mean() * 100:+.2f}, фандинг {R.sf.mean() * 100:+.2f}; половины "
                       f"{R.s_btc[h1].mean() * 100:+.2f}/{R.s_btc[h2].mean() * 100:+.2f})")
     print("\nФама–Макбет (непересекающиеся недели), зависимая — доход лонга за 7 суток (цена − фандинг), ранги 0…1:")
-    for cols in (["prem"], ["f3"], ["mom"], ["prem", "mom"], ["f3", "mom"], ["prem", "f3", "mom"]):
+    for cols in (["prem"], ["fav"], ["mom"], ["prem", "mom"], ["fav", "mom"], ["prem", "fav", "mom"]):
         co = []
         for d in sorted(P.d.unique())[::7]:
             gd = P[P.d == d].dropna(subset=cols + ["px7"])

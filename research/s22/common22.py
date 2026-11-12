@@ -60,6 +60,14 @@ def grid():
 GR = grid()
 
 
+def mk(h):
+    """Медиана доходности всех фьючерсов на горизонте h ч (считается при первом обращении)."""
+    if h not in GR["MK"]:
+        C = GR["C"]; r = C[:, h:] / C[:, :-h] - 1
+        GR["MK"][h] = np.r_[np.nanmedian(r, axis=0), np.full(h, np.nan)].astype(np.float32)
+    return GR["MK"][h]
+
+
 def fwd(s, T, h, delay=0, net=False):
     """Шорт фьючерса s от закрытия часа T + delay ч на h ч: доход к рынку (цена + медиана рынка, лонг); net — цена с фандингом
     и комиссией, без рынка. NaN, если свечей нет."""
@@ -74,7 +82,7 @@ def fwd(s, T, h, delay=0, net=False):
         fr = funding(s)
         f = float(fr[(fr[:, 0] > g[k]) & (fr[:, 0] <= g[k + h]), 1].sum()) if len(fr) else 0.0
         return px + f - FEE
-    m = GR["MK"][h][k]
+    m = mk(h)[k]
     return px + float(m) if np.isfinite(m) else np.nan
 
 
