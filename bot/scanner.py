@@ -1688,6 +1688,149 @@ def announce_rule(state, new):
     return msgs
 
 
+BL_FRESH_MIN, BL_AGE_D, BL_FIRST_D, BL_LATE_H = 60, 1, 30, 2   # 🅱️: объявление не старше 60 мин, фьючерс старше суток,
+                                                                 # первое о монете за 30 суток, вход — до 2 ч после часа
+BL_FAM = (("листинг", r"\bWill List\b"), ("аирдроп", r"HODLer Airdrops|Launchpool|Megadrop"),
+          ("маржа", r"Will Add .*\bMargin\b|^Binance Adds .*\bMargin\b"))
+BL_SKIP = RW_STABLE | {"BTCDOM", "DEFI", "XAU", "XAG", "XPT", "XPD", "PAXG", "XAUT", "COPPER", "CL", "BZ", "AAPL", "AMD", "AMZN",
+                       "COIN", "CRCL", "GOOGL", "HOOD", "INTC", "META", "MSFT", "MSTR", "NVDA", "PLTR", "QQQ", "SPY", "TSLA"}
+                                                # стейблкоины, индексы, металлы, нефть, акции — как в бэктесте (NONCRYPTO)
+
+
+def _bl_family(title):
+    """Семейство объявления для 🅱️ (как в бэктесте research/s22/h10_ann.py) или None; Alpha и запуски фьючерсов — нет."""
+    if "Alpha" in title or "Futures" in title:
+        return None
+    return next((k for k, p in BL_FAM if re.search(p, title)), None)
+
+
+def _bl_seed(state):
+    """Первый запуск 🅱️: объявления трёх семейств за 40 суток (по две страницы разделов 48 и 49, как первый опрос ann_poll)
+    → state["bl_first"] — начала серий, как в бэктесте (в ann_list попадают не все: «… Vote to List Results and Will List X»,
+    маржа). Сбой Binance — повтор не чаще раза в 10 мин. True — готово."""
+    now = time.time()
+    if now - state.get("bl_seed_try", 0) < 600:
+        return False
+    state["bl_seed_try"] = now
+    arts = []
+    for cat in (48, 49):
+        for page in (1, 2):
+            d = _ann_get(ANN_LIST.format(cat=cat, page=page, size=50))
+            got = [dict(title=a.get("title", ""), ts=(a.get("releaseDate") or 0) / 1000)
+                   for c in (d.get("catalogs") or [] if isinstance(d, dict) else []) for a in c.get("articles") or []
+                   if a.get("releaseDate")]
+            if page == 1 and not got:
+                log("ЛИСТИНГ BINANCE", f"первый запуск: Binance не отдал объявления раздела {cat} — повтор через 10 мин, "
+                                       "новые объявления ждут")
+                return False
+            arts += got
+    first = state.setdefault("bl_first", {}); n = 0
+    for a in sorted(arts, key=lambda a: a["ts"]):
+        if a["ts"] < now - 40 * 86400 or not _bl_family(a["title"]):
+            continue
+        n += 1
+        for c in re.findall(r"\(([^()\s,]{1,20})\)", a["title"]):
+            if c not in first or a["ts"] - first[c] >= BL_FIRST_D * 86400:
+                first[c] = a["ts"]
+    state["bl_seeded"] = now
+    log("ЛИСТИНГ BINANCE", f"первый запуск: объявлений листинга, аирдропов и маржи за 40 суток {n}, монет {len(first)} — "
+                           f"новое объявление о них будет «первым» только через {BL_FIRST_D} суток после первого в серии")
+    return True
+
+
+def spot_listing_rule(state, new):
+    """Листинг спота Binance при живом фьючерсе (журнал 🅱️, research/s22/ВЫВОДЫ.md, «Г10 по объявлениям»): объявление
+    «Will List X» / «Introducing X on Binance HODLer Airdrops / Launchpool / Megadrop» / «Will Add X on … Margin» (без
+    Alpha и запусков фьючерсов), первое о монете за 30 суток, опубликовано не позже 60 мин назад; у монеты есть бессрочный
+    фьючерс USDT-M, запущенный не позже чем за сутки до объявления → виртуальный шорт на закрытии ближайшего часа после
+    публикации, как в бэктесте (если бот пропустил этот момент или Binance не отдал цену — до 2 ч позже); 30 суток без тейка,
+    стоп +50%, плечо ×1. «Первое за 30 суток» — от первого объявления серии, как в бэктесте; объявления до запуска правила —
+    из разовой загрузки _bl_seed и state["ann_list"] (листинги и HODLer за 40 суток, ann_poll). Сообщения для чата."""
+    now = time.time(); msgs = []
+    todo = [a for a in state.get("bl_retry", []) + list(new) if _bl_family(a["title"])]
+    if not state.get("bl_seeded") and not _bl_seed(state):  # первые объявления серий ещё не загружены — новые ждут
+        if todo:
+            state["bl_retry"] = todo
+        return msgs
+    first = state.setdefault("bl_first", {}); wait = state.setdefault("bl_wait", {}); lst = state.get("ann_list", {})
+    retry = []
+    if any(now - a["ts"] <= BL_FRESH_MIN * 60 for a in todo):
+        trader.contract("BTC")                               # загружает список бессрочных контрактов USDT
+    for a in todo:
+        fam = _bl_family(a["title"]); age = (now - a["ts"]) / 60
+        for c in [a["coin"]] if a.get("coin") else re.findall(r"\(([^()\s,]{1,20})\)", a["title"]):
+            prior = [t for t in (first.get(c), lst.get(c)) if t is not None and t < a["ts"] - 60]
+            if prior and a["ts"] - max(prior) < BL_FIRST_D * 86400:
+                log("ЛИСТИНГ BINANCE", f"{c}: «{a['title']}» — не первое объявление о монете за {BL_FIRST_D} суток, пропуск")
+                continue
+            if age > BL_FRESH_MIN:
+                first[c] = a["ts"]
+                log("ЛИСТИНГ BINANCE", f"{c}: «{a['title']}» — {age:.0f} мин назад, позже {BL_FRESH_MIN} мин, сделки нет")
+                continue
+            fs = None if c in BL_SKIP else _fut_sym(c)
+            if not fs and c not in BL_SKIP and trader._contracts and now - state.get("bl_reload", 0) >= 600:
+                state["bl_reload"] = now                     # фьючерс мог появиться после загрузки списка — перезагрузка
+                trader._contracts.clear()                    # (вес 1) не чаще раза в 10 мин
+                fs = _fut_sym(c)
+            if not trader._contracts:                        # Binance не отдал список контрактов — повтор на следующем проходе
+                if not a.get("coin"):
+                    log("ЛИСТИНГ BINANCE", f"{c}: «{a['title']}» — Binance не отдал список контрактов, повтор каждый проход "
+                                           f"до {BL_FRESH_MIN} мин после объявления")
+                retry.append(dict(a, coin=c))
+                continue
+            first[c] = a["ts"]
+            what = f"{c}: «{a['title']}» ({fam})"
+            if c in BL_SKIP:
+                log("ЛИСТИНГ BINANCE", f"{what} — стейблкоин, индекс, металл или акция, пропуск")
+                continue
+            if not fs:
+                log("ЛИСТИНГ BINANCE", f"{what} — нет бессрочного фьючерса Binance, пропуск")
+                continue
+            onb = (trader.contract(fs) or {}).get("onboard") or 0
+            if not onb or onb > a["ts"] - BL_AGE_D * 86400:
+                log("ЛИСТИНГ BINANCE", f"{what} — фьючерс {fs} запущен " +
+                    (f"{datetime.fromtimestamp(onb, timezone.utc):%d.%m %H:%M} UTC, меньше суток до объявления" if onb
+                     else "неизвестно когда") + ", пропуск")
+                continue
+            if fs in wait:
+                log("ЛИСТИНГ BINANCE", f"{what} — вход по {fs} уже ждёт закрытия часа")
+                continue
+            T = int(a["ts"] // 3600 + 1) * 3600
+            wait[fs] = {"T": T, "ts": a["ts"], "title": a["title"], "fam": fam, "onb": onb}
+            log("ЛИСТИНГ BINANCE", f"{what}, фьючерсу {fs} {(a['ts'] - onb) / 86400:.0f} сут — шорт на закрытии часа "
+                                   f"{datetime.fromtimestamp(T, timezone.utc):%H:%M} UTC")
+    if retry:
+        state["bl_retry"] = retry
+    else:
+        state.pop("bl_retry", None)
+    for fs, w in sorted(wait.items(), key=lambda kv: kv[1]["T"]):
+        if now < max(w["T"], w.get("next", 0)):
+            continue
+        note = (f"Binance ({w['fam']}): «{w['title']}», опубликовано "
+                f"{datetime.fromtimestamp(w['ts'], timezone.utc):%d.%m %H:%M} UTC; фьючерс торгуется {(w['ts'] - w['onb']) / 86400:.0f} сут")
+        if now > w["T"] + BL_LATE_H * 3600:
+            del wait[fs]
+            log("ЛИСТИНГ BINANCE", fs, note + f" — к закрытию часа и {BL_LATE_H} ч после него войти не удалось (бот не работал "
+                                              "или Binance не отдавал цену), сделки нет")
+            continue
+        m = trader.virt_open(state, "virtual_BL", fs, "BL", note)
+        if m:
+            del wait[fs]
+            log("ЛИСТИНГ BINANCE", fs, note)
+            msgs.append(m)
+        elif any(t["sym"] == fs for t in state.get("virtual_BL", {}).get("trades", [])
+                 if not t.get("closed") or now - t["opened"] < trader.VIRTUALS["virtual_BL"]["cooldown_h"] * 3600):
+            del wait[fs]
+            log("ЛИСТИНГ BINANCE", fs, note + " — сделка по монете уже открыта или была недавно, пропуск")
+        else:                                                # Binance не отдал цену — повтор через 5 мин (до 2 ч после часа)
+            if not w.get("next"):
+                log("ЛИСТИНГ BINANCE", fs, note + " — Binance не отдал цену, повтор через 5 мин")
+            w["next"] = now + 300
+    for k in [k for k, ts in first.items() if ts < now - 60 * 86400]:
+        del first[k]
+    return msgs
+
+
 def nt_track(state):
     """Первое появление монеты в маржинальном канале (для 🆕): монета, которой нет в архиве канала (margin_known.txt)
     и которую бот ещё не видел, запоминается в state["nt_first"] со временем самого раннего поста в журнале постов."""
@@ -2190,11 +2333,18 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила фактора займа:", repr(e))
+    anns = []
     try:
-        for msg in announce_rule(state, ann_poll(state)):
+        anns = ann_poll(state)
+        for msg in announce_rule(state, anns):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила объявлений:", repr(e))
+    try:
+        for msg in spot_listing_rule(state, anns):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила листинга Binance:", repr(e))
     try:
         for msg in newtoken_rule(state):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
