@@ -84,7 +84,7 @@ if __name__ == "__main__":
     cols = ["D", "dtop", "dall", "prem", "fav", "mom", "r24"]
     for h in (24, 72):
         co = []
-        for d, gd in P.dropna(subset=cols).groupby("d"):
+        for d, gd in P.dropna(subset=cols + [f"l{h}x"]).groupby("d"):
             if len(gd) < 30:
                 continue
             X = np.column_stack([np.ones(len(gd))] + [gd[c].rank(pct=True).values for c in ["D", "prem", "fav", "mom", "r24"]])
