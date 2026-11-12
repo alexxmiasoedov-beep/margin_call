@@ -1831,6 +1831,99 @@ def spot_listing_rule(state, new):
     return msgs
 
 
+FE_RATE, FE_FROM, FE_TO, FE_HOLD = -0.01, 15, 30, 2.0    # 🌊: ставка начисления ≤ −1%; вход с 15-й по 30-ю минуту после
+FE_GRID = 4 * 3600                                         # начисления; держим 2 ч. Начисления с интервалом 4 и 8 ч — на сетке
+                                                           # 4 ч от 00:00 UTC (проверено по двум годам истории)
+
+
+def _fe_try(state, c, w, now):
+    """Попытка входа 🌊 по монете c (w — {T, rate}). Возвращает (готово, сообщение): готово=False — повторить в следующем
+    проходе (Binance не отдал список контрактов, время следующего начисления или цену)."""
+    hh = f"{datetime.fromtimestamp(w['T'], timezone.utc):%d.%m %H:%M}"
+    what = f"{c}: начисление {hh} UTC, ставка {w['rate'] * 100:+.2f}%"
+    if c in BL_SKIP:
+        log("ОТЛИВ", f"{what} — стейблкоин, индекс, металл или акция, пропуск")
+        return True, None
+    if not trader.contract(c):
+        if not trader._contracts:
+            return False, None                               # список контрактов не загрузился — повтор
+        log("ОТЛИВ", f"{what} — нет бессрочного криптофьючерса USDT (акции и металлы Binance — другой тип контракта), пропуск")
+        return True, None
+    pi = trader._request("GET", "/fapi/v1/premiumIndex", {"symbol": f"{c}USDT"}, signed=False)
+    nft = int(pi.get("nextFundingTime") or 0) // 1000 if isinstance(pi, dict) else 0
+    if not nft:
+        return False, None
+    if nft < now + FE_HOLD * 3600 + 900:
+        log("ОТЛИВ", f"{what} — следующее начисление уже в {datetime.fromtimestamp(nft, timezone.utc):%H:%M} UTC, раньше выхода "
+                     "(интервал сменили) — шорт заплатил бы фандинг, пропуск")
+        return True, None
+    note = (f"фандинг начисления {hh} UTC {w['rate'] * 100:+.2f}% (шорты платили), следующее начисление "
+            f"{datetime.fromtimestamp(nft, timezone.utc):%H:%M} UTC; выход через {FE_HOLD:g} ч")
+    was = _virt_is_open(state, "virtual_FE", c)
+    m = trader.virt_open(state, "virtual_FE", c, "FE", note)
+    if m or was:
+        log("ОТЛИВ", c, note + ("" if m else " — сделка по монете уже открыта"))
+        return True, m
+    return False, None                                       # Binance не отдал цену — повтор
+
+
+def funding_ebb_rule(state):
+    """Отлив после фандинга (журнал 🌊, research/s23/ВЫВОДЫ.md): выплата фандинга — как дивиденд: за секунды цена фьючерса
+    падает на её сумму, потом при сильно отрицательной ставке около двух часов сползает дальше. Через 15 мин после
+    начисления на сетке 4 ч (00, 04, …, 20 UTC) — одним запросом ставки всех фьючерсов в этот момент (/fapi/v1/fundingRate).
+    Монета со ставкой ≤ −1% (шорты платят лонгам), с бессрочным криптофьючерсом USDT, не стейблкоин и не индекс,
+    следующее начисление — не раньше чем через 2 ч 15 мин (интервал 4 или 8 ч, его не сменили на 1–2 ч) → виртуальный шорт
+    на 2 ч без тейка, стоп +15%, плечо ×1. Вход — в окне 15–30 мин после начисления; если Binance не ответил — повтор
+    в следующем проходе, окно прошло — пропуск. Возвращает сообщения для чата."""
+    now = time.time()
+    T = int(now // FE_GRID * FE_GRID)
+    hh = f"{datetime.fromtimestamp(T, timezone.utc):%d.%m %H:%M}"
+    wait = state.setdefault("fe_wait", {}); msgs = []
+    if state.get("fe_last_T") != T and now >= T + FE_FROM * 60:
+        if now > T + FE_TO * 60:
+            if "fe_last_T" in state:                          # при первом запуске правила — молча
+                log("ОТЛИВ", f"{hh}: окно входа {FE_FROM}–{FE_TO} мин после начисления прошло без проверки (бот не работал или "
+                             "Binance не отвечал) — пропуск")
+            state["fe_last_T"] = T
+        else:
+            j = trader._request("GET", "/fapi/v1/fundingRate", {"startTime": T * 1000, "endTime": (T + 60) * 1000, "limit": 1000},
+                                signed=False)
+            if isinstance(j, list) and j:
+                state["fe_last_T"] = T
+                rates = []
+                for x in j:
+                    try:
+                        sym, rate = str(x["symbol"]), float(x["fundingRate"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if sym.endswith("USDT"):
+                        rates.append((rate, sym[:-4]))
+                rates.sort()
+                low = [(r, c) for r, c in rates if r <= FE_RATE]
+                log("ОТЛИВ", f"{hh}: начислений {len(rates)}" + (" (ответ упёрся в предел 1000 — часть могла не прийти)" if len(j) >= 1000 else "")
+                    + (f", ставка ≤ {FE_RATE * 100:g}% у " + ", ".join(f"{c} {r * 100:+.2f}%" for r, c in low) if low else
+                       f", самая низкая ставка {rates[0][1]} {rates[0][0] * 100:+.2f}% — сделок нет" if rates else ""))
+                for r, c in low:
+                    wait[c] = {"T": T, "rate": r}
+            elif state.get("fe_err") != T:
+                state["fe_err"] = T
+                log("ОТЛИВ", f"{hh}: Binance не отдал ставки начисления — повтор в следующем проходе до {FE_TO} мин")
+    for c, w in list(wait.items()):
+        if now > w["T"] + FE_TO * 60:
+            del wait[c]
+            log("ОТЛИВ", f"{c}: начисление {datetime.fromtimestamp(w['T'], timezone.utc):%d.%m %H:%M} UTC — Binance так и не отдал "
+                         f"цену или время следующего начисления за {FE_TO} мин, сделки нет")
+            continue
+        done, m = _fe_try(state, c, w, now)
+        if done:
+            del wait[c]
+        if m:
+            msgs.append(m)
+    if len(msgs) > 1:                                         # несколько монет на одном начислении — одно сообщение
+        return [f"🌊 Отлив после фандинга {hh} UTC: {len(msgs)} шорт(ов)\n" + "\n".join(msgs)]
+    return msgs
+
+
 def nt_track(state):
     """Первое появление монеты в маржинальном канале (для 🆕): монета, которой нет в архиве канала (margin_known.txt)
     и которую бот ещё не видел, запоминается в state["nt_first"] со временем самого раннего поста в журнале постов."""
@@ -2345,6 +2438,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила листинга Binance:", repr(e))
+    try:
+        for msg in funding_ebb_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила отлива после фандинга:", repr(e))
     try:
         for msg in newtoken_rule(state):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
