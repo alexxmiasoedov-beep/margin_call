@@ -3,7 +3,7 @@
 Допуск: стоимость счёта ≥ $10 тыс. на дату, история началась хотя бы за 7 сут до даты (счёт моложе 90 сут — PnL с первой
 точки). История portfolio у Hyperliquid хранится с 01.05.2024 — пулы с 01.08.2024.
 Пулы по 100 счетов: top — лучшие по PnL за 90 сут (> 0); roi — лучшие по PnL к средней стоимости счёта; bottom — худшие;
-rand — случайные допущенные. Кандидаты — первые N (по умолчанию 5000) в случайном порядке hl_fetch.candidates(). Итог — s27/pools.pkl: {месяц: {пул: [адреса]}} и s27/union.txt (все адреса пулов).
+rand (плацебо) — постоянные 300 случайных счетов, допущенных хотя бы в 3 месяцах; в месяце — допущенные из них. Кандидаты — первые N (по умолчанию 5000) в случайном порядке hl_fetch.candidates(). Итог — s27/pools.pkl: {месяц: {пул: [адреса]}} и s27/union.txt (все адреса пулов).
 Запуск из папки с данными."""
 import glob
 import json
@@ -90,16 +90,23 @@ if __name__ == "__main__":
           f"доходности к счёту {R.roi_corr.mean():+.3f}; в плюсе в следующем месяце: верхний дециль {R.top10_pos.mean():.0%}, "
           f"остальные {R.rest_pos.mean():.0%}, нижний дециль {R.bot10_pos.mean():.0%}; топ-100 {R.top200_pos.mean():.0%}")
     # пулы
-    pools, union = {}, set()
-    rnd = random.Random(3)
+    # плацебо — постоянные 300 случайных счетов из допущенных хотя бы в 3 месяцах (без отбора по доходу); в каждом месяце —
+    # те из них, кто допущен в этом месяце
+    cnt = E.groupby("a").m.nunique()
+    rand_set = set(random.Random(3).sample(sorted(cnt[cnt >= 3].index), min(300, int((cnt >= 3).sum()))))
+    pools = {}
     for m, x in E.groupby("m"):
         pos = x[x.pnl90 > 0]
-        pl = dict(top=pos.nlargest(NPOOL, "pnl90").a.tolist(), roi=pos.nlargest(NPOOL, "roi90").a.tolist(),
-                  bottom=x.nsmallest(NPOOL, "pnl90").a.tolist(), rand=rnd.sample(x.a.tolist(), min(NPOOL, len(x))))
-        pools[m] = pl
-        for v in pl.values():
-            union |= set(v)
+        pools[m] = dict(top=pos.nlargest(NPOOL, "pnl90").a.tolist(), roi=pos.nlargest(NPOOL, "roi90").a.tolist(),
+                        bottom=x.nsmallest(NPOOL, "pnl90").a.tolist(), rand=sorted(set(x.a) & rand_set))
     pickle.dump(pools, open("s27/pools.pkl", "wb"))
-    open("s27/union.txt", "w").write("\n".join(sorted(union)))
-    tops = set().union(*[set(p["top"]) | set(p["roi"]) for p in pools.values()])
-    print(f"\nпулы: {len(pools)} месяцев; адресов во всех пулах {len(union)}, в top и roi — {len(tops)}")
+    # порядок выгрузки сделок: top, плацебо, roi, bottom
+    order, seen = [], set()
+    for name in ("top", "rand", "roi", "bottom"):
+        for m in sorted(pools):
+            for a in pools[m][name]:
+                if a not in seen:
+                    seen.add(a); order.append(a)
+    open("s27/union.txt", "w").write("\n".join(order))
+    n = {name: len(set().union(*[set(p[name]) for p in pools.values()])) for name in ("top", "rand", "roi", "bottom")}
+    print(f"\nпулы: {len(pools)} месяцев; адресов: всего {len(order)}, по пулам {n}")

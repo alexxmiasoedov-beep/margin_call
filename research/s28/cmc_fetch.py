@@ -5,7 +5,7 @@
   до 01.08.2024; кэш s28/ev/<id>_past.json и <id>_up.json;
   cryptocurrency/historical?id=<id>&convertId=2781&timeStart&timeEnd — дневные цена, оборот, капитализация и монеты в
   обращении; кэш s28/hist/<id>.json.
-Только монеты с фьючерсом Binance (s2/k2y.pkl) по тикеру. Пауза ~1 с между запросами. Запуск из папки с данными:
+Только монеты с фьючерсом Binance (s2/k2y.pkl) по тикеру. Пауза 0,5 с между запросами. Запуск из папки с данными:
 python3 cmc_fetch.py events | hist"""
 import json
 import os
@@ -17,6 +17,8 @@ import urllib.request
 
 API = "https://api.coinmarketcap.com/data-api/v3"
 SINCE = "2024-08-01"
+PAUSE = 0.5
+MAXPAGE = 25                             # не больше 2500 событий на монету (у некоторых — почасовая эмиссия)
 
 
 def get(url):
@@ -24,7 +26,7 @@ def get(url):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (research)", "Accept": "application/json"})
             out = json.loads(urllib.request.urlopen(req, timeout=60).read())
-            time.sleep(1.0)
+            time.sleep(PAUSE)
             return out
         except urllib.error.HTTPError as e:
             time.sleep(60 if e.code == 429 else 5 + 5 * i)
@@ -53,12 +55,12 @@ def events(cid):
                 break
             x = d["data"].get("tokenEvent") or []
             ev += x
-            if len(x) < 100 or x[-1]["time"][:10] < SINCE:
+            if len(x) < 100 or x[-1]["time"][:10] < SINCE or page >= MAXPAGE:
                 break
             page += 1
         json.dump(ev, open(path, "w"))
     path = f"s28/ev/{cid}_up.json"
-    if not os.path.exists(path):
+    if UPCOMING and not os.path.exists(path):
         d = get(f"{API}/token-unlock/event?cryptoId={cid}&type=upcoming&page=1&limit=100")
         json.dump((d or {}).get("data", {}).get("tokenEvent") or [], open(path, "w"))
 
@@ -78,13 +80,17 @@ def hist(cid):
     json.dump(out, open(path, "w"))
 
 
+UPCOMING = "up" in sys.argv[2:]          # будущие разлоки — только по требованию (python3 cmc_fetch.py events up)
+
 if __name__ == "__main__":
     mode = sys.argv[1]
     os.makedirs("s28/ev", exist_ok=True); os.makedirs("s28/hist", exist_ok=True)
     T = tokens()
     print(f"монет с фьючерсом Binance: {len(T)}", flush=True)
-    for n, (cid, sym, fut) in enumerate(T):
-        (events if mode == "events" else hist)(cid)
-        if n % 50 == 0:
-            print(f"  {mode} {n}/{len(T)}", flush=True)
+    from concurrent.futures import ThreadPoolExecutor
+    fn = events if mode == "events" else hist
+    with ThreadPoolExecutor(3) as ex:
+        for n, _ in enumerate(ex.map(fn, [c for c, _, _ in T])):
+            if n % 50 == 0:
+                print(f"  {mode} {n}/{len(T)}", flush=True)
     print("готово", flush=True)

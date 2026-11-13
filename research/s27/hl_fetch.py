@@ -1,5 +1,5 @@
 """s27 — выгрузка Hyperliquid без ключей (api.hyperliquid.xyz/info), с паузами под предел 1200 веса в минуту на IP.
-  python3 hl_fetch.py pf [N]        — история PnL и стоимости счёта (portfolio, perpAllTime; вес 20) для кандидатов из
+  python3 hl_fetch.py pf [N]        — история PnL и стоимости счёта (portfolio, perpAllTime; вес ~60) для кандидатов из
                                       рейтинга: оборот за всё время $50 млн–$5 млрд, случайный порядок (seed 1); кэш s27/pf/
   python3 hl_fetch.py fills <файл>  — сделки с 01.12.2024 (доступны последние 10 тыс.) счетов из файла адресов; кэш s27/fills/;
                                       если первые 2000 сделок уложились в 30 сут — бот-скальпер, метка <адрес>.fast
@@ -31,14 +31,14 @@ def _charge(w):
         time.sleep(start - now)
 
 
-def info(body, weight):
+def info(body, weight, base=20):
     for i in range(6):
-        _charge(20)
+        _charge(base)
         try:
             req = urllib.request.Request(API, data=json.dumps(body).encode(),
                                          headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (research)"})
             out = json.loads(urllib.request.urlopen(req, timeout=60).read())
-            extra = weight(out) - 20
+            extra = weight(out) - base
             if extra > 0:
                 _charge(extra)
             return out
@@ -64,7 +64,7 @@ def portfolio(addr):
     path = f"s27/pf/{addr}.json"
     if os.path.exists(path):
         return
-    p = info({"type": "portfolio", "user": addr}, lambda o: 20)
+    p = info({"type": "portfolio", "user": addr}, lambda o: 60, base=60)  # по факту ~60: при 20 — каждый второй ответ 429
     if p is None:
         return
     d = dict(p).get("perpAllTime", {})
