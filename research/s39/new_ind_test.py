@@ -99,32 +99,53 @@ def crowd(syms, T, M):
 
 
 def okx_test(O):
+    """Точки OKX стоят в 16:00 UTC (полночь по Пекину); показатель считается известным через сутки после отметки.
+    Формирование — граница суток d (00:00 UTC): последняя точка с отметкой ≤ d − 1 сут и точка на 3 сут раньше.
+    R = отношение / ближайшее предыдущее суточное закрытие Binance. Доход — закрытие в d → закрытие в d + 3 сут."""
     loan, px = O["loan"], O["px"]
-    days = sorted({t for v in loan.values() for t, _ in v})
-    R, C = {}, {}
+    close = {}                                                 # символ → (время закрытия, мс; закрытие)
+    for s, v in px.items():
+        v = sorted(v)
+        close[s] = (np.array([t + DAY * 1000 for t, _ in v]), np.array([c for _, c in v]))
+    def c_at(s, t, before=True):
+        tt, cc = close[s]
+        i = int(np.searchsorted(tt, t, "right")) - 1
+        return (cc[i] if i >= 0 and t - tt[i] < 2 * DAY * 1000 else None) if before else None
+    def c_exact(s, t):
+        tt, cc = close[s]
+        i = int(np.searchsorted(tt, t))
+        return cc[i] if i < len(tt) and tt[i] == t else None
+    LR = {}
     for s, v in loan.items():
-        p = dict(px.get(s, []))
+        if s not in close:
+            continue
+        v = sorted(v)
+        ts = np.array([t for t, _ in v]); r = []
         for t, x in v:
-            c = p.get(t - DAY * 1000)                          # закрытие свечи, кончившейся в t
-            if c and x > 0:
-                R[(s, t)] = np.log(x / c)
-        for t, c in px.get(s, []):
-            C[(s, t + DAY * 1000)] = c                         # цена на момент t + сутки (конец свечи)
+            c = c_at(s, t)
+            r.append(np.log(x / c) if c and x > 0 else np.nan)
+        LR[s] = (ts, np.array(r))
+    days = sorted({int(t // (DAY * 1000) + 1) * DAY * 1000 for v in loan.values() for t, _ in v})
     rows = []
-    for t in days:
+    for d in days:
         sig, ret = {}, {}
-        for s in loan:
-            a, b = R.get((s, t)), R.get((s, t - 3 * DAY * 1000))
-            c0, c1 = C.get((s, t)), C.get((s, t + 3 * DAY * 1000))
-            if a is None or b is None or not c0 or not c1:
+        for s, (ts, r) in LR.items():
+            i = int(np.searchsorted(ts, d - DAY * 1000, "right")) - 1
+            if i < 0:
                 continue
-            sig[s] = a - b; ret[s] = c1 / c0 - 1
+            j = int(np.searchsorted(ts, ts[i] - 3 * DAY * 1000, "right")) - 1
+            if j < 0 or ts[i] - ts[j] != 3 * DAY * 1000 or not (np.isfinite(r[i]) and np.isfinite(r[j])):
+                continue
+            c0, c1 = c_exact(s, d), c_exact(s, d + 3 * DAY * 1000)
+            if not c0 or not c1:
+                continue
+            sig[s] = r[i] - r[j]; ret[s] = c1 / c0 - 1
         if len(sig) < 30:
             continue
         S = pd.Series(sig).sort_values(); m = max(int(round(len(S) * 0.1)), 3)
         lo, hi = S.index[:m], S.index[-m:]
         avg = np.mean(list(ret.values()))
-        rows.append(dict(t=t / 1000, LS=(np.mean([ret[s] for s in hi]) - np.mean([ret[s] for s in lo])) / 2 - FEE,
+        rows.append(dict(t=d / 1000, LS=(np.mean([ret[s] for s in hi]) - np.mean([ret[s] for s in lo])) / 2 - FEE,
                          lo_rel=np.mean([ret[s] for s in lo]) - avg, hi_rel=np.mean([ret[s] for s in hi]) - avg, n=len(S)))
     return pd.DataFrame(rows)
 
