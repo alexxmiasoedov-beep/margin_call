@@ -2552,6 +2552,44 @@ def followups(state, dry):
     state["alerts"] = [a for a in state["alerts"] if now - a["ts"] < 72 * 3600]
 
 
+CH_CONFIRM_H, CH_MIN = 6.0, 1.0       # 📘ᶜ: у монеты был CHNG ≥ 1 за 6 ч до сигнала канала (research/s41, Г6)
+
+
+def chng_recent(sym, posts, now, hours=CH_CONFIRM_H):
+    """Наибольший CHNG монеты в постах за hours ч до now: (CHNG, время поста) или None. CHNG — 4-е поле строки поста
+    (бывает со знаком: +0.00, -0.64)."""
+    best = None
+    for q in posts:
+        if not now - hours * 3600 <= q["ts"] <= now:
+            continue
+        row = (q.get("rows_all") or {}).get(sym)
+        if not row or len(row) < 4:
+            continue
+        try:
+            ch = float(row[3])
+        except (TypeError, ValueError):
+            continue
+        if best is None or ch > best[0]:
+            best = (ch, q["ts"])
+    return best
+
+
+def chng_confirm(state, sym, price, rule, posts, now):
+    """📘ᶜ — двойник 📘: открывается по тому же сигналу канала, только если за 6 ч до сигнала у монеты был CHNG ≥ 1.
+    Посты прохода тянутся на LOOKBACK_H (5,5 ч): если они не покрывают 6 ч и подтверждения в них нет — догружаются один раз."""
+    hit = chng_recent(sym, posts, now)
+    oldest = min((q["ts"] for q in posts), default=now)
+    if (hit is None or hit[0] < CH_MIN) and oldest > now - CH_CONFIRM_H * 3600:
+        more = fetch_posts(CH_CONFIRM_H + 0.5)
+        if more:
+            hit = chng_recent(sym, more, now)
+    if hit is None or hit[0] < CH_MIN:
+        return None
+    note = (f"подтверждение: CHNG {hit[0]:g} в {time.strftime('%H:%M', time.gmtime(hit[1]))} UTC "
+            f"(за {CH_CONFIRM_H:g} ч до сигнала был CHNG ≥ {CH_MIN:g})")
+    return trader.virt_open(state, "virtual_1525C", sym, rule, note, price=price)
+
+
 def scan(state, dry):
     posts = fetch_posts(max(LOOKBACK_H, LOOKBACK_RP_H) if repay_due(state) or wide_due(state) else LOOKBACK_H)
     try:
@@ -2607,6 +2645,12 @@ def scan(state, dry):
                 vmsg = trader.virt_on_signal(state, sym, c["price"], rule)
             except Exception as e:
                 vmsg = None; log("ошибка виртуального журнала:", repr(e))
+            try:
+                cmsg = chng_confirm(state, sym, c["price"], rule, posts, now)     # 📘ᶜ: тот же сигнал, если был CHNG ≥ 1
+            except Exception as e:
+                cmsg = None; log("ошибка двойника CHNG:", repr(e))
+            if cmsg:
+                vmsg = f"{vmsg}\n{cmsg}" if vmsg else cmsg
             if vmsg:
                 log(vmsg); broadcast(state, vmsg, dry)
     try:
