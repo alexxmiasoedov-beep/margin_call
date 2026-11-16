@@ -2,10 +2,12 @@
 Г1: событие — за 4 ч не меньше k разных участников пула месяца открыли позицию в одну сторону по монете; вход на закрытии
 следующего часа Binance; доход в сторону пула к рынку (медиана простой доходности всех фьючерсов) за 4/24/72 ч, минус 0,1%;
 повтор той же монеты и стороны — не раньше чем через 24 ч.
-Г2: сделки журналов (s20/trades.pkl и 🌊 из s23/rule_trades.pkl, шорты) — позиции участников топ-пула по монете в момент входа: «за нас» (шортов ≥ 2 и
-больше, чем лонгов), «против» (лонгов ≥ 2 и больше, чем шортов), «нет».
-Г3: каждые 4 ч чистая позиция пула по монете (лонги − шорты) / (лонги + шорты) при ≥ 5 участниках с позицией → ранговая
-корреляция с доходом к рынку за 24 ч; t Ньюи — Уэста. Запуск из папки с данными."""
+Г2: сделки журналов (шорты) — позиции участников пула по монете в момент входа: «за нас» (шортов ≥ 2 и больше, чем лонгов),
+«против» (лонгов ≥ 2 и больше, чем шортов), «нет». Итог по гипотезе — журналы s20/trades.pkl (канал, 🇰🇷, 🇰🇷🆕, 🏦, 📢, 🆕);
+🌊 из s23/rule_trades.pkl — отдельной строкой. Только сделки по монете, которая к моменту входа уже торговалась на
+Hyperliquid (первая сделка по ней у скачанных счетов не позже входа).
+Г3: каждый час чистая позиция пула по монете (лонги − шорты) / (лонги + шорты) при ≥ 5 участниках с позицией → ранговая
+корреляция с доходом к рынку за 24 ч; t Ньюи — Уэста с лагом 24. Итог — s27/sig.pkl. Запуск из папки с данными."""
 import pickle
 import sys
 import numpy as np, pandas as pd
@@ -19,6 +21,9 @@ MKEY = {int(k.timestamp()): v for k, v in POOLS.items()}
 AIDX = {a: i for i, a in enumerate(P["addrs"])}
 FIRST = P["first"]
 H4 = 4 * 3600
+CSTART = {}                                            # монета → первая сделка по ней у скачанных счетов
+for (_a, _s), (_tt, _pp) in P["series"].items():
+    CSTART[_s] = min(CSTART.get(_s, np.inf), float(_tt[1]))     # _tt[0] — служебная точка до первой сделки
 
 
 def month_key(t):
@@ -104,7 +109,7 @@ def g2(pool):
     T = journal_trades()
     out = []
     for r in T.itertuples():
-        if r.s not in P["cidx"]:
+        if CSTART.get(r.s, np.inf) > r.te:                 # монета ещё не торговалась на Hyperliquid
             continue
         mem = MKEY.get(month_key(r.te), {}).get(pool, [])
         L = S = n = 0
@@ -118,9 +123,13 @@ def g2(pool):
     return pd.DataFrame(out)
 
 
-def g3(pool, step=H4, h=24, minpos=5):
+def g3(pool, step=3600, h=24, minpos=5):
     ks = np.flatnonzero(g % step == 0)
     coins = P["coins"]
+    rows = np.array([ROW.get(s, -1) for s in coins])
+    with np.errstate(all="ignore"):
+        R = np.full((len(coins), len(g)), np.nan)
+        R[:, :-h] = np.where(rows[:, None] >= 0, C[rows, h:] / C[rows, :-h] - 1, np.nan) - mk(h)[None, :-h]
     L = np.zeros((len(coins), len(ks))); S = np.zeros_like(L)
     tk = g[ks]
     for m, v in MKEY.items():
@@ -150,7 +159,7 @@ def g3(pool, step=H4, h=24, minpos=5):
         if m.sum() < 10:
             continue
         net = (L[m, j] - S[m, j]) / n[m]
-        r = np.array([fwd(coins[ci], k, h, 1) for ci in np.flatnonzero(m)])
+        r = R[m, k]
         ok = np.isfinite(r)
         if ok.sum() < 10:
             continue
@@ -169,12 +178,26 @@ def nw_t(x, lag):
     return x.mean() / np.sqrt(v / n)
 
 
+def classes(D, label):
+    """Доход сделок журналов по классам позиции пула: всё время и половины."""
+    print(f"    {label}: сделок {len(D)}")
+    for cls in ("за нас", "нет", "против"):
+        x = D[D.cls == cls]
+        if x.empty:
+            print(f"      {cls:7s}: n=   0"); continue
+        m, t, n = ct(x.net.values, x.te.values)
+        h1, h2 = x[x.te < CUT].net.mean(), x[x.te >= CUT].net.mean()
+        print(f"      {cls:7s}: n={n:4d} {m*100:+.2f}% (t {t:+.1f}; половины {h1*100:+.2f}/{h2*100:+.2f}) "
+              f"в плюсе {(x.net > 0).mean():.0%}")
+
+
 if __name__ == "__main__":
     pools = ("top", "roi", "rand", "bottom")
+    res = {}
     print("=== Г1: k участников пула открыли позицию в одну сторону за 4 ч → вход на следующем часе Binance, доход к рынку")
     for k in (3, 5, 10):
         for pl in pools:
-            E = g1(pl, k)
+            E = g1(pl, k); res[f"g1_{pl}_{k}"] = E
             if E.empty:
                 print(f"  k={k:2d} {pl:6s}: событий нет"); continue
             line = f"  k={k:2d} {pl:6s}: событий {len(E):5d} (лонг {np.mean(E.d > 0):.0%})"
@@ -184,12 +207,12 @@ if __name__ == "__main__":
                 line += f" | {h}ч {m*100:+.2f}% (t {t:+.1f}; {h1*100:+.2f}/{h2*100:+.2f})"
             print(line)
     print("\n=== Г2: сделки журналов (шорты) по позициям пула в момент входа, чистый доход журнала")
+    JT = journal_trades()
     for pl in ("top", "roi", "rand"):
-        D = g2(pl)
-        print(f"  пул {pl}: сделок с монетой на Hyperliquid {len(D)} из {len(journal_trades())}")
-        for cls, x in D.groupby("cls"):
-            m, t, n = ct(x.net.values, x.te.values)
-            print(f"    {cls:7s}: n={n:4d} {m*100:+.2f}% (t {t:+.1f}) в плюсе {(x.net > 0).mean():.0%}")
+        D = g2(pl); res[f"g2_{pl}"] = D
+        print(f"  пул {pl}: сделок с монетой на Hyperliquid {len(D)} из {len(JT)}")
+        classes(D[D.j != "🌊"], "журналы s20 (по гипотезе)")
+        classes(D[D.j == "🌊"], "🌊 (дополнительно)")
         if pl == "top":
             for j, x in D.groupby("j"):
                 parts = []
@@ -197,11 +220,12 @@ if __name__ == "__main__":
                     y = x[x.cls == cls]
                     parts.append(f"{cls} {len(y)}: {y.net.mean()*100:+.2f}%" if len(y) else f"{cls} 0")
                 print(f"      {j}: " + "; ".join(parts))
-    print("\n=== Г3: чистая позиция пула → доход к рынку за 24 ч (ранговая корреляция каждые 4 ч)")
+    print("\n=== Г3: чистая позиция пула → доход к рынку за 24 ч (ранговая корреляция каждый час)")
     for pl in pools:
-        ic = g3(pl)
+        ic = g3(pl); res[f"g3_{pl}"] = ic
         if ic.empty:
             print(f"  {pl}: мало данных"); continue
         h1, h2 = ic[ic.index < CUT], ic[ic.index >= CUT]
-        print(f"  {pl:6s}: срезов {len(ic)}, IC {ic.mean():+.4f} (t NW {nw_t(ic.values, 6):+.1f}); половины "
-              f"{h1.mean():+.4f}/{h2.mean():+.4f}")
+        print(f"  {pl:6s}: срезов {len(ic)}, IC {ic.mean():+.4f} (t NW {nw_t(ic.values, 24):+.1f}); половины "
+              f"{h1.mean():+.4f} (t {nw_t(h1.values, 24):+.1f}) / {h2.mean():+.4f} (t {nw_t(h2.values, 24):+.1f})")
+    pickle.dump(res, open("s27/sig.pkl", "wb"))
