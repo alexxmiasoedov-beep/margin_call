@@ -75,7 +75,7 @@ def events():
     E = pd.DataFrame(rows, columns=["kind", "coin", "T", "d", "win", "buf"])
     E["s"] = [fut_of(c)[0] for c in E.coin]
     E = E[E.s.notna() & E.s.isin(list(CIDX))].copy()
-    E = E[[CSTART.get(s, np.inf) <= T - DAY for s, T in zip(E.s, E.T)]].copy()
+    E = E[[CSTART.get(s, np.inf) <= T - DAY for s, T in zip(E.s, E["T"])]].copy()
     E = E.drop_duplicates(["kind", "s", "T"]).sort_values("T").reset_index(drop=True)
     E["ci"] = [CIDX[s] for s in E.s]
     return E
