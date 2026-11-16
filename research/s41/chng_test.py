@@ -35,7 +35,8 @@ def r24(s, i):
 
 
 def deal(s, i, ex):
-    r = trade(s, i, side=-1, **EXITS[ex])
+    """Вход — закрытие первой 15-мин свечи после поста (i — последняя закрытая к посту, поэтому i + 1)."""
+    r = trade(s, i + 1, side=-1, **EXITS[ex])
     return r["net"] if r else None
 
 
