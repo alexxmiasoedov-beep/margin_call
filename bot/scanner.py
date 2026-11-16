@@ -2143,6 +2143,219 @@ def kr_listing_rule(state):
     return msgs
 
 
+UL_API = "https://api.coinmarketcap.com/data-api/v3/token-unlock"    # 🔓: публичный data-api сайта CoinMarketCap, без ключа
+UL_EVERY, UL_HORIZON_D, UL_ENTRY_D, UL_EXIT_D = 86400, 10, 7, 1   # 🔓: расписание раз в сутки на 10 сут вперёд; шорт за 7 сут
+                                                                   # до разлока, выход через сутки после
+UL_CLIFF, UL_ANY, UL_GROUP_D = 5.0, 25.0, 2    # разлок с cliff ≥ 5% монет в обращении или любой ≥ 25%; события монеты в пределах
+                                               # 2 сут — один разлок (research/s28)
+UL_LATE_H, UL_STALE_H, UL_PX = 24, 36, (0.8, 1.25)   # вход — до 24 ч позже срока; расписание монеты — не старше 36 ч; цена
+                                                     # фьючерса к цене CMC (у разных монет бывают одинаковые тикеры)
+UL_BATCH, UL_PASS_S, UL_TRIES = 15, 15, 3      # за проход — до 15 монет и 15 с запросов к CMC; монету, не отданную 3 раза, — до завтра
+
+
+def _ul_ts(s):
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _ul_mult(coin, fs):
+    """Множитель фьючерса к цене монеты: 1000PEPE → 1000."""
+    pre = fs[:-len(coin)] if fs.endswith(coin) else ""
+    return float(pre) if pre.isdigit() else 1.0
+
+
+def _ul_listing():
+    """Монеты с расписанием разлоков на CoinMarketCap, у которых есть бессрочный фьючерс Binance:
+    {cryptoId: [монета, фьючерс, монет в обращении, цена $]}. None — CMC или Binance не ответили."""
+    trader._contracts.clear()                                # раз в сутки — свежий список контрактов (вес 1): новые фьючерсы
+    trader.contract("BTC")                                   # появляются и без перезапуска бота
+    if not trader._contracts:
+        return None
+    out, page, pages = {}, 1, 1
+    while page <= min(pages, 40):
+        j = http_json(f"{UL_API}/listing?start={page}&limit=100", 20)
+        d = j.get("data") if isinstance(j, dict) else None
+        rows = d.get("tokenUnlockList") if isinstance(d, dict) else None
+        if not isinstance(rows, list):
+            return None
+        if not rows:
+            break
+        try:
+            pages = math.ceil(int(d.get("totalCount") or 0) / 100)
+        except (TypeError, ValueError):
+            pages = page + 1
+        for r in rows:
+            try:
+                coin, cid = str(r["symbol"]).strip().upper(), int(r["cryptoId"])
+                circ = float(r.get("circulatingSupply") or 0)
+                px = float(((r.get("quotes") or [{}])[0] or {}).get("price") or 0)
+            except (KeyError, TypeError, ValueError, IndexError, AttributeError):
+                continue
+            if not coin or " " in coin or coin in BL_SKIP:
+                continue
+            fs = _fut_sym(coin)
+            if fs:
+                out[str(cid)] = [coin, fs, circ, px]
+        page += 1
+    return out
+
+
+def _ul_events(cid):
+    """Будущие разлоки монеты на UL_HORIZON_D сут (с запасом на группу): [(время, объём, % общего предложения, cliff,
+    получатели)]. None — CMC не ответил."""
+    out, horizon = [], time.time() + (UL_HORIZON_D + UL_GROUP_D) * 86400
+    for page in (1, 2, 3):                                   # у монет с почасовыми разлоками 100 событий — меньше 10 сут
+        j = http_json(f"{UL_API}/event?cryptoId={cid}&type=upcoming&page={page}&limit=100", 15)
+        d = j.get("data") if isinstance(j, dict) else None
+        if not isinstance(d, dict):
+            return None
+        ev = d.get("tokenEvent") or []
+        if not isinstance(ev, list):
+            return None
+        last = None
+        for e in ev:
+            try:
+                t, amt = _ul_ts(e["time"]), float(e.get("amount") or 0)
+                al = e.get("allocations") or []
+                out.append((t, amt, float(e.get("percentage") or 0), any(a.get("vestingType") == "cliff" for a in al),
+                            tuple(sorted({str(a.get("allocationName") or "")[:40] for a in al} - {""}))))
+                last = t
+            except (KeyError, TypeError, ValueError, AttributeError):
+                continue
+        if len(ev) < 100 or last is None or last > horizon:
+            break
+    return [x for x in out if x[0]]
+
+
+def _ul_candidates(evs, circ):
+    """Крупные разлоки из расписания монеты, как в бэктесте research/s28: разлок — крупнейшее событие в пределах ±2 сут,
+    к нему прибавляются события следующих 2 сут; доля — к монетам в обращении (их нет — к общему предложению, как в
+    бэктесте); cliff — есть получатель с разлоком одним куском. Крупный: cliff и ≥ 5% или любой ≥ 25%."""
+    G = UL_GROUP_D * 86400; out = []
+    for t, amt, pct, cl, names in evs:
+        if any(abs(x[0] - t) <= G and (x[1] > amt or (x[1] == amt and x[0] < t)) for x in evs):
+            continue
+        grp = [x for x in evs if t <= x[0] <= t + G]
+        size = sum(x[1] for x in grp) / circ * 100 if circ > 0 else sum(x[2] for x in grp)
+        cliff = any(x[3] for x in grp)
+        if (cliff and size >= UL_CLIFF) or size >= UL_ANY:
+            out.append({"T": t, "size": round(size, 2), "cliff": cliff, "by": "circ" if circ > 0 else "total",
+                        "names": sorted({n for x in grp for n in x[4]})[:5]})
+    return out
+
+
+def _ul_what(c):
+    return (f"{c['fs']}: разлок {datetime.fromtimestamp(c['T'], timezone.utc):%d.%m %H:%M} UTC — {c['size']:.1f}% монет "
+            + ("в обращении" if c["by"] == "circ" else "общего предложения (в обращении — нет данных CMC)")
+            + (", есть разлок одним куском (cliff)" if c["cliff"] else ""))
+
+
+def unlock_rule(state):
+    """Перед разлоком (журнал 🔓, research/s28/ВЫВОДЫ.md). Раз в сутки — список монет с расписанием разлоков на
+    CoinMarketCap (публичный data-api сайта, без ключа); для монет с бессрочным фьючерсом Binance — будущие разлоки на 10 сут,
+    по 15 монет за проход (полный круг — около 40 мин). Крупный разлок (_ul_candidates): cliff ≥ 5% монет в обращении или
+    любой ≥ 25%. Цена фьючерса сверяется с ценой CMC (0,8–1,25): у разных монет бывают одинаковые тикеры. → Виртуальный
+    шорт за 7 сут до разлока (бот опоздал — до 24 ч позже срока), выход через сутки после разлока, без тейка, стоп +50%,
+    плечо ×1. Перенос разлока до входа — вход по новой дате; после входа — выход по прежней. Сообщения для чата."""
+    now = time.time(); u = state.setdefault("ul", {}); msgs = []
+    sched = u.setdefault("sched", {}); done = u.setdefault("done", {}); listed = False
+    if not u.get("queue") and now - u.get("list_t", 0) >= UL_EVERY and now >= u.get("next", 0):
+        tok = _ul_listing(); listed = True                   # 14 запросов — расписание монет начнётся со следующего прохода
+        if tok:
+            u.update(tok=tok, queue=sorted(tok, key=int), list_t=now, tries={}, n_ev=0)
+            log("РАЗЛОК", f"CoinMarketCap: монет с разлоками и фьючерсом Binance {len(tok)} — обновляю расписание, "
+                          f"по {UL_BATCH} за проход")
+        else:
+            u["next"] = now + 600
+            if now - u.get("err", 0) >= 6 * 3600:
+                u["err"] = now
+                log("РАЗЛОК", "CoinMarketCap не отдал список монет с разлоками (или Binance — список контрактов), повтор "
+                              "через 10 мин")
+    q = u.get("queue") or []; tok = u.get("tok") or {}; tries = u.setdefault("tries", {}) if q else {}
+    t0 = time.time(); n = fails = 0
+    while q and not listed and n < UL_BATCH and time.time() - t0 < UL_PASS_S and fails < 3:
+        cid = q.pop(0); n += 1
+        if cid not in tok:
+            continue
+        coin, fs, circ, px = tok[cid]
+        evs = _ul_events(cid)
+        if evs is None:
+            fails += 1; tries[cid] = tries.get(cid, 0) + 1
+            if tries[cid] < UL_TRIES:
+                q.append(cid)
+            else:
+                log("РАЗЛОК", f"{fs}: CoinMarketCap {UL_TRIES} раза не отдал расписание — до следующего обновления")
+            continue
+        u["n_ev"] = u.get("n_ev", 0) + 1
+        old = {k: c["T"] for k, c in sched.items() if c["cid"] == cid}
+        for k in old:
+            del sched[k]                                     # расписание монеты — свежее: разлок могли перенести
+        for c in _ul_candidates(evs, circ):
+            key = f"{fs}:{int(c['T'])}"
+            if key in done or not now < c["T"] <= now + UL_HORIZON_D * 86400:
+                continue                                     # дальние разлоки — в следующих обновлениях
+            mark = trader.mark_price(fs) if c["T"] - UL_ENTRY_D * 86400 + UL_LATE_H * 3600 > now else None
+            c.update(cid=cid, coin=coin, fs=fs, px=px, chk=now,
+                     ratio=round(mark / (px * _ul_mult(coin, fs)), 4) if mark and px > 0 else None)
+            sched[key] = c
+            if key not in old:
+                log("РАЗЛОК", _ul_what(c) + f"; получатели: {', '.join(c['names']) or '—'}; шорт "
+                    f"{datetime.fromtimestamp(c['T'] - UL_ENTRY_D * 86400, timezone.utc):%d.%m %H:%M} UTC"
+                    + (f", цена фьючерса {c['ratio']:.2f} от цены CMC" if c["ratio"] else ""))
+    if u.get("queue") is not None and not q and tok:
+        log("РАЗЛОК", f"расписание обновлено: монет {u.get('n_ev', 0)} из {len(tok)}; крупных разлоков в ближайшие "
+                      f"{UL_HORIZON_D} сут — {len(sched)}")
+        for k in ("tok", "tries", "queue", "n_ev"):
+            u.pop(k, None)
+    for key, c in sorted(sched.items(), key=lambda kv: kv[1]["T"]):
+        t_in = c["T"] - UL_ENTRY_D * 86400
+        if now < t_in:
+            continue
+        what = _ul_what(c)
+        if now > t_in + UL_LATE_H * 3600:
+            del sched[key]; done[key] = now
+            log("РАЗЛОК", what + f" — срок входа {datetime.fromtimestamp(t_in, timezone.utc):%d.%m %H:%M} UTC прошёл больше "
+                          f"{UL_LATE_H} ч назад (бот не работал или разлок появился в расписании поздно), сделки нет")
+            continue
+        if now - c["chk"] > UL_STALE_H * 3600:
+            if not c.get("stale"):
+                c["stale"] = True
+                log("РАЗЛОК", what + f" — расписание монеты не обновлялось {(now - c['chk']) / 3600:.0f} ч (CoinMarketCap не "
+                                     "отвечал), вход ждёт обновления")
+            continue
+        if c.get("ratio") is None:
+            mark = trader.mark_price(c["fs"])
+            if not mark:
+                continue                                     # Binance не отдал цену — повтор в следующем проходе
+            c["ratio"] = round(mark / (c["px"] * _ul_mult(c["coin"], c["fs"])), 4) if c["px"] > 0 else 1.0
+        if not UL_PX[0] <= c["ratio"] <= UL_PX[1]:
+            del sched[key]; done[key] = now
+            log("РАЗЛОК", what + f" — цена фьючерса {c['ratio']:.2f} от цены CoinMarketCap: похоже, другой токен с тем же "
+                                 "тикером или ошибка данных, сделки нет")
+            continue
+        t_out = c["T"] + UL_EXIT_D * 86400
+        note = (f"CoinMarketCap: разлок {datetime.fromtimestamp(c['T'], timezone.utc):%d.%m %H:%M} UTC — {c['size']:.1f}% монет "
+                + ("в обращении" if c["by"] == "circ" else "общего предложения")
+                + (", есть разлок одним куском (cliff)" if c["cliff"] else "")
+                + f"; получатели: {', '.join(c['names']) or '—'}; выход через сутки после разлока, "
+                  f"{datetime.fromtimestamp(t_out, timezone.utc):%d.%m %H:%M} UTC")
+        was = _virt_is_open(state, "virtual_UL", c["fs"])
+        m = None if was else trader.virt_open(state, "virtual_UL", c["fs"], "UL", note, hold_h=round((t_out - now) / 3600, 2))
+        if m:
+            del sched[key]; done[key] = now
+            log("РАЗЛОК", c["fs"], note)
+            msgs.append(m)
+        elif was:
+            del sched[key]; done[key] = now
+            log("РАЗЛОК", what + " — сделка по монете уже открыта, пропуск")
+        # иначе Binance не отдал цену — повтор в следующем проходе, до 24 ч после срока
+    for k in [k for k, ts in done.items() if ts < now - 40 * 86400]:
+        del done[k]
+    return msgs
+
+
 MR_URL = "https://www.binance.com/bapi/margin/v1/public/margin/vip/spec/list-all"
 MR_DIR = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "margin_rates")
 
@@ -2453,6 +2666,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила корейского листинга:", repr(e))
+    try:
+        for msg in unlock_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила разлоков:", repr(e))
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands

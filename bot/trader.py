@@ -1048,6 +1048,13 @@ VIRTUALS = {
                             "шорт через 15 мин после начисления на 2 ч (до следующего начисления); без тейка, стоп +15%, плечо ×1",
                    "icon": "🌊", "params": lambda fh: (None, 15.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
                    "hold_h": 2.0, "lev": 1, "hedge": "BTC"},
+    # перед разлоком (research/s28/ВЫВОДЫ.md: по расписанию CoinMarketCap 239 сделок за 24 мес., +6,1% на сделку, t 4,7;
+    # вне выборки 01.2023–09.2024 +2,6%, t 0,7 — ожидание +2…5%): scanner.unlock_rule. Срок сделки задаёт правило — выход
+    # через сутки после разлока (вход за 7 сут — 192 ч; вошли позже — короче)
+    "virtual_UL": {"title": "перед разлоком: по расписанию CoinMarketCap разлок с cliff ≥ 5% монет в обращении или любой ≥ 25% → "
+                            "шорт за 7 суток до разлока, выход через сутки после; без тейка, стоп +50%, плечо ×1",
+                   "icon": "🔓", "params": lambda fh: (None, 50.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
+                   "hold_h": 192.0, "lev": 1, "hedge": "BTC"},
 }
 VIRT = {"hold_h": 48.0, "pause_h": 48.0, "start_balance": 20.0,   # стартовый капитал журнала, USDT
         "check_s": 300}                                             # свечи открытых сделок докачиваются раз в 5 мин
@@ -1134,8 +1141,9 @@ def virt_on_signal(state, sym, price, rule):
     return "\n".join(out) + fnote
 
 
-def virt_open(state, key, sym, rule, note, price=None):
+def virt_open(state, key, sym, rule, note, price=None, hold_h=None):
     """Открывает виртуальную сделку (шорт, у журнала с side="long" — лонг) в журнале key по его собственному сигналу.
+    hold_h — срок этой сделки, часов, если он задан правилом (🔓: выход через сутки после разлока), иначе срок журнала.
     Возвращает строку для чата или None."""
     cfg = VIRTUALS[key]; v = _virt(state, key); now = time.time()
     long = cfg.get("side") == "long"; pause = cfg.get("pause_h", VIRT["pause_h"])
@@ -1155,7 +1163,7 @@ def virt_open(state, key, sym, rule, note, price=None):
     sgn = -1 if long else 1                                  # стоп выше входа у шорта, ниже — у лонга
     t = {"sym": sym, "opened": now, "entry": px, "rule": rule, "margin": MARGIN_USDT, "lev": cfg.get("lev", LEVERAGE), "bal": True,
          "sl": px * (1 + sgn * sl / 100), "tp": px * (1 - sgn * tp / 100) if tp else None, "tp_pct": tp, "sl_pct": sl, "fh_entry": fh,
-         "note": note, "hold_h": cfg.get("hold_h", VIRT["hold_h"])}
+         "note": note, "hold_h": hold_h if hold_h else cfg.get("hold_h", VIRT["hold_h"])}
     if long:
         t["side"] = "long"
     if cfg.get("hedge"):                                     # для отчёта: лонг монеты-хеджа на ту же сумму и тот же срок
