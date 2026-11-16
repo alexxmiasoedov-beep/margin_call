@@ -1161,6 +1161,29 @@ def noretail_check(s, coin, T, fut, kr_share, spot):
     return norm >= NR_NORM_MIN, why + f"; обычная доля спота {norm * 100:.1f}%"
 
 
+SP_SHARE_MIN = 0.26                    # 🛒: доля спота Binance в обороте последнего полного часа (research/s49)
+
+
+def spot_pump_check(s, coin, T, k, spot):
+    """Шорт «памп на споте» (журнал 🛒, research/s49/ВЫВОДЫ.md) для пампа, найденного korea_rule: доля спота Binance к USDT
+    в обороте за последний полный час по часам (спот / (спот + фьючерс Binance), как в бэктесте: час, который закончился
+    не позже закрытия свечи пампа T) ≥ 26%. k — 15-мин свечи фьючерса до T включительно, spot — цены спота {пара: цена}.
+    Возвращает (подходит, пояснение)."""
+    name = next((n for n in (s, coin) if f"{n}USDT" in spot), None)
+    if not name:
+        return False, "нет спота Binance"
+    H = (T // 3600) * 3600                                         # конец последнего полного часа
+    sk = spot_json(f"/api/v3/klines?symbol={name}USDT&interval=15m&endTime={H * 1000 - 1}&limit=4")
+    if not isinstance(sk, list):
+        return False, "Binance не отдал свечи спота — проверка не сделана"
+    sp = sum(float(x[7]) for x in sk if H - 3600 <= int(x[0]) // 1000 < H)
+    fut = sum(float(x[7]) for x in k if H - 3600 <= int(x[0]) // 1000 < H)
+    share = sp / max(sp + fut, 1.0)
+    hh = datetime.fromtimestamp(H - 3600, timezone.utc).strftime("%H:%M")
+    return share >= SP_SHARE_MIN, (f"спот Binance {share * 100:.1f}% оборота за час {hh} UTC (спот {sp / 1e6:.2f} млн $, "
+                                   f"фьючерс {fut / 1e6:.2f} млн $; порог {SP_SHARE_MIN * 100:.0f}%)")
+
+
 _t24 = {"t": 0, "data": None}
 
 
@@ -1281,6 +1304,15 @@ def korea_rule(state):
             log("РОЗНИЦА", s, f"{head}; Binance не отдал цены спота — проверка не сделана")
             spot = None                                       # у следующего пампа этой свечи — новая попытка
             continue
+        try:                                                   # 🛒 памп на споте (research/s49)
+            ok_sp, why_sp = spot_pump_check(s, coin, T, k, spot)
+            log("СПОТ-ПАМП", s, f"{head}; {why_sp}" + (" → шорт 🛒" if ok_sp else ""))
+            if ok_sp:
+                m = trader.virt_open(state, "virtual_SP", s, "SP", f"{head}; {why_sp}", price=c)
+                if m:
+                    msgs.append(m)
+        except Exception as e:
+            log("СПОТ-ПАМП", s, f"ошибка проверки: {e!r}")
         ok, why = noretail_check(s, coin, T, fut, kr_share, spot)
         log("РОЗНИЦА", s, f"{head}; {why}" + (" → лонг 🟩" if ok else ""))
         if ok:

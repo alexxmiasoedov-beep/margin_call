@@ -21,10 +21,10 @@ SAFE = ("CHANNEL", "MIN_RUN_H", "GAP_MIN", "PUMP_MIN", "PUMP_MAX", "COOLDOWN_H",
         "SL_PCT", "TP_PCT", "HOLD_H", "MAX_POSITIONS", "LSR_MAX", "DUMP_RULE", "DUMP_BR_MIN", "STOP_PAUSE_H", "FUND_EXIT",
         "POLL_SEC", "STATE_FILE")                     # только настройки правил — ключи и токен не печатаются
 JOURNALS = (("virtual", "📓"), ("virtual_fund", "📗"), ("virtual_1525", "📘"), ("virtual_1520", "📕"), ("virtual_620", "📙"))
-OWN = (("virtual_D", "🟦"), ("virtual_P", "🟧"), ("virtual_KR", "🇰🇷"), ("virtual_KRF", "🇰🇷ᶠ"), ("virtual_KRS", "🇰🇷⭐"), ("virtual_TR", "🇹🇷"), ("virtual_L", "🟩"),
+OWN = (("virtual_D", "🟦"), ("virtual_P", "🟧"), ("virtual_KR", "🇰🇷"), ("virtual_KRF", "🇰🇷ᶠ"), ("virtual_KRS", "🇰🇷⭐"), ("virtual_TR", "🇹🇷"), ("virtual_L", "🟩"), ("virtual_SP", "🛒"),
        ("virtual_RP", "↩️"), ("virtual_RP7", "↩️⁷"), ("virtual_RW", "💸"), ("virtual_BF", "🏦"), ("virtual_BF3", "🏦³"), ("virtual_NT", "🆕"), ("virtual_AN", "📢"),
        ("virtual_KL", "🇰🇷🆕"), ("virtual_BL", "🅱️"), ("virtual_FE", "🌊"), ("virtual_UL", "🔓"), ("virtual_1525C", "📘ᶜ"))
-LOG_PAT = re.compile(r"СИГНАЛ|НОВОЕ ПРАВИЛО|ЛИСТИНГ BINANCE|ОТЛИВ|РАЗЛОК|КОРЕЯ|ТУРЦИЯ|РОЗНИЦА|ОТДАЧА|ФАКТОР ЗАЙМА|СТАВКИ|ПУЛ|НОВЫЙ ТОКЕН|ОБЪЯВЛЕНИЕ|UPBIT|DNS|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
+LOG_PAT = re.compile(r"СИГНАЛ|СПОТ-ПАМП|НОВОЕ ПРАВИЛО|ЛИСТИНГ BINANCE|ОТЛИВ|РАЗЛОК|КОРЕЯ|ТУРЦИЯ|РОЗНИЦА|ОТДАЧА|ФАКТОР ЗАЙМА|СТАВКИ|ПУЛ|НОВЫЙ ТОКЕН|ОБЪЯВЛЕНИЕ|UPBIT|DNS|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
                      r"РЕСУРСЫ|СИСТЕМА|telegram fail|telegram getUpdates|канал недоступен|Binance OK|торговля выключена|Убраны|Started|Stopped|Stopping|Main process exited|Scheduled restart")
 out = []
 SECRET = re.compile(r"\d{8,10}:[A-Za-z0-9_-]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|(?<=://)[^/@\s]+(?=@)")   # токены бота, GitHub, логин в URL
