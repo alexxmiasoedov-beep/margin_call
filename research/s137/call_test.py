@@ -45,7 +45,7 @@ def run(per):
         if ip is None or ie is None or ip < 96:
             continue
         c = K[key]["c"].astype(float)
-        if r.px and not 0.7 <= c[ip] / (r.px * mult) <= 1.43:   # цена в посте не та монета (или не та котировка)
+        if pd.notna(r.px) and r.px > 0 and not 0.7 <= c[ip] / (r.px * mult) <= 1.43:   # цена в посте — не та монета
             continue
         if r.typ == "призыв":
             called[key] = r.t
