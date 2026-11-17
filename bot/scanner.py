@@ -2773,6 +2773,210 @@ def margin_pool_watch(state):
     state["mp_cnt"] = state.get("mp_cnt", 0) + 1
 
 
+TK_DIR = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "kr_ticks")
+TK_JOURNALS = ("virtual_KT", "virtual_RT", "virtual_O9", "virtual_KR", "virtual_KL")   # 🔝 👀 ⏰ 🇰🇷 🇰🇷🆕
+TK_BEFORE, TK_AFTER = 2 * 3600, 6 * 3600          # окно записи сделок: [вход − 2 ч, вход + 6 ч]
+TK_BUDGET, TK_PASS_S, TK_KEEP = 25, 20, 6.5 * 86400   # за проход — до 25 запросов и 20 с; биржи хранят сделки 7 суток
+TK_API = {"upbit": "https://api.upbit.com", "bithumb": "https://api.bithumb.com"}
+TK_TZ = {"upbit": 0, "bithumb": 9 * 3600}         # сутки и параметр to: у Upbit — UTC, у Bithumb — время Сеула
+
+
+def _tk_page(ex, coin, pos, cursor):
+    """До 500 сделок рынка KRW-coin не позже момента pos в пределах суток биржи (новые первыми); [] — сделок нет или
+    рынка нет (404), None — сбой."""
+    sh = TK_TZ[ex]
+    day, today = int((pos + sh) // 86400), int((time.time() + sh) // 86400)
+    q = {"market": f"KRW-{coin}", "count": 500, "to": datetime.fromtimestamp(pos + sh, timezone.utc).strftime("%H:%M:%S")}
+    if today > day:
+        q["daysAgo"] = today - day
+    if cursor:
+        q["cursor"] = cursor
+    try:
+        j = json.loads(http(f"{TK_API[ex]}/v1/trades/ticks?" + urllib.parse.urlencode(q), timeout=15))
+    except urllib.error.HTTPError as e:
+        return [] if e.code == 404 else None
+    except Exception:
+        return None
+    return j if isinstance(j, list) else None
+
+
+def _tk_close(j, tmp, why=None):
+    """Окно записано (why=None) — сделки по возрастанию времени в kr_ticks/ГГГГ-ММ/<биржа>_<монета>_<начало окна>.csv.gz;
+    иначе — запись брошена, причина в журнал службы."""
+    span = (f"{datetime.fromtimestamp(j['a'], timezone.utc):%d.%m %H:%M}–"
+            f"{datetime.fromtimestamp(j['b'], timezone.utc):%d.%m %H:%M} UTC")
+    if why is None:
+        try:
+            rows = sorted(set(open(tmp, encoding="utf-8").read().split()), key=lambda r: int(r.split(",")[0]))
+        except OSError:
+            rows = []
+        d = os.path.join(TK_DIR, datetime.fromtimestamp(j["a"], timezone.utc).strftime("%Y-%m"))
+        os.makedirs(d, exist_ok=True)
+        fn = os.path.join(d, f"{j['ex']}_{j['coin']}_{j['a']}.csv.gz")
+        with gzip.open(fn, "wt", encoding="utf-8") as f:
+            f.write("ts_ms,price,volume,side\n" + "".join(r + "\n" for r in rows))
+        log("ТИКИ", f"{KL_NAME[j['ex']]} {j['coin']}: {len(rows)} сделок за {span}")
+    else:
+        log("ТИКИ", f"{KL_NAME[j['ex']]} {j['coin']} {span}: запись брошена — {why}")
+    try:
+        os.remove(tmp)
+    except OSError:
+        pass
+
+
+def kr_ticks_watch(state):
+    """Сделки Upbit и Bithumb с направлением тейкера вокруг входов корейских журналов 🔝 👀 ⏰ 🇰🇷 🇰🇷🆕 (по «да» владельца
+    17.11): окно [вход − 2 ч, вход + 6 ч] по каждой бирже, где у монеты есть рынок к воне; пересекающиеся окна одной монеты
+    сливаются. После конца окна сделки докачиваются от конца к началу по курсору (/v1/trades/ticks; биржи хранят 7 суток),
+    за проход — до 25 запросов и 20 с; недокачанное продолжается в следующих проходах и после перезапуска (state["tk"],
+    временный файл kr_ticks/tmp/). Итог — kr_ticks/ГГГГ-ММ/<биржа>_<монета>_<начало окна>.csv.gz рядом с state.json:
+    «время мс,цена,объём,сторона» (B — покупка тейкера, A — продажа). Только запись: сделок и сообщений в чат нет."""
+    st = state.setdefault("tk", {})
+    jobs, seen = st.setdefault("jobs", []), st.setdefault("seen", {})
+    now = time.time()
+    kr = _kr_list()
+    for key in TK_JOURNALS:
+        for t in state.get(key, {}).get("trades", []):
+            op = float(t.get("opened") or 0)
+            sid = f"{key}|{t.get('sym')}|{op:.0f}"
+            if now - op > TK_KEEP or sid in seen:
+                continue
+            seen[sid] = op
+            coin = re.sub(r"^(1000000|100000|10000|1000)", "", str(t.get("sym")))
+            a, b = int(op - TK_BEFORE), int(op + TK_AFTER)
+            for ex in ("upbit", "bithumb"):
+                if coin not in kr.get(ex, ()):
+                    continue
+                j = next((j for j in jobs if j["coin"] == coin and j["ex"] == ex and j["pos"] is None
+                          and j["a"] <= b and a <= j["b"]), None)
+                if j:
+                    j["a"], j["b"] = min(j["a"], a), max(j["b"], b)
+                else:
+                    jobs.append({"coin": coin, "ex": ex, "a": a, "b": b, "pos": None, "cur": None, "n": 0, "fail": 0})
+    for sid in [k for k, op in seen.items() if now - op > 8 * 86400]:
+        del seen[sid]
+    t_stop, budget, bad = time.time() + TK_PASS_S, TK_BUDGET, set()
+    for j in list(jobs):
+        if budget <= 0 or time.time() >= t_stop:
+            break
+        if j["b"] > now - 300 or j["ex"] in bad:                 # окно ещё не кончилось или биржа сбоит в этом проходе
+            continue
+        tmp = os.path.join(TK_DIR, "tmp", f"{j['ex']}_{j['coin']}_{j['a']}.csv")
+        if now - j["a"] > TK_KEEP:
+            jobs.remove(j); _tk_close(j, tmp, "окно старше 6,5 суток, биржа его уже не отдаёт")
+            continue
+        if j["pos"] is None or not os.path.exists(tmp):
+            os.makedirs(os.path.dirname(tmp), exist_ok=True)
+            open(tmp, "w").close()
+            j.update(pos=j["b"], cur=None, n=0)
+        while budget > 0 and time.time() < t_stop:
+            page = _tk_page(j["ex"], j["coin"], j["pos"], j["cur"]); budget -= 1
+            if page is None:
+                bad.add(j["ex"]); j["fail"] += 1
+                if j["fail"] % 30 == 1:
+                    log("ТИКИ", f"{KL_NAME[j['ex']]} {j['coin']}: биржа не отдала сделки, повтор в следующих проходах")
+                break
+            rows, oldest = [], None
+            for x in page:
+                try:
+                    ts, px, v = int(x["timestamp"]), float(x["trade_price"]), float(x["trade_volume"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                oldest = ts if oldest is None else min(oldest, ts)
+                if j["a"] * 1000 <= ts <= j["b"] * 1000:
+                    rows.append(f"{ts},{px:.10g},{v:.10g},{'B' if x.get('ask_bid') == 'BID' else 'A'}")
+            if rows:
+                with open(tmp, "a", encoding="utf-8") as f:
+                    f.write("\n".join(rows) + "\n")
+                j["n"] += len(rows)
+            if oldest is not None and oldest < j["a"] * 1000:   # дошли до начала окна
+                jobs.remove(j); _tk_close(j, tmp)
+                break
+            cur = page[-1].get("sequential_id") if page else None
+            if len(page) < 500 or not cur:                       # сутки биржи кончились — к предыдущим
+                sh = TK_TZ[j["ex"]]
+                j["pos"], j["cur"] = int((j["pos"] + sh) // 86400) * 86400 - sh - 1, None
+                if j["pos"] < j["a"]:
+                    jobs.remove(j); _tk_close(j, tmp)
+                    break
+            else:
+                j["cur"] = cur
+
+
+PR_DIR = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "usdt_premium")
+PR_EVERY, PR_FX_EVERY = 600, 6 * 3600              # снимок премий — раз в 10 мин; официальные курсы — раз в 6 ч
+PR_COLS = ("cny_okx_best", "cny_okx_med10", "try_bid", "try_ask", "krw_upbit", "krw_bithumb")
+PR_OKX = ("https://www.okx.com/v3/c2c/tradingOrders/books?quoteCurrency=cny&baseCurrency=usdt&side=sell&paymentMethod=all"
+          "&userType=all&showTrade=false&showFollow=false&showAlreadyTraded=false&isAbleFilter=false")
+
+
+def _pr_json(url):
+    try:
+        return json.loads(http(url, timeout=15))
+    except Exception:
+        return None
+
+
+def usdt_premium_watch(state):
+    """Премии USDT к местным валютам (по «да» владельца 17.11): раз в 10 мин — внебиржевая цена покупки USDT за юани
+    на OKX C2C (лучшая и медиана 10 лучших объявлений), USDTTRY Binance (спрос и предложение), KRW-USDT Upbit и Bithumb;
+    официальные курсы USD → CNY, TRY, KRW (frankfurter.app, данные ЕЦБ) — раз в 6 ч. Строки — в usdt_premium/ГГГГ-ММ.csv
+    рядом с state.json; пустое поле — источник не ответил. Только запись: сделок и сообщений в чат нет. Сбой всех
+    источников — строка «ПРЕМИЯ» не чаще раза в 6 ч; раз в сутки — сводка «ПРЕМИЯ»."""
+    st = state.setdefault("pr", {})
+    now = time.time()
+    if now - st.get("last", 0) < PR_EVERY:
+        return
+    st["last"] = now
+    if now - st.get("fx_t", 0) >= PR_FX_EVERY:
+        j = _pr_json("https://api.frankfurter.app/latest?from=USD&to=CNY,TRY,KRW")
+        try:
+            st["fx"] = {k: float(j["rates"][k]) for k in ("CNY", "TRY", "KRW")}
+            st["fx_date"], st["fx_t"] = str(j.get("date", "")), now
+        except (TypeError, KeyError, ValueError):
+            st["fx_t"] = now - PR_FX_EVERY + 1800                # повтор через 30 мин
+    v = {}
+    j = _pr_json(PR_OKX)
+    try:
+        p = sorted(float(x["price"]) for x in j["data"]["sell"])[:10]
+        if p:
+            v["cny_okx_best"], v["cny_okx_med10"] = p[0], p[len(p) // 2]
+    except (TypeError, KeyError, ValueError):
+        pass
+    j = spot_json("/api/v3/ticker/bookTicker?symbol=USDTTRY", 15)
+    try:
+        v["try_bid"], v["try_ask"] = float(j["bidPrice"]), float(j["askPrice"])
+    except (TypeError, KeyError, ValueError):
+        pass
+    for ex in ("upbit", "bithumb"):
+        j = _pr_json(f"{TK_API[ex]}/v1/ticker?markets=KRW-USDT")
+        try:
+            v[f"krw_{ex}"] = float(j[0]["trade_price"])
+        except (TypeError, KeyError, ValueError, IndexError):
+            pass
+    if not v:
+        if now - st.get("err", 0) >= 6 * 3600:
+            st["err"] = now
+            log("ПРЕМИЯ", "ни один источник премии USDT не ответил (OKX, Binance, Upbit, Bithumb)")
+        return
+    fx = st.get("fx") or {}
+    os.makedirs(PR_DIR, exist_ok=True)
+    fn = os.path.join(PR_DIR, datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m") + ".csv")
+    new = not os.path.exists(fn)
+    with open(fn, "a", encoding="utf-8") as f:
+        if new:
+            f.write("ts," + ",".join(PR_COLS) + ",fx_date,usd_cny,usd_try,usd_krw\n")
+        f.write(f"{now:.0f}," + ",".join(f"{v[c]:.6g}" if c in v else "" for c in PR_COLS)
+                + f",{st.get('fx_date', '')}," + ",".join(f"{fx[k]:.6g}" if k in fx else "" for k in ("CNY", "TRY", "KRW")) + "\n")
+    day = int(now // 86400)
+    if st.get("day") != day:
+        if st.get("day") is not None:
+            log("ПРЕМИЯ", f"за прошлые сутки снимков {st.get('cnt', 0)} из {86400 // PR_EVERY}; сейчас: "
+                + ", ".join(f"{c} {v[c]:.6g}" for c in PR_COLS if c in v))
+        st["day"], st["cnt"] = day, 0
+    st["cnt"] = st.get("cnt", 0) + 1
+
+
 UPBIT_FLAGS = ("warning", "PRICE_FLUCTUATIONS", "TRADING_VOLUME_SOARING", "DEPOSIT_AMOUNT_SOARING",
                "GLOBAL_PRICE_DIFFERENCES", "CONCENTRATION_OF_SMALL_ACCOUNTS")   # warning — «предупреждение», остальные — «внимание»
 # смены флагов — ещё и в файл рядом с state.json: журнал службы на сервере хранит около недели (research/s17/ВЫВОДЫ.md)
@@ -3157,6 +3361,14 @@ def cycle(dry, state=None):
         margin_pool_watch(state)
     except Exception as e:
         log("ошибка сборщика пула займа:", repr(e))
+    try:
+        usdt_premium_watch(state)
+    except Exception as e:
+        log("ошибка записи премий USDT:", repr(e))
+    try:
+        kr_ticks_watch(state)
+    except Exception as e:
+        log("ошибка записи корейских сделок:", repr(e))
     try:
         for msg in trader.manage(state):
             log(msg)
