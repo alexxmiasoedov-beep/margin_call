@@ -44,7 +44,16 @@ def fetch(s, d):
                                        timeout=90).read()
             z = zipfile.ZipFile(io.BytesIO(b)); n = z.namelist()[0]
             hdr = 0 if z.open(n).readline()[:1].isdigit() else 1
-            return pd.read_csv(z.open(n), header=None, skiprows=hdr, usecols=[1, 2, 5, 6], names=["p", "q", "t", "m"])
+            parts = []                                           # кусками: в памяти — только сделки окна (WIN_MS)
+            for ch in pd.read_csv(z.open(n), header=None, skiprows=hdr, usecols=[1, 2, 5, 6], names=["p", "q", "t", "m"],
+                                  chunksize=400_000):
+                t = ch.t.values
+                if len(t) and t.max() > 1e14:
+                    t = t // 1000
+                keep = (t > WIN_MS[0]) & (t <= WIN_MS[1])
+                if keep.any():
+                    parts.append(ch[keep].assign(t=t[keep]))
+            return pd.concat(parts) if parts else pd.DataFrame(columns=["p", "q", "t", "m"])
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return None
@@ -63,9 +72,13 @@ def rnd(x, tol):
     return r
 
 
+WIN_MS = [0, 0]
+
+
 def measure(job):
     s, j, tc = job
     t0 = tc - WIN
+    WIN_MS[0], WIN_MS[1] = t0 * 1000, tc * 1000
     days = sorted({datetime.datetime.fromtimestamp(x, datetime.timezone.utc).strftime("%Y-%m-%d") for x in (t0 + 1, tc)})
     parts = []
     for d in days:
@@ -96,11 +109,14 @@ def measure(job):
                         share_q=float(u[rq].sum() / vol), share_u=float(u[ru].sum() / vol))
 
 
-def main():
+def all_jobs():
+    """Пампы основной группы (фьючерс, индекс свечи, закрытие свечи) — один раз в s91/jobs.pkl, чтобы процессы разбора
+    не держали в памяти архив 15-мин свечей."""
+    if os.path.exists("s91/jobs.pkl"):
+        return pickle.load(open("s91/jobs.pkl", "rb"))
     K = pickle.load(open("s2/k2y.pkl", "rb"))
     PU = pickle.load(open("s15/kr_pumps.pkl", "rb"))
     wk, dy = overlap_sets()
-    res = pickle.load(open(OUT, "rb")) if os.path.exists(OUT) else {}
     jobs = []
     for s, js in PU.items():
         w, d = wk.get(s, np.zeros(0)), dy.get(s, np.zeros(0))
@@ -108,13 +124,20 @@ def main():
             tc = int(K[s]["t"][j]) + 900
             if ((w <= tc) & (w >= tc - 7 * DAY)).any() or ((d <= tc) & (d >= tc - DAY)).any():
                 continue
-            if (s, int(j)) in res and res[(s, int(j))] != "ERR":
-                continue
             jobs.append((s, int(j), tc))
-    del K
+    pickle.dump(jobs, open("s91/jobs.pkl", "wb"))
+    return jobs
+
+
+def main():
+    if "--jobs" in os.sys.argv:                                  # только составить список пампов и выйти
+        print(f"пампов основной группы: {len(all_jobs())}")
+        return
+    res = pickle.load(open(OUT, "rb")) if os.path.exists(OUT) else {}
+    jobs = [x for x in all_jobs() if not ((x[0], x[1]) in res and res[(x[0], x[1])] != "ERR")]
     print(f"пампов основной группы к разбору: {len(jobs)}", flush=True)
     done = 0
-    with Pool(8) as pool:
+    with Pool(6) as pool:
         for key, v in pool.imap_unordered(measure, jobs, chunksize=4):
             res[key] = v; done += 1
             if done % 200 == 0:
