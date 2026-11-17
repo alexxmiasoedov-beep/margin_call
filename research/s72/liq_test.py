@@ -91,8 +91,10 @@ def main():
         print(f"  k = {kk}: событий {len(Z)}; на первой половине в месяц — лонги {per.get('Long', 0):.1f}, шорты {per.get('Short', 0):.1f}")
         if k is None and per.get("Long", 0) >= 25 and per.get("Short", 0) >= 25:
             k = kk
+    if k is None:                                   # правило не выполнено ни при одном k — наименьший k ряда (см. ВЫВОДЫ)
+        k = min(KS)
     print("выбран k =", k)
-    if "--counts" in sys.argv or k is None:
+    if "--counts" in sys.argv:
         return
     Z = pick(E, k)
     btc = hourly_c = None
