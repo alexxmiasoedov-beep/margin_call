@@ -186,18 +186,25 @@ p(f"🏦 последний день проверки: {fmt(state.get('bf_day'),
 try:
     import gzip
     rdir = os.path.join(sdir, "margin_rates")
-    for fn in sorted(os.listdir(rdir)):
-        hours, assets, last = set(), set(), 0
+    for fn in sorted(x for x in os.listdir(rdir) if re.fullmatch(r"\d{4}-\d{2}\.csv\.gz", x)):   # только помесячные файлы ставок
+        hours, assets, last, bad = set(), set(), 0, 0
         with gzip.open(os.path.join(rdir, fn), "rt", encoding="utf-8", errors="replace") as f:
             for ln in f:
-                h, a = ln.split(",", 2)[:2]
-                h = int(h); hours.add(h)
+                h, a = (ln.split(",", 2) + ["", ""])[:2]
+                try:
+                    h = int(h)
+                except ValueError:                           # строка не того вида (обрыв записи и т. п.) — считаем и идём дальше
+                    bad += 1
+                    continue
+                hours.add(h)
                 if h > last:
                     last, assets = h, set()
                 if h == last:
                     assets.add(a)
-        p(f"ставки {fn}: {os.path.getsize(os.path.join(rdir, fn)) // 1024} КБ, снимков {len(hours)}, "
-          f"{fmt(min(hours), False)} — {fmt(last, False)}, активов в последнем {len(assets)}")
+        if hours:
+            p(f"ставки {fn}: {os.path.getsize(os.path.join(rdir, fn)) // 1024} КБ, снимков {len(hours)}, "
+              f"{fmt(min(hours), False)} — {fmt(last, False)}, активов в последнем {len(assets)}"
+              + (f"; нечитаемых строк {bad}" if bad else ""))
 except FileNotFoundError:
     p("ставки маржи: файлов пока нет")
 except Exception as e:
