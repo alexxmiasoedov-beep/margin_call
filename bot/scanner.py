@@ -2384,6 +2384,92 @@ def retail_top_rule(state):
     return msgs
 
 
+O9_RISE, O9_SHARE, O9_LATE = 0.05, 0.20, 480   # ⏰: рост фьючерса за час 00–01 UTC ≥ 5%, доля Кореи ≥ 20% (research/s88);
+                                                # сбой данных — повтор прохода до 8 мин после 01:00 UTC
+
+
+def open9_rule(state):
+    """«9 утра» — всплеск на открытии дня Upbit (журнал ⏰, research/s88/ВЫВОДЫ.md): раз в сутки, в первые 10 мин после
+    01:00 UTC (10:00 по Корее), — фьючерсы Binance монет, которые торгуются к воне на Upbit или Bithumb. Рост за час
+    00:00–01:00 UTC (закрытие 15-мин свечи в 01:00 к закрытию в 00:00) ≥ 5%, доля Upbit + Bithumb в обороте этого часа
+    вместе с фьючерсом Binance ≥ 20%, фьючерс запущен не меньше суток назад → виртуальный шорт, тейк 10 / стоп 25 / 48 ч,
+    плечо ×1. Если Binance или корейская биржа не отдали данные монеты, проход повторяется до 8 мин после 01:00 UTC
+    (открытые сделки не дублируются). Возвращает сообщения для чата."""
+    T = candle_due(state, "o9_last_T", "9 УТРА", step=3600)
+    if T is None:
+        return []
+    if T % 86400 != 3600:                                        # не час открытия дня Upbit
+        candle_done(state, "o9_last_T", T)
+        return []
+    kr = _kr_list()
+    if not kr["upbit"] or not kr["bithumb"]:
+        return candle_retry("o9_last_T", "нет списка рынков к воне Upbit или Bithumb")
+    tick = ticker24()
+    if not isinstance(tick, list):
+        return candle_retry("o9_last_T", "Binance не отдал цены фьючерсов за сутки (ticker/24hr)")
+    trader.contract("BTC")                                       # загружает список бессрочных контрактов USDT
+    if not trader._contracts:
+        return candle_retry("o9_last_T", "Binance не отдал список контрактов")
+    cands = []
+    for x in tick:
+        s = str(x.get("symbol", ""))
+        try:
+            hi, lo = float(x["highPrice"]), float(x["lowPrice"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if s not in trader._contracts or lo <= 0 or hi < lo * (1 + O9_RISE):   # рост ≥ 5% за час виден и в размахе за сутки
+            continue
+        coin = re.sub(r"^(1000000|100000|10000|1000)", "", s[:-4])
+        exs = [e for e in ("upbit", "bithumb") if coin in kr[e]]
+        if exs:
+            cands.append((s[:-4], coin, exs))
+    with ThreadPoolExecutor(8) as ex:
+        ks = dict(zip([c[0] for c in cands], ex.map(lambda c: _closed_15m(c[0], T, 7), cands)))
+    msgs, fail, n_rise = [], [], 0
+    for s, coin, exs in cands:
+        k = ks.get(s)
+        if not k or len(k) < 5:
+            fail.append(s)
+            continue
+        c0, c = float(k[-5][4]), float(k[-1][4])
+        rise = c / c0 - 1 if c0 > 0 else 0.0
+        if rise < O9_RISE:
+            continue
+        n_rise += 1
+        fut = sum(float(x[7]) for x in k[-4:])
+        vols = {e: _kr_volume(e, coin, T) for e in exs}
+        if any(v is None for v in vols.values()):
+            fail.append(s)
+            log("9 УТРА", s, f"рост за час {rise * 100:+.1f}%, но {'/'.join(e.capitalize() for e, v in vols.items() if v is None)}"
+                " не отдал оборот за час")
+            continue
+        got = sum(vols.values())
+        share = got / (got + fut) if got + fut > 0 else 0.0
+        note = (f"{coin}: фьючерс за час открытия дня Upbit (00–01 UTC) {rise * 100:+.1f}%, доля Кореи в обороте часа "
+                f"{share * 100:.0f}% (" + ", ".join(f"{e.capitalize()} {v / 1e6:.2f} млн $" for e, v in vols.items())
+                + f", фьючерс Binance {fut / 1e6:.2f} млн $)")
+        if share < O9_SHARE:
+            log("9 УТРА", s, note + " — доля Кореи меньше 20%, сделки нет")
+            continue
+        on = (trader.contract(s) or {}).get("onboard") or 0
+        if on and T - on < 86400:
+            log("9 УТРА", s, note + f" — фьючерс запущен {(T - on) / 3600:.0f} ч назад, моложе суток, пропуск")
+            continue
+        was = _virt_is_open(state, "virtual_O9", s)
+        m = trader.virt_open(state, "virtual_O9", s, "O9", note, price=c)
+        opened = not was and _virt_is_open(state, "virtual_O9", s)
+        log("9 УТРА", s, note + (" → шорт ⏰" if opened else " — сделка не открыта (уже есть, кулдаун или нет цены)"))
+        if m:
+            msgs.append(m)
+    if fail and time.time() - T <= O9_LATE:
+        candle_retry("o9_last_T", "не получены свечи или корейский оборот: " + ", ".join(fail))
+        return msgs
+    candle_done(state, "o9_last_T", T)
+    log("9 УТРА", f"кандидатов (рынок к воне, размах за сутки ≥ 5%) {len(cands)}, рост за час ≥ 5% у {n_rise}"
+        + (f"; не проверены — нет данных: {', '.join(fail)}" if fail else ""))
+    return msgs
+
+
 UL_API ="https://api.coinmarketcap.com/data-api/v3/token-unlock"    # 🔓: публичный data-api сайта CoinMarketCap, без ключа
 UL_EVERY, UL_HORIZON_D, UL_ENTRY_D, UL_EXIT_D = 86400, 10, 7, 1   # 🔓: расписание раз в сутки на 10 сут вперёд; шорт за 7 сут
                                                                    # до разлока, выход через сутки после
@@ -2961,6 +3047,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила внимания розницы:", repr(e))
+    try:
+        for msg in open9_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила «9 утра»:", repr(e))
     try:
         for msg in unlock_rule(state):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
