@@ -60,13 +60,14 @@ def okx(b, hs):
 
 
 def bitget(b, hs):
+    """Bitget отбирает свечи по времени закрытия: endTime = конец часа hs + 1 ч, из ответа берётся свеча с началом hs."""
     x = get(f"https://api.bitget.com/api/v2/spot/market/history-candles?symbol={b}USDT&granularity=1h"
-            f"&endTime={(hs + H1) * 1000 - 1}&limit=1")
+            f"&endTime={(hs + 2 * H1) * 1000 - 1}&limit=3")
     time.sleep(0.2)
     if x is None:
         return None
-    d = x.get("data") or []
-    return float(d[-1][6]) if d and int(d[-1][0]) == hs * 1000 else 0.0
+    d = [r for r in x.get("data") or [] if int(r[0]) == hs * 1000]
+    return float(d[0][6]) if d else 0.0
 
 
 def main():
@@ -83,7 +84,7 @@ def main():
         t = K[s]["t"]
         for j in js:
             key = (s, int(j))
-            if key in res and None not in res[key].values():
+            if key in res and None not in res[key].values() and res[key].get("v") == 2:
                 continue
             hs = int((int(t[j]) + 900) // H1 * H1 - H1)
             jobs.append((key, hs, bases(s, ok_set), bases(s, bg_set)))
@@ -92,7 +93,9 @@ def main():
 
     def one(job):
         key, hs, bo, bb = job
-        r = {"okx": okx(bo, hs) if bo else 0.0, "bitget": bitget(bb, hs) if bb else 0.0}
+        prev = res.get(key) or {}
+        o = prev["okx"] if prev.get("okx") is not None else (okx(bo, hs) if bo else 0.0)
+        r = {"okx": o, "bitget": bitget(bb, hs) if bb else 0.0, "v": 2}   # v 2 — с исправленным запросом Bitget
         with LOCK:
             res[key] = r; done[0] += 1
             if done[0] % 500 == 0:
@@ -102,7 +105,7 @@ def main():
     with ThreadPoolExecutor(8) as pool:
         list(pool.map(one, jobs))
     pickle.dump(res, open(OUT + ".tmp", "wb")); os.replace(OUT + ".tmp", OUT)
-    bad = sum(1 for v in res.values() if None in v.values())
+    bad = sum(1 for v in res.values() if None in (v["okx"], v["bitget"]))
     print(f"готово: {len(res)} пампов, без ответа биржи {bad}", flush=True)
 
 
