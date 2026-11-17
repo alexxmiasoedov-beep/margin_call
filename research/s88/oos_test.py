@@ -197,8 +197,9 @@ def main():
     print("\nДля отчёта: рост 5–7% и ≥ 7% на открытии")
     line("рост 5–7%", A[A.r1 < 0.07], "S_10_25", months)
     line("рост ≥ 7%", A[A.r1 >= 0.07], "S_10_25", months)
-    print()
-    calibration()
+    if "--no-cal" not in sys.argv:                            # калибровке нужен архив 15-мин свечей (много памяти)
+        print()
+        calibration()
 
 
 if __name__ == "__main__":
