@@ -26,7 +26,8 @@ def main():
         page = 1
         while True:
             d = get(URL.format(cat, page))
-            arts = ((d or {}).get("data") or {}).get("catalogs", [{}])[0].get("articles", []) if d else []
+            cats = ((d or {}).get("data") or {}).get("catalogs") or [{}]
+            arts = cats[0].get("articles", []) if d else []
             if not arts:
                 break
             for a in arts:
