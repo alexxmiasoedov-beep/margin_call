@@ -8,8 +8,9 @@ import zipfile
 import numpy as np
 
 BAR, FEE = 900, 0.001
-K = pickle.load(open("s2/k2y.pkl", "rb"))
-FU = pickle.load(open("s2/fund2y.pkl", "rb"))
+# архив можно подменить: MC_K и MC_F — пути к свечам и фандингу другой выборки (s117: 2022–2024)
+K = pickle.load(open(os.environ.get("MC_K", "s2/k2y.pkl"), "rb"))
+FU = pickle.load(open(os.environ.get("MC_F", "s2/fund2y.pkl"), "rb"))
 
 
 _live = {}
@@ -43,7 +44,7 @@ def funding(sym):
     rows = [(int(r[0]), float(r[2])) for r in f] if f is not None else []
     last = max((r[0] for r in rows), default=0)
     os.makedirs("s15/fund", exist_ok=True)
-    for m in ("2026-09", "2026-10"):
+    for m in (() if os.environ.get("MC_F") else ("2026-09", "2026-10")):
         path = f"s15/fund/{sym}-{m}.csv"
         if not os.path.exists(path):
             url = f"https://data.binance.vision/data/futures/um/monthly/fundingRate/{sym}USDT/{sym}USDT-fundingRate-{m}.zip"

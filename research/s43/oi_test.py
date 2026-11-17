@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "s15"))
 from common import K, fut_of, live, trade  # noqa: E402
 
 DAY = 86400
-CUT = pd.Timestamp("2025-12-01", tz="UTC").timestamp()
+CUT = pd.Timestamp(os.environ.get("MC_CUT", "2025-12-01"), tz="UTC").timestamp()     # MC_CUT — середина другой выборки
 PL = (45, 90, 135)
 EXITS = {"S_7_20": dict(tp=0.07, sl=0.20, hold_h=48), "S_10_15": dict(tp=0.10, sl=0.15, hold_h=24),
          "S_7d": dict(tp=None, sl=0.50, hold_h=168)}
