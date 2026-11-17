@@ -3,7 +3,8 @@ Upbit), фьючерс за час +5% и больше, доля Кореи (Upb
 шорт в 01:00 UTC; тейк 10 / стоп 25 / 48 ч по часовым свечам (правила как у s15/common.trade). Плацебо — та же монета
 за 45/90/135 сут; контроль — те же пороги в другие часы (не чаще раза в сутки на монету). Калибровка — тот же часовой
 расчёт на сделках 10.2024–10.2026 (s88/trades.pkl) против 15-минутного. Гипотеза и порог — ВЫВОДЫ.md, записаны до
-загрузки данных. Запуск из папки с данными (после oos_fetch.py): python3 <путь>/s88/oos_test.py"""
+загрузки данных. Запуск из папки с данными (после oos_fetch.py): python3 <путь>/s88/oos_test.py; MC_Y0=2020 — период
+10.2020–09.2022 (s130; калибровку пропускать: --no-cal)."""
 import datetime
 import glob
 import os
@@ -20,9 +21,11 @@ from oi_test import DAY, ct  # noqa: E402
 
 H1 = 3600
 FEE = 0.001
-OOS0 = int(datetime.datetime(2022, 10, 1, tzinfo=datetime.timezone.utc).timestamp())
-OOS1 = int(datetime.datetime(2024, 10, 1, tzinfo=datetime.timezone.utc).timestamp())
-MID = int(datetime.datetime(2023, 10, 1, tzinfo=datetime.timezone.utc).timestamp())
+Y0 = int(os.environ.get("MC_Y0", "2022"))                  # начало периода: октябрь Y0 (s130: 2020)
+OOS0 = int(datetime.datetime(Y0, 10, 1, tzinfo=datetime.timezone.utc).timestamp())
+OOS1 = int(datetime.datetime(Y0 + 2, 10, 1, tzinfo=datetime.timezone.utc).timestamp())
+MID = int(datetime.datetime(Y0 + 1, 10, 1, tzinfo=datetime.timezone.utc).timestamp())
+DIR = "s88/oos" if Y0 == 2022 else f"s88/oos{Y0}"
 R_MIN, SH_MIN = 0.05, 0.20
 EXITS = {"S_10_25": dict(tp=0.10, sl=0.25, hold_h=48), "S_24h": dict(tp=None, sl=0.15, hold_h=24)}
 
@@ -53,10 +56,10 @@ def trade1h(a, fr, i, tp=None, sl=0.25, hold_h=48, side=-1):
 
 
 def load_oos():
-    mp = pickle.load(open("s88/oos/map.pkl", "rb"))
-    F = {os.path.basename(p)[:-4]: x for p in glob.glob("s88/oos/fut/*.pkl") if (x := pickle.load(open(p, "rb")))}
+    mp = pickle.load(open(f"{DIR}/map.pkl", "rb"))
+    F = {os.path.basename(p)[:-4]: x for p in glob.glob(f"{DIR}/fut/*.pkl") if (x := pickle.load(open(p, "rb")))}
     KC = {}
-    for p in glob.glob("s88/oos/kc/*/*.pkl"):
+    for p in glob.glob(f"{DIR}/kc/*/*.pkl"):
         x = pickle.load(open(p, "rb"))
         if x:
             KC[(p.split("/")[-2], os.path.basename(p)[4:-4])] = x
@@ -180,10 +183,10 @@ def main():
     mp, F, KC = load_oos()
     P = panel(mp, F, KC)
     X = events(P, F)
-    X.to_pickle("s88/oos_trades.pkl")
+    X.to_pickle(f"{DIR}_trades.pkl")
     months = (OOS1 - OOS0) / (30.4 * DAY)
     A, O = X[X.open9], X[~X.open9]
-    print(f"Вне выборки 01.10.2022–30.09.2024: монет с фьючерсом и рынком к воне {len(P)};"
+    print(f"Вне выборки 01.10.{Y0}–30.09.{Y0 + 2}: монет с фьючерсом и рынком к воне {len(P)};"
           f" событий на открытии {len(A)} ({len(A) / months:.1f} в месяц), в другие часы {len(O)}")
     for col in EXITS:
         print(f"\n{col}")

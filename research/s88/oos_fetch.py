@@ -5,7 +5,7 @@
 Результат — s88/oos/: fut/<фьючерс>.pkl {t, o, h, l, c, qv, f: [[время, ставка]]}, kc/<биржа>/<рынок>.pkl {t, c, v},
 map.pkl {монета: фьючерс}. Прерванный сбор продолжается с места остановки (сбой сети не кэшируется).
 
-Запуск из папки с данными: python3 <путь>/s88/oos_fetch.py"""
+Запуск из папки с данными: python3 <путь>/s88/oos_fetch.py; MC_Y0=2020 — период 10.2020–09.2022 (s130), папка s88/oos2020/."""
 import datetime
 import io
 import os
@@ -25,9 +25,10 @@ sys.path.insert(0, os.path.join(HERE, "..", "s15"))
 from kr_listings import API, get, iso, utc  # noqa: E402
 
 UTC = datetime.timezone.utc
-T0, T1 = datetime.datetime(2022, 9, 1, tzinfo=UTC), datetime.datetime(2024, 10, 4, tzinfo=UTC)
-MONTHS = [f"{y}-{m:02d}" for y in (2022, 2023, 2024) for m in range(1, 13) if "2022-09" <= f"{y}-{m:02d}" <= "2024-10"]
-OUT = "s88/oos"
+Y0 = int(os.environ.get("MC_Y0", "2022"))                  # начало периода: октябрь Y0 (s130: 2020)
+T0, T1 = datetime.datetime(Y0, 9, 1, tzinfo=UTC), datetime.datetime(Y0 + 2, 10, 4, tzinfo=UTC)
+MONTHS = [f"{y}-{m:02d}" for y in (Y0, Y0 + 1, Y0 + 2) for m in range(1, 13) if f"{Y0}-09" <= f"{y}-{m:02d}" <= f"{Y0 + 2}-10"]
+OUT = "s88/oos" if Y0 == 2022 else f"s88/oos{Y0}"
 VIS = "https://data.binance.vision/data/futures/um/monthly"
 LIST = "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision?delimiter=/&prefix=data/futures/um/monthly/klines/"
 ERR = object()

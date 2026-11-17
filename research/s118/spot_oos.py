@@ -22,14 +22,15 @@ from kr_panel import pumps  # noqa: E402
 sys.modules.pop("spot_fetch", None)
 import importlib.util  # noqa: E402
 spec = importlib.util.spec_from_file_location("sf", os.path.join(HERE, "..", "s23", "spot_fetch.py"))
-OOS = [f"2022-{m:02d}" for m in (10, 11, 12)] + [f"2023-{m:02d}" for m in range(1, 13)] + [f"2024-{m:02d}" for m in range(1, 10)]
+Y0 = int(os.environ.get("MC_Y0", "2022"))                 # период: октябрь Y0 … сентябрь Y0 + 2 (s120: 2020)
+OOS = [f"{Y0}-{m:02d}" for m in (10, 11, 12)] + [f"{Y0 + 1}-{m:02d}" for m in range(1, 13)] + [f"{Y0 + 2}-{m:02d}" for m in range(1, 10)]
 EX = dict(tp=0.10, sl=0.25, hold_h=48)
 Q2 = 0.259
 
 
 def spot_series(s, get, rows):
     for b in (s, re.sub(r"^(1000000|100000|10000|1000)", "", s)):
-        if any(get(f"monthly/klines/{b}USDT/1h/{b}USDT-1h-{m}.zip") for m in ("2023-06", "2024-06", "2022-12")):
+        if any(get(f"monthly/klines/{b}USDT/1h/{b}USDT-1h-{m}.zip") for m in (OOS[8], OOS[20], OOS[2])):
             out = []
             for m in OOS:
                 out += rows(get(f"monthly/klines/{b}USDT/1h/{b}USDT-1h-{m}.zip"))
@@ -75,7 +76,7 @@ def main():
             p = [y["net"] for dd in (45, 90, 135) if j - dd * 96 >= 96 and (y := trade(s, j - dd * 96, **EX))]
             out.append(dict(s=s, t=Tp, share=share, net=x["net"], pl=np.mean(p) if p else np.nan))
     X = pd.DataFrame(out)
-    X.to_pickle("s118_spot.pkl")
+    X.to_pickle(f"s118_spot{'' if Y0 == 2022 else Y0}.pkl")
     months = (X.t.max() - X.t.min()) / (30.4 * DAY)
     for lab, x in (("все пампы", X), ("доля спота ≥ 25,9% (🛒)", X[X.share >= Q2]), ("доля спота < 25,9%", X[X.share < Q2]),
                    ("без спота Binance", X[X.share.isna()])):

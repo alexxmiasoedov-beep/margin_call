@@ -1,5 +1,5 @@
 """s117 — независимая выборка: 15-мин свечи и фандинг всех USDT-M перпов Binance (включая снятые с торгов — список из
-листинга архива) за 01.10.2022–30.09.2024, в формате s2/k2y.pkl и s2/fund2y.pkl, → s117/k_oos.pkl, s117/fund_oos.pkl.
+листинга архива) за 01.10.2022–30.09.2024 (MC_Y0=2020 — 01.10.2020–30.09.2022, файлы *_2020.pkl), в формате s2/k2y.pkl и s2/fund2y.pkl, → s117/k_oos.pkl, s117/fund_oos.pkl.
 Как s2/load_full.py (research/futures/bv.py, кэш архива — cache/), плюс каждая монета дополнена до общей сетки по BTC:
 свечи до начала торгов и после снятия — заглушки без объёма с последней ценой (как в k2y). Запуск из папки с данными:
 python3 <repo>/research/s117/load_oos.py"""
@@ -17,8 +17,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "futures"))
 import bv  # noqa: E402
 
-MONTHS = [f"2022-{m:02d}" for m in (10, 11, 12)] + [f"2023-{m:02d}" for m in range(1, 13)] + \
-         [f"2024-{m:02d}" for m in range(1, 10)]
+Y0 = int(os.environ.get("MC_Y0", "2022"))                 # начало периода: октябрь года Y0 … сентябрь Y0 + 2 (s120: 2020)
+MONTHS = [f"{Y0}-{m:02d}" for m in (10, 11, 12)] + [f"{Y0 + 1}-{m:02d}" for m in range(1, 13)] + \
+         [f"{Y0 + 2}-{m:02d}" for m in range(1, 10)]
+SUF = "oos" if Y0 == 2022 else str(Y0)
 
 
 def symbols():
@@ -87,8 +89,8 @@ def main():
             if n % 100 == 0:
                 print(datetime.datetime.now().strftime("%H:%M:%S"), n, len(K), flush=True)
     K = pad(K)
-    pickle.dump(K, open("s117/k_oos.pkl", "wb"), protocol=4)
-    pickle.dump(F, open("s117/fund_oos.pkl", "wb"), protocol=4)
+    pickle.dump(K, open(f"s117/k_{SUF}.pkl", "wb"), protocol=4)
+    pickle.dump(F, open(f"s117/fund_{SUF}.pkl", "wb"), protocol=4)
     print("монет", len(K), "| свечей на монету", len(K["BTC"]["t"]), "| с фандингом", len(F), flush=True)
 
 
