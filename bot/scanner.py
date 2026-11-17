@@ -14,6 +14,7 @@ import math
 import os
 import re
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -100,7 +101,7 @@ socket.getaddrinfo = _cached_getaddrinfo
 NON_ASCII = re.compile(r"[^\x00-\x7f]+")
 
 
-def http(url, data=None, timeout=30):
+def http(url, data=None, timeout=30, ctype=None):
     # Фьючерсы Binance бывают с иероглифами в названии (币安人生USDT): в адресе — %-кодировка UTF-8, иначе urllib падает
     # с «'ascii' codec can't encode», и правила 🇰🇷 🇰🇷⭐ 🟩 молча пропускают такие монеты
     url = NON_ASCII.sub(lambda m: urllib.parse.quote(m.group(0)), url)
@@ -111,7 +112,7 @@ def http(url, data=None, timeout=30):
         raise urllib.error.URLError(f"пауза после ответа Binance 418/429, ещё {wait:.0f} с")
     t0 = time.time(); ok = False
     try:
-        req = urllib.request.Request(url, data=data, headers={"User-Agent": UA})
+        req = urllib.request.Request(url, data=data, headers={"User-Agent": UA, **({"Content-Type": ctype} if ctype else {})})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             body = r.read().decode("utf-8", "replace")
         ok = True
@@ -202,7 +203,8 @@ WELCOME = (
     "Подписка оформлена.\n\n"
     "Команды: /status — текущие кандидаты, /trades — журнал сделок, баланс и позиции, "
     "/positions — открытые позиции на Binance, /virtual — виртуальные журналы (без тейка; по фандингу; 15/25; 15/20; 6/20; новые правила D* и P*; корейский шорт; корейский шорт ⭐ со счётом условий; турецкий набег; памп без розницы — лонг; отдача займа — шорт), /params — параметры сделок, /set <параметр> <число> — изменить "
-    "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause, fexit), /pause и /resume — пауза торговли, /stop — отписаться."
+    "(margin, lev, tp, sl, hold, max, limit, lsr, dump, br, pause, fexit), /pause и /resume — пауза торговли, "
+    "/export — выгрузка журналов файлом (раз в неделю — для сверки с бэктестом), /stop — отписаться."
 )
 
 
@@ -249,6 +251,7 @@ def setup_commands():
     cmds = [("menu", "Меню с кнопками"), ("params", "Параметры сделок"), ("positions", "Открытые позиции на Binance"),
             ("history", "Ордера по монете за 24 ч: /history LSK"),
             ("trades", "Журнал сделок, баланс"), ("virtual", "Виртуальные журналы"), ("status", "Кандидаты в канале"),
+            ("export", "Выгрузка журналов файлом"),
             ("pause", "Пауза торговли"), ("resume", "Возобновить торговлю"), ("stop", "Отписаться")]
     tg("setMyCommands", commands=json.dumps([{"command": c, "description": d} for c, d in cmds]))
 
@@ -286,6 +289,75 @@ def handle_callback(state, cq, candidates):
     elif data == "resume":
         state["trading_paused"] = False
         tg("sendMessage", chat_id=cid, text=resume_text(), reply_markup=main_menu(state))
+
+
+EXPORT_TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "export_signals.py")
+EXPORT_FILE = os.path.join(os.path.expanduser("~"), "margin_export_signals.txt")
+EXPORT_MAX_S = 600
+_exp = {"proc": None, "chat": None, "t": 0.0}
+
+
+def tg_file(chat_id, name, data, caption=""):
+    """sendDocument: байты data файлом name в чат (multipart без сторонних библиотек). Ответ Telegram или None."""
+    if not TOKEN:
+        return None
+    b = "margincall" + os.urandom(8).hex()
+    body = b"".join(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+                    for k, v in (("chat_id", str(chat_id)), ("caption", caption)))
+    body += (f'--{b}\r\nContent-Disposition: form-data; name="document"; filename="{name}"\r\n'
+             f"Content-Type: text/plain; charset=utf-8\r\n\r\n").encode() + data + f"\r\n--{b}--\r\n".encode()
+    try:
+        return json.loads(http(f"https://api.telegram.org/bot{TOKEN}/sendDocument", data=body, timeout=60,
+                               ctype=f"multipart/form-data; boundary={b}"))
+    except Exception as e:
+        tg_warn("telegram fail sendDocument", e)
+        return None
+
+
+def export_start(cid):
+    """/export: tools/export_signals.py — отдельным процессом (проходы сканера его не ждут); файл придёт по готовности
+    (export_check). Одна выгрузка за раз."""
+    p = _exp["proc"]
+    if p is not None and p.poll() is None:
+        return "Выгрузка уже собирается — пришлю файл, как только будет готова."
+    if not os.path.exists(EXPORT_TOOL):
+        return "Рядом с ботом нет tools/export_signals.py — запустите выгрузку на сервере командой из памятки."
+    try:
+        _exp["proc"] = subprocess.Popen([sys.executable, EXPORT_TOOL], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                        stdin=subprocess.DEVNULL, cwd=os.path.expanduser("~"))
+    except OSError as e:
+        return f"Выгрузку запустить не удалось: {e}"
+    _exp.update(chat=cid, t=time.time())
+    log("ВЫГРУЗКА", "запущена по команде /export")
+    return "Собираю выгрузку журналов — пришлю файлом через 2–3 минуты."
+
+
+def export_check():
+    """Готова ли выгрузка: файл — в чат, откуда пришла /export, без пути к домашней папке сервера (в нём имя пользователя);
+    дольше 10 мин — процесс останавливается."""
+    p = _exp["proc"]
+    if p is None:
+        return
+    rc = p.poll()
+    if rc is None:
+        if time.time() - _exp["t"] > EXPORT_MAX_S:
+            p.kill(); _exp["proc"] = None
+            send(_exp["chat"], "Выгрузка не уложилась в 10 минут и остановлена — попробуйте /export позже.")
+            log("ВЫГРУЗКА", "не уложилась в 10 мин, остановлена")
+        return
+    _exp["proc"] = None
+    if rc != 0 or not os.path.exists(EXPORT_FILE) or os.path.getmtime(EXPORT_FILE) < _exp["t"] - 5:
+        send(_exp["chat"], f"Выгрузка не получилась (код завершения {rc}) — попробуйте /export ещё раз.")
+        log("ВЫГРУЗКА", f"ошибка, код завершения {rc}")
+        return
+    home = os.path.expanduser("~")
+    data = open(EXPORT_FILE, "rb").read().replace(home.encode(), b"~")
+    r = tg_file(_exp["chat"], "margin_export_signals.txt", data,
+                caption=f"Выгрузка журналов {datetime.now(timezone.utc):%d.%m %H:%M} UTC — {len(data) // 1024} КБ")
+    ok = bool(r and r.get("ok"))
+    log("ВЫГРУЗКА", "файл отправлен" if ok else f"файл не отправлен: {(r or {}).get('description')}")
+    if not ok:
+        send(_exp["chat"], "Файл выгрузки не отправился — повторите /export.")
 
 
 def poll_commands(state, candidates, dry, wait=0):
@@ -362,6 +434,8 @@ def poll_commands(state, candidates, dry, wait=0):
                 reply = trader.set_param(state, parts[1], parts[2])
                 log("параметр из чата:", parts[1], parts[2])
                 send(cid, reply)
+        elif text.startswith("/export"):
+            send(cid, export_start(cid) if cid in state["subscribers"] else "Выгрузка — только для подписчиков: сначала /start.")
         elif text.startswith("/pause"):
             state["trading_paused"] = True
             send(cid, "Торговля на паузе: новые сделки не открываются, открытые ведутся до выхода. /resume — продолжить.")
@@ -1493,6 +1567,40 @@ def bf_pick(cnt, T, fut, kl, fund):
     return top, sorted(top, key=lambda x: -x[4])[:BF_KEEP], miss
 
 
+BFM_CAP = 30e6         # 🏦ᵐ: без входа при капитализации свободного оборота (монеты в обращении CMC × цена) < 30 млн $ (s98)
+
+
+def _bf_open(state, fs, note, px):
+    """Вход 🏦 и его двойников: 🏦³ (те же входы, стоп +300%) и 🏦ᵐ (те же входы, кроме монет с капитализацией свободного
+    оборота меньше 30 млн $; монеты в обращении — список разлоков CoinMarketCap, state["ul"]["circ"]; нет данных — вход).
+    Совместный вход — одной строкой к сообщению 🏦. Возвращает сообщения для чата."""
+    def is_open(key):
+        return any(t["sym"] == fs and not t.get("closed") for t in state.get(key, {}).get("trades", []))
+    circ = (state.get("ul", {}).get("circ") or {}).get(fs)
+    cap = circ * px if circ and px else None
+    cnote = (f"капитализация свободного оборота {cap / 1e6:.0f} млн $" if cap is not None
+             else "капитализация свободного оборота: нет данных CoinMarketCap")
+    small = cap is not None and cap < BFM_CAP
+    was = is_open("virtual_BF"), is_open("virtual_BF3"), is_open("virtual_BFM")
+    m = trader.virt_open(state, "virtual_BF", fs, "BF", note, price=px)
+    m3 = trader.virt_open(state, "virtual_BF3", fs, "BF", note, price=px)          # 🏦³: те же входы, стоп +300%
+    mm = None if small else trader.virt_open(state, "virtual_BFM", fs, "BF", f"{note}; {cnote}", price=px)
+    new = (not was[0] and is_open("virtual_BF"), not was[1] and is_open("virtual_BF3"), not was[2] and is_open("virtual_BFM"))
+    log("ФАКТОР ЗАЙМА", fs, note + ("" if new[0] else " — 🏦 уже открыта") + ("" if new[1] else "; 🏦³ уже открыта")
+        + (f"; 🏦ᵐ без входа: {cnote} — меньше {BFM_CAP / 1e6:.0f} млн $" if small
+           else f"; {cnote}" + ("" if new[2] else ", 🏦ᵐ уже открыта")))
+    if new[0] and new[1]:                                     # обычно журналы входят вместе — одной строкой
+        line = m + "\n🏦³ тот же шорт, стоп +300%"
+        if new[2]:
+            line += f"\n🏦ᵐ тот же шорт ({cnote})"
+        elif small:
+            line += f"\n🏦ᵐ без входа: {cnote} — меньше {BFM_CAP / 1e6:.0f} млн $"
+        else:
+            line += f"\n🏦ᵐ сделка уже открыта"
+        return [line]
+    return [x for x in (m, m3, mm) if x]
+
+
 def borrow_factor_rule(state):
     """Фактор займа (журнал 🏦, research/s10/ВЫВОДЫ.md): раз в сутки, в первый проход после 01:00 UTC (если бот лежал — до 04:00).
     Для каждой монеты — сколько постов маржинального канала за 7 суток до 00:00 UTC её упоминали (журнал margin_posts.json;
@@ -1560,21 +1668,10 @@ def borrow_factor_rule(state):
         "за сутки): " + ", ".join(f"{x[1]} {x[2] / n * 100:.0f}%/{x[4] * 100:.1f}%" for x in top)
         + (f"; без свечей Binance: {', '.join(miss)}" if miss else ""))
     msgs = []
-
-    def is_open(key, fs):
-        return any(t["sym"] == fs and not t.get("closed") for t in state.get(key, {}).get("trades", []))
     for c, fs, k, v7, vola, f8, px in keep:
         note = (f"в канале {k / n * 100:.0f}% постов за 7 суток ({k} из {n}, место {rank[c]}), объём {v7 / 1e6:.0f} млн $/сут, "
                 f"волатильность {vola * 100:.1f}%/сут, фандинг " + (f"{f8 * 100:+.3f}%/8 ч" if f8 is not None else "нет данных"))
-        was = is_open("virtual_BF", fs), is_open("virtual_BF3", fs)
-        m = trader.virt_open(state, "virtual_BF", fs, "BF", note, price=px)
-        m3 = trader.virt_open(state, "virtual_BF3", fs, "BF", note, price=px)    # 🏦³: те же входы, стоп +300%
-        new = not was[0] and is_open("virtual_BF", fs), not was[1] and is_open("virtual_BF3", fs)
-        log("ФАКТОР ЗАЙМА", fs, note + ("" if new[0] else " — 🏦 уже открыта") + ("" if new[1] else "; 🏦³ уже открыта"))
-        if all(new):
-            msgs.append(m + "\n🏦³ тот же шорт, стоп +300%")         # обычно журналы входят вместе — одной строкой
-        else:
-            msgs += [x for x in (m, m3) if x]
+        msgs += _bf_open(state, fs, note, px)
     if not msgs:
         return []
     return [f"🏦 Фактор займа на {day}: 5 самых волатильных из 10 монет, чаще всех бывших в маржинальном канале за 7 суток\n"
@@ -2592,6 +2689,11 @@ def unlock_rule(state):
         tok = _ul_listing(); listed = True                   # 14 запросов — расписание монет начнётся со следующего прохода
         if tok:
             u.update(tok=tok, queue=sorted(tok, key=int), list_t=now, tries={}, n_ev=0)
+            circ = {}                                        # монеты в обращении по фьючерсам — для 🏦ᵐ; живёт до следующей загрузки
+            for coin, fs, cs, px in tok.values():
+                if cs and cs > 0:
+                    circ[fs] = max(circ.get(fs, 0.0), float(cs))
+            u["circ"], u["circ_t"] = circ, now
             log("РАЗЛОК", f"CoinMarketCap: монет с разлоками и фьючерсом Binance {len(tok)} — обновляю расписание, "
                           f"по {UL_BATCH} за проход")
         else:
@@ -3418,6 +3520,7 @@ def run_loop(dry):
         try:
             trader.configure(state)
             got = poll_commands(state, cands, dry, wait=wait)
+            export_check()                                   # /export: готовый файл выгрузки — в чат
             save_state(state)
             if got is None:
                 # Telegram не ответил: без паузы цикл крутился бы вхолостую сотни раз в секунду (при обрыве сети ошибка
