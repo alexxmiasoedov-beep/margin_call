@@ -162,10 +162,11 @@ def main():
     for s, t in list(zip(S49.s, S49.t)) + list(zip(S20.s, S20.te)):
         dy.setdefault(s, []).append(t)
     wk = {s: np.array(v) for s, v in wk.items()}; dy = {s: np.array(v) for s, v in dy.items()}
-    out, last = [], {}
-    for T, row in ev.iterrows():
-        T = int(T)
-        for s in row.index[row.values]:
+
+    def collect(cands, rise=None):
+        """cands — (час, монета) по времени; rise — порог роста фьючерса за 24 ч (часть события H1.2)."""
+        out, last = [], {}
+        for T, s in cands:
             if T - last.get(s, -1e18) < 7 * DAY:
                 continue
             lo, hi = live(s)
@@ -174,10 +175,12 @@ def main():
             i = idx_at(s, T)
             if i is None:
                 continue
+            c = K[s]["c"]; r24 = float(c[i] / c[i - 96] - 1)
+            if rise is not None and r24 < rise:
+                continue
             last[s] = T
             a, b = wk.get(s, np.zeros(0)), dy.get(s, np.zeros(0))
-            c = K[s]["c"]
-            d = dict(s=s, t=T, n24=int(V24.at[T, s]), r24=float(c[i] / c[i - 96] - 1),
+            d = dict(s=s, t=T, n24=int(V24.at[T, s]), n6=int(V6.at[T, s]), r24=r24,
                      ov=bool(((a <= T) & (a >= T - 7 * DAY)).any() or ((b < T) & (b >= T - DAY)).any()))
             for nm, kw in EXITS.items():
                 x = trade(s, i, **kw)
@@ -185,24 +188,37 @@ def main():
                 p = [y["net"] for dd in (45, 90, 135) if (j := idx_at(s, T - dd * DAY)) is not None and (y := trade(s, j, **kw))]
                 d["pl_" + nm] = np.mean(p) if p else np.nan
             out.append(d)
-    X = pd.DataFrame(out)
-    X.to_pickle("s86/trades.pkl")
-    months = (X.t.max() - X.t.min()) / (30.4 * DAY)
-    print(f"Событий: {len(X)} ({len(X) / months:.1f} в месяц); с входами 🔝 👀 🇰🇷 🛒: {X.ov.mean():.0%};"
-          f" медиана упоминаний за 24 ч {X.n24.median():.0f}")
-    for lab, x0 in (("без 🔝 👀 🇰🇷 🛒 (основная)", X[~X.ov]), ("все события", X), ("после роста ≥ 10%", X[X.r24 >= 0.10]),
-                    ("остальные", X[X.r24 < 0.10])):
-        for col in ("S_10_25", "S_7d"):
-            x = x0[x0[col].notna()]
-            if len(x) < 8:
-                continue
-            m, t, n = ct(x[col], x.t); dp, tp, _ = ct(x[col] - x["pl_" + col], x.t)
-            h1, h2 = x[x.t < CUT], x[x.t >= CUT]
-            (m1, t1, _), (m2, t2, _) = ct(h1[col], h1.t), ct(h2[col], h2.t)
-            print(f"  {lab:26s} {col:8s} n={n:4d} ({n / months:4.1f}/мес) {m:+6.2%} (t {t:+4.1f}) в плюсе {(x[col] > 0).mean():3.0%} |"
-                  f" половины {m1:+6.2%} (t {t1:+4.1f}) / {m2:+6.2%} (t {t2:+4.1f}) | плацебо {x['pl_' + col].mean():+6.2%},"
-                  f" разница {dp:+6.2%} (t {tp:+4.1f})")
+        return pd.DataFrame(out)
 
+    def report(X, groups):
+        months = (X.t.max() - X.t.min()) / (30.4 * DAY)
+        print(f"Событий: {len(X)} ({len(X) / months:.1f} в месяц); с входами 🔝 👀 🇰🇷 🛒: {X.ov.mean():.0%};"
+              f" медиана упоминаний за 24 ч {X.n24.median():.0f}, за 6 ч {X.n6.median():.0f}")
+        for lab, x0 in groups:
+            for col in ("S_10_25", "S_7d"):
+                x = x0[x0[col].notna()]
+                if len(x) < 8:
+                    continue
+                m, t, n = ct(x[col], x.t); dp, tp, _ = ct(x[col] - x["pl_" + col], x.t)
+                h1, h2 = x[x.t < CUT], x[x.t >= CUT]
+                (m1, t1, _), (m2, t2, _) = ct(h1[col], h1.t), ct(h2[col], h2.t)
+                print(f"  {lab:26s} {col:8s} n={n:4d} ({n / months:4.1f}/мес) {m:+6.2%} (t {t:+4.1f}) в плюсе {(x[col] > 0).mean():3.0%} |"
+                      f" половины {m1:+6.2%} (t {t1:+4.1f}) / {m2:+6.2%} (t {t2:+4.1f}) | плацебо {x['pl_' + col].mean():+6.2%},"
+                      f" разница {dp:+6.2%} (t {tp:+4.1f})")
+
+    V6 = C.rolling(6, min_periods=6).sum()
+    print("\n=== Основная гипотеза: впервые за 7 сут в пятёрке по упоминаниям за 24 ч ===")
+    X = collect([(int(T), s) for T, row in ev.iterrows() for s in row.index[row.values]])
+    X.to_pickle("s86/trades.pkl")
+    report(X, (("без 🔝 👀 🇰🇷 🛒 (основная)", X[~X.ov]), ("все события", X), ("после роста ≥ 10%", X[X.r24 >= 0.10]),
+               ("остальные", X[X.r24 < 0.10])))
+
+    print("\n=== H1.2 «форум без оборота»: упоминаний за 6 ч ≥ 5 и ≥ 5× обычных 6 ч за 30 сут, рост фьючерса за 24 ч ≥ 10% ===")
+    base = C.shift(6).rolling(720, min_periods=720).sum() / 120             # среднее за 6 ч в прошлые 30 суток
+    hot = (V6 >= 5) & (V6 >= 5 * base)
+    Y = collect([(int(T), s) for T, row in hot.iterrows() for s in row.index[row.values]], rise=0.10)
+    Y.to_pickle("s86/trades_h12.pkl")
+    report(Y, (("без 🔝 👀 🇰🇷 🛒 (основная)", Y[~Y.ov]), ("все события", Y)))
 
 if __name__ == "__main__":
     main()
