@@ -22,25 +22,31 @@ from attn_test import EXITS, idx_at, trade  # noqa: E402
 
 MAJ = {"XRP", "BTC", "ETH", "DOGE", "SOL", "SUI", "ONDO", "ADA", "WLD", "SHIB"}
 STABLE = {"USDT", "USDC", "USDE", "USD1", "USDS", "DAI", "FDUSD", "TUSD", "PYUSD", "RLUSD"}
-STOP = set()                       # названия-обычные слова: заполняется после проверки разбора, до расчёта доходов
+# Названия — обычные слова или чужие монеты: из 20 случайных заголовков (--words) 25% и больше не о монете.
+# Зафиксировано 17.11 по разбору заголовков, до расчёта доходов (ВЫВОДЫ.md, «Разбор заголовков»).
+STOP = {"레이", "알파", "펌프", "스페이스", "스테이블", "사인", "자이", "우마",
+        "THE", "MOVE", "OPEN", "ATH", "TRUMP"}
+OTHER = ["스팀달러", "알파쿼크", "레이븐", "자이온"]   # чужие монеты вне словаря рынков: забирают совпадение у 스팀, 알파, 레이, 자이
 LAT = re.compile(r"[A-Za-z][A-Za-z0-9]*")
 
 
 def dictionary():
+    """kor: корейское название → фьючерс или None. None — монеты, которые не считаются (лидеры, стейблкоины, без
+    фьючерса, STOP), но остаются в словаре, чтобы самое длинное совпадение забрало их название у короткого чужого
+    (알파쿼크 — AQT без фьючерса, а не 알파; 레이어제로 — ZRO, а не 레이)."""
     names = json.load(open("s86/kr_names.json"))
     kor, lat = {}, {}
     for c, kns in names.items():
-        if c in MAJ or c in STABLE:
-            continue
         s, _ = fut_of(c)
-        if not s or s not in K:
-            continue
+        ok = c not in MAJ and c not in STABLE and bool(s) and s in K
         for kn in kns:
             for v in {kn, kn[:-2] if kn.endswith("코인") and len(kn) - 2 >= 2 else kn}:
-                if len(v) >= 2 and v not in STOP:
-                    kor[v] = s
-        if len(c) >= 3 and c not in STOP:
+                if len(v) >= 2:
+                    kor[v] = s if ok and v not in STOP else kor.get(v)
+        if ok and len(c) >= 3 and c not in STOP:
             lat[c.upper()] = s
+    for v in OTHER:
+        kor[v] = None
     return kor, lat
 
 
@@ -55,16 +61,34 @@ def posts():
     return rows
 
 
+def hangul(ch):
+    return "\uac00" <= ch <= "\ud7a3"
+
+
+def kor_hits(h, kor, L):
+    """Корейские названия в заголовке: начало слова (перед названием нет слога хангыля — частицы корейского
+    пишутся справа, слева слог означает другое слово: 러시아, 프로그램, 하자마자) и самое длинное совпадение
+    с этого места (매직에덴, а не 매직). Правило разбора зафиксировано 17.11 по --check, до расчёта доходов."""
+    out, i = [], 0
+    while i < len(h):
+        if i and hangul(h[i - 1]):
+            i += 1
+            continue
+        for n in range(min(L, len(h) - i), 1, -1):
+            if h[i:i + n] in kor:
+                out.append((h[i:i + n], kor[h[i:i + n]]))
+                i += n
+                break
+        else:
+            i += 1
+    return out
+
+
 def mentions(rows, kor, lat):
     L = max(map(len, kor)) if kor else 2
     out = []
     for t, h in rows:
-        found = set()
-        for i in range(len(h)):
-            for n in range(2, min(L, len(h) - i) + 1):
-                s = kor.get(h[i:i + n])
-                if s:
-                    found.add(s)
+        found = {s for _, s in kor_hits(h, kor, L) if s}
         for w in LAT.findall(h):
             s = lat.get(w.upper())
             if s:
@@ -74,6 +98,35 @@ def mentions(rows, kor, lat):
     return out
 
 
+def words(rows, kor, lat):
+    """--words: для каждого названия — число совпадений и примеры окружения; по ним составлен STOP."""
+    import random
+    L = max(map(len, kor))
+    hk, hl = {}, {}
+    for _, h in rows:
+        for v, s in kor_hits(h, kor, L):
+            if s:
+                hk.setdefault(v, []).append(h)
+        for w in LAT.findall(h):
+            if w.upper() in lat:
+                hl.setdefault(w.upper(), []).append(h)
+    random.seed(1)
+    for lab, hh, d in (("корейские", hk, kor), ("латинские", hl, lat)):
+        print(f"--- {lab}: {len(hh)} названий")
+        only = [a for a in sys.argv[2:] if not a.startswith("-")]
+        for v, ex in sorted(hh.items(), key=lambda x: -len(x[1])):
+            if only and v not in only:
+                continue
+            if not only and len(ex) < (150 if lab == "корейские" else 30):
+                break
+            smp = random.sample(ex, min(20 if only else 6, len(ex)))
+            ctx = []
+            for h in smp:
+                j = h.upper().find(v) if lab == "латинские" else h.find(v)
+                ctx.append(h[max(0, j - 6): j + len(v) + 8])
+            print(f"  {v:10s} {d[v]:10s} {len(ex):6d} | " + " | ".join(ctx))
+
+
 def main():
     kor, lat = dictionary()
     rows = posts()
@@ -81,6 +134,9 @@ def main():
     D = pd.DataFrame(M, columns=["t", "s", "h"])
     print(f"Постов: {len(rows)} ({pd.Timestamp(min(r[0] for r in rows), unit='s'):%d.%m.%Y} … "
           f"{pd.Timestamp(max(r[0] for r in rows), unit='s'):%d.%m.%Y}); упоминаний монет: {len(D)}; монет: {D.s.nunique()}")
+    if "--words" in sys.argv:
+        words(rows, kor, lat)
+        return
     if "--check" in sys.argv:
         top = D.s.value_counts().head(40)
         for s, n in top.items():
