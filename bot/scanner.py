@@ -2182,10 +2182,15 @@ KT_MAJORS = {"XRP", "BTC", "ETH", "DOGE", "SOL", "SUI", "ONDO", "ADA", "WLD", "S
                                                                                        # (research/s65, первая половина)
 
 
-def _kt_volumes():
-    """Оборот за 24 ч в $ у монет к воне: Upbit + Bithumb (acc_trade_price_24h, перевод по KRW-USDT своей биржи).
-    Возвращает ({монета: $}, "") или (None, причина)."""
-    kr = _kr_list(); vol = {}
+_kt_cache = {"ts": 0.0, "per": None}   # обороты бирж за 24 ч: 🔝 и 👀 в одном проходе берут одни и те же данные
+
+
+def _kt_fetch():
+    """Оборот за 24 ч в $ у монет к воне по биржам (acc_trade_price_24h, перевод по KRW-USDT своей биржи); кэш на 5 мин.
+    Возвращает ({"upbit": {монета: $}, "bithumb": {монета: $}}, "") или (None, причина)."""
+    if _kt_cache["per"] is not None and time.time() - _kt_cache["ts"] < 300:
+        return _kt_cache["per"], ""
+    kr = _kr_list(); per = {}
     for ex in ("upbit", "bithumb"):
         coins = sorted(kr.get(ex) or [])
         if not coins:
@@ -2201,6 +2206,7 @@ def _kt_volumes():
             fx = next(float(x["trade_price"]) for x in rows if isinstance(x, dict) and x.get("market") == "KRW-USDT")
         except (StopIteration, KeyError, TypeError, ValueError):
             return None, f"{KL_NAME[ex]}: нет курса KRW-USDT"
+        vol = per.setdefault(ex, {})
         for x in rows:
             m = str(x.get("market", "")) if isinstance(x, dict) else ""
             try:
@@ -2209,6 +2215,19 @@ def _kt_volumes():
                 continue
             if m.startswith("KRW-") and v > 0:
                 vol[m[4:]] = vol.get(m[4:], 0.0) + v
+    _kt_cache.update(ts=time.time(), per=per)
+    return per, ""
+
+
+def _kt_volumes():
+    """Оборот за 24 ч в $ у монет к воне: Upbit + Bithumb. Возвращает ({монета: $}, "") или (None, причина)."""
+    per, why = _kt_fetch()
+    if per is None:
+        return None, why
+    vol = {}
+    for d in per.values():
+        for c, v in d.items():
+            vol[c] = vol.get(c, 0.0) + v
     return vol, ""
 
 
@@ -2259,7 +2278,113 @@ def kr_top_rule(state):
     return msgs
 
 
-UL_API = "https://api.coinmarketcap.com/data-api/v3/token-unlock"    # 🔓: публичный data-api сайта CoinMarketCap, без ключа
+RT_TOP, RT_NEW_H, RT_WARM_H, RT_KT_H, RT_PAST_H = 5, 168, 168, 168, 24   # 👀: пятёрка; «впервые за 7 сут»; первые 7 сут
+                                                    # после запуска — только история; без входа 🔝 за 7 сут; для лиры — без
+                                                    # входов 🔝, 🛒, 🇰🇷 за прошлые сутки
+RT_MAJORS = {                                       # 👀: у каждого списка свои 10 постоянных лидеров (research/s73 и s67,
+    "upbit": {"XRP", "BTC", "ETH", "DOGE", "SOL", "SUI", "ONDO", "ADA", "SHIB", "XLM"},          # медиана первой половины)
+    "bithumb": {"XRP", "BTC", "ETH", "DOGE", "SOL", "WLD", "VIRTUAL", "SUI", "PEPE", "ONDO"},
+    "try": {"XRP", "PEPE", "ETH", "BTC", "DOGE", "PNUT", "NEIRO", "SOL", "BONK", "ENA"},
+}
+RT_NAME = {"upbit": "Upbit", "bithumb": "Bithumb", "try": "пар к лире Binance"}
+RT_STABLE = KL_STABLE | {"BUSD", "EUR", "AEUR", "EURI", "USDP"}
+
+
+def _rt_try_volumes():
+    """Оборот за 24 ч в $ у спотовых пар Binance к лире (ticker/24hr всех пар, вес 80): quoteVolume в лирах / цена USDTTRY.
+    Возвращает ({монета: $}, "") или (None, причина)."""
+    j = spot_json("/api/v3/ticker/24hr?type=MINI", 30)
+    if not isinstance(j, list):
+        return None, "Binance не отдал обороты спота за сутки"
+    try:
+        fx = next(float(x["lastPrice"]) for x in j if isinstance(x, dict) and x.get("symbol") == "USDTTRY")
+    except (StopIteration, KeyError, TypeError, ValueError):
+        return None, "нет курса USDT/TRY"
+    vol = {}
+    for x in j:
+        s = str(x.get("symbol", "")) if isinstance(x, dict) else ""
+        if len(s) > 3 and s.endswith("TRY"):
+            try:
+                v = float(x["quoteVolume"]) / fx
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                continue
+            if v > 0:
+                vol[s[:-3]] = v
+    return vol, ""
+
+
+def _virt_entered(state, key, sym, t0, t1):
+    """Был ли вход журнала key по фьючерсу sym в интервале [t0, t1)."""
+    return any(t["sym"] == sym and t0 <= t.get("opened", 0) < t1 for t in state.get(key, {}).get("trades", []))
+
+
+def retail_top_rule(state):
+    """Внимание изолированной розницы вне 🔝 (журнал 👀, research/s83/ВЫВОДЫ.md): раз в час, после 🔝 того же часа, — три
+    списка по обороту за 24 ч: отдельно Upbit и отдельно Bithumb (те же данные, что у 🔝) и спотовые пары Binance к лире
+    (перевод по USDTTRY). У каждого списка свои 10 постоянных лидеров (RT_MAJORS); стейблкоины не считаются; в рейтинге —
+    монеты с бессрочным фьючерсом Binance. Монета в пятёрке списка, которой в ней не было 7 суток, фьючерс запущен
+    не меньше суток назад, у монеты не было входа 🔝 за 7 суток (для пар к лире — ещё и входов 🔝, 🛒, 🇰🇷 за прошлые
+    сутки) → виртуальный шорт, тейк 10 / стоп 25 / 48 ч, одна сделка на монету за 7 суток. Первые 7 суток после запуска
+    правила — только история пятёрок (state["rt"][список]: монета → последний час в пятёрке). Возвращает сообщения для чата."""
+    T = candle_due(state, "rt_last_T", "ВНИМАНИЕ РОЗНИЦЫ", step=3600)
+    if T is None:
+        return []
+    if state.get("kt_last_T") != T:
+        return candle_retry("rt_last_T", "🔝 ещё не проверил этот час")
+    per, why = _kt_fetch()
+    if per is None:
+        return candle_retry("rt_last_T", why)
+    tv, why = _rt_try_volumes()
+    if tv is None:
+        return candle_retry("rt_last_T", why)
+    trader.contract("BTC")                                       # загружает список бессрочных контрактов USDT
+    if not trader._contracts:
+        return candle_retry("rt_last_T", "Binance не отдал список контрактов")
+    candle_done(state, "rt_last_T", T)
+    st = state.setdefault("rt", {}); since = st.setdefault("since", T)
+    msgs = []
+    for lst, vol in (("upbit", per.get("upbit") or {}), ("bithumb", per.get("bithumb") or {}), ("try", tv)):
+        hist = st.setdefault(lst, {})
+        rows = sorted(((v, c, fs) for c, v in vol.items() if c not in RT_MAJORS[lst] and c not in RT_STABLE and (fs := _fut_sym(c))),
+                      reverse=True)
+        top = rows[:RT_TOP]
+        log("ВНИМАНИЕ РОЗНИЦЫ", f"пятёрка {RT_NAME[lst]} за 24 ч без лидеров: "
+            + ", ".join(f"{c} {v / 1e6:.1f} млн $" for v, c, _ in top))
+        for rank, (v, c, fs) in enumerate(top, 1):
+            prev = hist.get(c); hist[c] = T
+            if prev is not None and T - prev <= RT_NEW_H * 3600:
+                continue                                         # была в пятёрке списка за 7 суток
+            note = (f"{c}: {rank}-е место по обороту {RT_NAME[lst]} за 24 ч ({v / 1e6:.1f} млн $), в пятёрке впервые "
+                    "за 7 суток (10 постоянных лидеров списка не считаются)")
+            if T - since < RT_WARM_H * 3600:
+                log("ВНИМАНИЕ РОЗНИЦЫ", fs, note + " — первые 7 суток журнала: только история пятёрок, сделки нет")
+                continue
+            on = (trader.contract(fs) or {}).get("onboard") or 0
+            if on and T - on < 86400:
+                log("ВНИМАНИЕ РОЗНИЦЫ", fs, note + f" — фьючерс запущен {(T - on) / 3600:.0f} ч назад, моложе суток, пропуск")
+                continue
+            if _virt_entered(state, "virtual_KT", fs, T - RT_KT_H * 3600, T + 600):
+                log("ВНИМАНИЕ РОЗНИЦЫ", fs, note + " — у монеты был вход 🔝 за 7 суток, пропуск")
+                continue
+            if lst == "try":
+                hit = [trader.VIRTUALS[k]["icon"] for k in ("virtual_KT", "virtual_SP", "virtual_KR")
+                       if _virt_entered(state, k, fs, T - RT_PAST_H * 3600, T)]
+                if hit:
+                    log("ВНИМАНИЕ РОЗНИЦЫ", fs, note + f" — за прошлые сутки был вход {' '.join(hit)}, пропуск")
+                    continue
+            was = _virt_is_open(state, "virtual_RT", fs)
+            m = trader.virt_open(state, "virtual_RT", fs, "RT", note)
+            opened = not was and _virt_is_open(state, "virtual_RT", fs)
+            log("ВНИМАНИЕ РОЗНИЦЫ", fs, note + (" → шорт 👀" if opened else
+                                               " — сделка не открыта (уже есть, кулдаун 7 суток или нет цены)"))
+            if m:
+                msgs.append(m)
+        for c in [c for c, t in hist.items() if T - t > (RT_NEW_H + 24) * 3600]:
+            del hist[c]
+    return msgs
+
+
+UL_API ="https://api.coinmarketcap.com/data-api/v3/token-unlock"    # 🔓: публичный data-api сайта CoinMarketCap, без ключа
 UL_EVERY, UL_HORIZON_D, UL_ENTRY_D, UL_EXIT_D = 86400, 10, 7, 1   # 🔓: расписание раз в сутки на 10 сут вперёд; шорт за 7 сут
                                                                    # до разлока, выход через сутки после
 UL_CLIFF, UL_ANY, UL_GROUP_D = 5.0, 25.0, 2    # разлок с cliff ≥ 5% монет в обращении или любой ≥ 25%; события монеты в пределах
@@ -2831,6 +2956,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила корейской пятёрки:", repr(e))
+    try:
+        for msg in retail_top_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила внимания розницы:", repr(e))
     try:
         for msg in unlock_rule(state):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
