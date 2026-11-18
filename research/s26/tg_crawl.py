@@ -20,7 +20,7 @@ def page(before=None):
     url = f"https://t.me/s/{ch}" + (f"?before={before}" if before else "")
     for i in range(4):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (research; margin_call)"})
+            req = urllib.request.Request(url, headers={"User-Agent": "research-script/1.0"})
             return urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
         except Exception:
             time.sleep(3 + 3 * i)
