@@ -76,6 +76,30 @@ def hop_source(tok, frm, block):
     return src, src in CEX
 
 
+def hop_batch(keys):
+    """Пакет шагов назад одним запросом JSON-RPC: {ключ: [источник, биржа ли]}; сбой — ключ не попадает в итог."""
+    reqs = []
+    for j, key in enumerate(keys):
+        tok, frm, block = key.split(":"); block = int(block)
+        q = {"fromBlock": hex(max(block - 50400, 0)), "toBlock": hex(block - 1), "address": tok, "topics": [T0, None, pad(frm)]}
+        reqs.append({"jsonrpc": "2.0", "id": j, "method": "eth_getLogs", "params": [q]})
+    r = post(reqs)
+    out = {}
+    if not isinstance(r, list):
+        return out
+    for x in r:
+        logs = x.get("result")
+        if logs is None:
+            continue
+        tot = {}
+        for y in logs:
+            a = "0x" + y["topics"][1][-40:]
+            tot[a] = tot.get(a, 0) + (int(y["data"], 16) if y["data"] not in ("0x", "") else 0)
+        src = max(tot, key=tot.get) if tot else ""
+        out[keys[x["id"]]] = [src, bool(src) and src in CEX]
+    return out
+
+
 def circ_table():
     ids = json.load(open("s160/cmc_ids.json")); out = {}
     for tok, v in ids.items():
@@ -115,21 +139,25 @@ def main():
     print("переводов ≥ 0,5% обращения", len(E), flush=True)
     tm = block_times(E.block.unique()); E["t"] = E.block.map(tm)
     E = E.dropna(subset=["t"]); E["t"] = E.t.astype(np.int64)
-    src, fromx = [], []
     hc = _load(HOP_CACHE)
-    for k, r in enumerate(E.itertuples()):
-        key = f"{r.tok}:{r.frm}:{int(r.block)}"
-        if key in hc:
-            a, b = hc[key]
-        else:
-            a, b = hop_source(r.tok, r.frm, int(r.block))
-            if a is not None:
-                hc[key] = [a, b]
-        src.append(a); fromx.append(b)
-        if k % 500 == 0:
-            print("шаг назад", k, "из", len(E), flush=True)
-            json.dump(hc, open(HOP_CACHE, "w"))
-    json.dump(hc, open(HOP_CACHE, "w"))
+    keys = [f"{r.tok}:{r.frm}:{int(r.block)}" for r in E.itertuples()]
+    todo = sorted(set(k for k in keys if k not in hc))
+    print("шагов назад к выполнению", len(todo), "из", len(keys), flush=True)
+    from concurrent.futures import ThreadPoolExecutor
+    for rnd in range(8):                          # RPC под нагрузкой отвечает «temporarily unavailable» — повторные проходы
+        todo = [k for k in todo if k not in hc]
+        if not todo:
+            break
+        batches = [todo[i:i + 10] for i in range(0, len(todo), 10)]
+        with ThreadPoolExecutor(2) as ex:
+            for k, res in enumerate(ex.map(hop_batch, batches)):
+                hc.update(res)
+                if k % 100 == 0:
+                    print(f"шаг назад, проход {rnd}: пакетов {k} из {len(batches)}", flush=True)
+                    json.dump(hc, open(HOP_CACHE, "w"))
+        json.dump(hc, open(HOP_CACHE, "w"))
+        time.sleep(10)
+    src = [hc.get(k, [None, None])[0] for k in keys]; fromx = [hc.get(k, [None, None])[1] for k in keys]
     E["src"], E["from_exch"] = src, fromx
     E["perp"] = E.tok.map(lambda t: TOK[t]["perp"]); E["sym"] = E.tok.map(lambda t: TOK[t]["sym"])
     E = E.sort_values("t").reset_index(drop=True)
