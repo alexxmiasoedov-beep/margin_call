@@ -2785,6 +2785,226 @@ def unlock_rule(state):
     return msgs
 
 
+IU_LIST = "https://defillama-datasets.llama.fi/emissionsProtocolsList"   # 🔑: расписания разлоков DefiLlama, без ключа
+IU_PROJ = "https://defillama-datasets.llama.fi/emissions/{}"
+IU_PRICE = "https://coins.llama.fi/prices/current/{}"                   # тикер и цена токена по адресу или id CoinGecko
+IU_EVERY, IU_HORIZON_D, IU_ENTRY_D, IU_EXIT_D = 86400, 10, 7, 1   # расписание раз в сутки на 10 сут вперёд; шорт за 7 сут
+                                                                   # до разлока, выход через сутки после
+IU_MIN, IU_INS, IU_COOL_D = 1.0, ("insiders", "privateSale"), 7   # разлок команде и инвесторам ≥ 1% монет в обращении; одна
+                                                                  # сделка на монету за 7 сут (research/s139, U2)
+IU_LATE_H, IU_STALE_H, IU_PX = 24, 36, (0.8, 1.25)   # вход — до 24 ч позже срока; расписание — не старше 36 ч; цена фьючерса
+                                                     # к цене DefiLlama (у разных монет бывают одинаковые тикеры)
+IU_BATCH, IU_PASS_S, IU_TRIES = 10, 20, 3      # за проход — до 10 проектов и 20 с; проект, не отданный 3 раза, — до завтра
+
+
+def _http_gz(url, timeout=30):
+    """GET со сжатием gzip (файл проекта DefiLlama ~1 МБ, сжатый — в 13 раз меньше) → JSON или None."""
+    host = urllib.parse.urlsplit(url).hostname or "?"
+    t0 = time.time(); ok = False
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Encoding": "gzip"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read()
+            if (r.headers.get("Content-Encoding") or "").lower() == "gzip":
+                raw = gzip.decompress(raw)
+        ok = True
+        return json.loads(raw.decode("utf-8", "replace"))
+    except Exception as e:
+        log("http_json fail", url.split("?")[0], e)
+        return None
+    finally:
+        trader.net_note(host, time.time() - t0, ok)
+
+
+def _iu_candidates(E, now):
+    """Разовые разлоки команде и инвесторам из файла проекта DefiLlama — как в бэктесте research/s139 (U2): события cliff
+    с категорией insiders или privateSale, события одних суток UTC складываются (срок — самое раннее); доля — к монетам
+    в обращении по расписанию: разлоченное по разделам, кроме noncirculating, на последнюю точку не позже T − 1 сут.
+    Возвращает [{T, share (%), names}] для разлоков ≥ 1% в (now, now + IU_HORIZON_D сут]."""
+    nonc = set((E.get("categories") or {}).get("noncirculating") or [])
+    secs = []
+    for sec in (E.get("documentedData") or {}).get("data") or []:
+        if not isinstance(sec, dict) or sec.get("label") in nonc:
+            continue
+        pts = []
+        for p in sec.get("data") or []:
+            try:
+                pts.append((float(p["timestamp"]), float(p.get("unlocked") or 0)))
+            except (KeyError, TypeError, ValueError, AttributeError):
+                continue
+        if pts:
+            secs.append(sorted(pts))
+    agg = {}
+    for ev in (E.get("metadata") or {}).get("events") or []:
+        try:
+            if ev.get("unlockType") != "cliff" or ev.get("category") not in IU_INS:
+                continue
+            t = int(float(ev["timestamp"])); n = sum(float(x) for x in (ev.get("noOfTokens") or [0]))
+        except (KeyError, TypeError, ValueError, AttributeError):
+            continue
+        if n <= 0:
+            continue
+        a = agg.setdefault(t // 86400, {"T": t, "n": 0.0, "names": set()})
+        a["T"] = min(a["T"], t); a["n"] += n
+        m = re.search(r"from (.+?) on \{timestamp\}", str(ev.get("description") or ""))
+        a["names"].add(str(m.group(1) if m else ev.get("category"))[:40])
+    out = []
+    for a in agg.values():
+        if not now < a["T"] <= now + IU_HORIZON_D * 86400:
+            continue
+        lim = a["T"] - 86400
+        circ = sum(next((u for ts, u in reversed(pts) if ts <= lim), 0.0) for pts in secs)
+        if circ > 0 and a["n"] / circ * 100 >= IU_MIN:
+            out.append({"T": a["T"], "share": round(a["n"] / circ * 100, 2), "names": sorted(a["names"])[:5]})
+    return out
+
+
+def _iu_price(E):
+    """Тикер и цена токена проекта по coins.llama.fi: сначала адрес из metadata.token («сеть:адрес» или «coingecko:id»),
+    не нашлось — id CoinGecko проекта (у токенов Sui с «::» в адресе и у части проектов адрес не находится).
+    (тикер, цена $) или None."""
+    keys = [(E.get("metadata") or {}).get("token"), f"coingecko:{E['gecko_id']}" if E.get("gecko_id") else None]
+    for key in dict.fromkeys(k for k in keys if k):
+        j = http_json(IU_PRICE.format(urllib.parse.quote(str(key), safe=":")), 15)
+        coins = j.get("coins") if isinstance(j, dict) else None
+        c = next(iter(coins.values()), None) if isinstance(coins, dict) and coins else None
+        try:
+            sym, px = re.sub(r"[^A-Z0-9]", "", str(c["symbol"]).upper()), float(c["price"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if sym and px > 0:
+            return sym, px
+    return None
+
+
+def _iu_what(c):
+    return (f"{c['fs']}: разлок команде и инвесторам {datetime.fromtimestamp(c['T'], timezone.utc):%d.%m %H:%M} UTC — "
+            f"{c['share']:.1f}% монет в обращении по расписанию DefiLlama")
+
+
+def insider_unlock_rule(state):
+    """Разлок инсайдерам (журнал 🔑, research/s139/ВЫВОДЫ.md, U2). Раз в сутки — список проектов с расписанием разлоков
+    DefiLlama (без ключа), потом файлы проектов по 10 за проход (со сжатием gzip; полный круг ~40 мин). Разлок одним куском
+    команде и инвесторам (insiders, privateSale) ≥ 1% монет в обращении по расписанию (_iu_candidates) в ближайшие 10 сут →
+    тикер и цена токена по coins.llama.fi, бессрочный фьючерс Binance, цена фьючерса к цене DefiLlama 0,8–1,25. →
+    Виртуальный шорт за 7 сут до разлока (бот опоздал — до 24 ч позже срока), выход через сутки после разлока, без тейка,
+    стоп +50%, плечо ×1; одна сделка на монету за 7 сут. Перенос разлока до входа — вход по новой дате. Сообщения для чата."""
+    now = time.time(); u = state.setdefault("iu", {}); msgs = []
+    sched = u.setdefault("sched", {}); done = u.setdefault("done", {}); listed = False
+    if not u.get("queue") and now - u.get("list_t", 0) >= IU_EVERY and now >= u.get("next", 0):
+        lst = _http_gz(IU_LIST, 20); listed = True
+        slugs = sorted({x for x in lst if isinstance(x, str) and x}) if isinstance(lst, list) else []
+        if slugs:
+            u.update(queue=slugs, list_t=now, tries={}, n_ok=0)
+            log("РАЗЛОК ИНСАЙДЕРАМ", f"DefiLlama: проектов с расписанием разлоков {len(slugs)} — обновляю расписание, "
+                                     f"по {IU_BATCH} за проход")
+        else:
+            u["next"] = now + 600
+            if now - u.get("err", 0) >= 6 * 3600:
+                u["err"] = now
+                log("РАЗЛОК ИНСАЙДЕРАМ", "DefiLlama не отдала список проектов с разлоками, повтор через 10 мин")
+    q = u.get("queue") or []; tries = u.setdefault("tries", {}) if q else {}
+    t0 = time.time(); n = fails = 0
+    while q and not listed and n < IU_BATCH and time.time() - t0 < IU_PASS_S and fails < 3:
+        slug = q.pop(0); n += 1
+        E = _http_gz(IU_PROJ.format(urllib.parse.quote(slug)), 30)
+        if not isinstance(E, dict):
+            fails += 1; tries[slug] = tries.get(slug, 0) + 1
+            if tries[slug] < IU_TRIES:
+                q.append(slug)
+            else:
+                log("РАЗЛОК ИНСАЙДЕРАМ", f"{slug}: DefiLlama {IU_TRIES} раза не отдала расписание — до следующего обновления")
+            continue
+        u["n_ok"] = u.get("n_ok", 0) + 1
+        old = {k for k, c in sched.items() if c["slug"] == slug}
+        for k in old:
+            del sched[k]                                     # расписание проекта — свежее: разлок могли перенести
+        try:
+            cands = _iu_candidates(E, now)
+        except Exception as e:                               # неожиданная структура файла — проект пропускается до завтра
+            log("РАЗЛОК ИНСАЙДЕРАМ", f"{slug}: не разобрать расписание DefiLlama ({e!r}) — до следующего обновления")
+            continue
+        if not cands:
+            continue
+        trader.contract("BTC")
+        if not trader._contracts:                            # Binance не отдал список контрактов — проект ещё раз в этом
+            fails += 1; tries[slug] = tries.get(slug, 0) + 1   # обновлении, не больше 3 раз
+            if tries[slug] < IU_TRIES:
+                q.append(slug)
+            continue
+        info = _iu_price(E)
+        if not info:
+            log("РАЗЛОК ИНСАЙДЕРАМ", f"{slug}: разлок инсайдерам есть, но coins.llama.fi не отдал тикер и цену токена — "
+                                     "до следующего обновления")
+            continue
+        coin, px = info
+        fs = _fut_sym(coin) if coin not in BL_SKIP else None
+        if not fs:
+            continue                                         # у монеты нет бессрочного фьючерса Binance
+        for c in cands:
+            key = f"{fs}:{int(c['T'] // 86400)}"
+            if key in done:
+                continue
+            mark = trader.mark_price(fs) if c["T"] - IU_ENTRY_D * 86400 + IU_LATE_H * 3600 > now else None
+            c.update(slug=slug, coin=coin, fs=fs, px=px, chk=now,
+                     ratio=round(mark / (px * _ul_mult(coin, fs)), 4) if mark and px > 0 else None)
+            sched[key] = c
+            if key not in old:
+                log("РАЗЛОК ИНСАЙДЕРАМ", _iu_what(c) + f"; получатели: {', '.join(c['names']) or '—'}; шорт "
+                    f"{datetime.fromtimestamp(c['T'] - IU_ENTRY_D * 86400, timezone.utc):%d.%m %H:%M} UTC"
+                    + (f", цена фьючерса {c['ratio']:.2f} от цены DefiLlama" if c["ratio"] else ""))
+    if u.get("queue") is not None and not q:
+        log("РАЗЛОК ИНСАЙДЕРАМ", f"расписание обновлено: проектов {u.get('n_ok', 0)}; разлоков инсайдерам ≥ {IU_MIN:g}% "
+                                 f"с фьючерсом Binance в ближайшие {IU_HORIZON_D} сут — {len(sched)}")
+        for k in ("tries", "queue", "n_ok"):
+            u.pop(k, None)
+    trades = state.get("virtual_IU", {}).get("trades", [])
+    for key, c in sorted(sched.items(), key=lambda kv: kv[1]["T"]):
+        t_in = c["T"] - IU_ENTRY_D * 86400
+        if now < t_in:
+            continue
+        what = _iu_what(c)
+        if now > t_in + IU_LATE_H * 3600:
+            del sched[key]; done[key] = now
+            log("РАЗЛОК ИНСАЙДЕРАМ", what + f" — срок входа {datetime.fromtimestamp(t_in, timezone.utc):%d.%m %H:%M} UTC "
+                f"прошёл больше {IU_LATE_H} ч назад (бот не работал или разлок появился в расписании поздно), сделки нет")
+            continue
+        if now - c["chk"] > IU_STALE_H * 3600:
+            if not c.get("stale"):
+                c["stale"] = True
+                log("РАЗЛОК ИНСАЙДЕРАМ", what + f" — расписание не обновлялось {(now - c['chk']) / 3600:.0f} ч (DefiLlama не "
+                                               "отвечала), вход ждёт обновления")
+            continue
+        if c.get("ratio") is None:
+            mark = trader.mark_price(c["fs"])
+            if not mark:
+                continue                                     # Binance не отдал цену — повтор в следующем проходе
+            c["ratio"] = round(mark / (c["px"] * _ul_mult(c["coin"], c["fs"])), 4)
+        if not IU_PX[0] <= c["ratio"] <= IU_PX[1]:
+            del sched[key]; done[key] = now
+            log("РАЗЛОК ИНСАЙДЕРАМ", what + f" — цена фьючерса {c['ratio']:.2f} от цены DefiLlama: похоже, другой токен "
+                                           "с тем же тикером или ошибка данных, сделки нет")
+            continue
+        if _virt_is_open(state, "virtual_IU", c["fs"]) or any(
+                t["sym"] == c["fs"] and now - t["opened"] < IU_COOL_D * 86400 for t in trades):
+            del sched[key]; done[key] = now
+            log("РАЗЛОК ИНСАЙДЕРАМ", what + f" — сделка по монете открыта или была меньше {IU_COOL_D} сут назад, пропуск")
+            continue
+        t_out = c["T"] + IU_EXIT_D * 86400
+        note = (f"DefiLlama: разлок команде и инвесторам {datetime.fromtimestamp(c['T'], timezone.utc):%d.%m %H:%M} UTC — "
+                f"{c['share']:.1f}% монет в обращении по расписанию; получатели: {', '.join(c['names']) or '—'}; "
+                f"выход через сутки после разлока, {datetime.fromtimestamp(t_out, timezone.utc):%d.%m %H:%M} UTC")
+        m = trader.virt_open(state, "virtual_IU", c["fs"], "IU", note, hold_h=round((t_out - now) / 3600, 2))
+        if m:
+            del sched[key]; done[key] = now
+            log("РАЗЛОК ИНСАЙДЕРАМ", c["fs"], note)
+            msgs.append(m)
+        # иначе Binance не отдал цену — повтор в следующем проходе, до 24 ч после срока
+    for k in [k for k, ts in done.items() if ts < now - 40 * 86400]:
+        del done[k]
+    return msgs
+
+
 MR_URL = "https://www.binance.com/bapi/margin/v1/public/margin/vip/spec/list-all"
 MR_DIR = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "margin_rates")
 
@@ -3363,6 +3583,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила разлоков:", repr(e))
+    try:
+        for msg in insider_unlock_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила разлоков инсайдерам:", repr(e))
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
