@@ -206,7 +206,14 @@ def main(venue):
                     R.setdefault(c, set()).add(f"{a:%Y%m%d}-{b:%Y%m%d}"); a = b = x
             R.setdefault(c, set()).add(f"{a:%Y%m%d}-{b:%Y%m%d}")
         M = R
-    todo = [(s, ym) for s in sorted(M) for ym in sorted(M[s]) if (s, ym) not in st["done"] and (s, ym[:6]) not in st["done"]]
+    if venue == "hl":                      # монеты, которых нет в списке HL (с делистингованными), — без запросов
+        raw = http(urllib.request.Request("https://api.hyperliquid.xyz/info", data=json.dumps({"type": "meta"}).encode(),
+                                          headers={"Content-Type": "application/json", **UA}))
+        uni = {x["name"] for x in json.loads(raw)["universe"]}
+        st["missing"] |= {c for c in M if names(c, "hl")[0] not in uni}
+        print("hl: монет в списке HL", len(uni), "из наших нет на HL", sum(1 for c in M if c in st["missing"]), flush=True)
+    todo = [(s, ym) for s in sorted(M) for ym in sorted(M[s]) if (s, ym) not in st["done"] and (s, ym[:6]) not in st["done"]
+            and s not in st["missing"]]
     print(venue, "монето-месяцев к скачиванию", len(todo), flush=True)
     fn = {"gate": fetch_gate, "kucoin": fetch_kucoin, "hl": fetch_hl}[venue]
 
