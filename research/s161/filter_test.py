@@ -77,7 +77,9 @@ def main():
         P = pd.read_pickle(f"s154_pumps_{per}.pkl"); P = P[(P.share >= 0.26) & P.s.isin(perps)]
         for r in P.itertuples():
             out.append(dict(test="К2б пампы со спотом", per=per, te=int(r.t), net=r.net, dep=window_sum(D, r.s, int(r.t), 6, True)))
-        O = pd.read_pickle(O9[per]); O = O[O.open9 & (O.share >= 0.2) & (O.r1 >= 0.05) & O.s.isin(perps)]
+        O = pd.read_pickle(O9[per])
+        O["s"] = O.s.map(lambda x: x[:-4] if x.endswith("USDT") and x not in perps else x)   # в старых выгрузках s88 — «…USDT»
+        O = O[O.open9 & (O.share >= 0.2) & (O.r1 >= 0.05) & O.s.isin(perps)]
         for r in O.itertuples():
             out.append(dict(test="К2б ⏰", per=per, te=int(r.t), net=r.S_10_25, dep=window_sum(D, r.s, int(r.t), 6, True)))
     R = pd.DataFrame(out).dropna(subset=["net"])
