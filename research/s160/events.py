@@ -33,15 +33,25 @@ def post(body, tries=8):
     return None
 
 
+BT_CACHE, HOP_CACHE = "s160/cache_blocktime.json", "s160/cache_hop.json"
+
+
+def _load(p):
+    return json.load(open(p)) if os.path.exists(p) else {}
+
+
 def block_times(blocks):
-    out = {}
-    blocks = sorted(set(int(b) for b in blocks))
+    cache = _load(BT_CACHE)
+    out = {int(b): cache[str(b)] for b in blocks if str(int(b)) in cache}
+    blocks = sorted(set(int(b) for b in blocks) - set(out))
     for i in range(0, len(blocks), 50):
         part = blocks[i:i + 50]
         r = post([{"jsonrpc": "2.0", "id": j, "method": "eth_getBlockByNumber", "params": [hex(b), False]} for j, b in enumerate(part)])
         for x in r or []:
             if x.get("result"):
                 out[part[x["id"]]] = int(x["result"]["timestamp"], 16)
+    cache.update({str(k): v for k, v in out.items()})
+    json.dump(cache, open(BT_CACHE, "w"))
     return out
 
 
@@ -106,10 +116,20 @@ def main():
     tm = block_times(E.block.unique()); E["t"] = E.block.map(tm)
     E = E.dropna(subset=["t"]); E["t"] = E.t.astype(np.int64)
     src, fromx = [], []
+    hc = _load(HOP_CACHE)
     for k, r in enumerate(E.itertuples()):
-        a, b = hop_source(r.tok, r.frm, int(r.block)); src.append(a); fromx.append(b)
+        key = f"{r.tok}:{r.frm}:{int(r.block)}"
+        if key in hc:
+            a, b = hc[key]
+        else:
+            a, b = hop_source(r.tok, r.frm, int(r.block))
+            if a is not None:
+                hc[key] = [a, b]
+        src.append(a); fromx.append(b)
         if k % 500 == 0:
             print("шаг назад", k, "из", len(E), flush=True)
+            json.dump(hc, open(HOP_CACHE, "w"))
+    json.dump(hc, open(HOP_CACHE, "w"))
     E["src"], E["from_exch"] = src, fromx
     E["perp"] = E.tok.map(lambda t: TOK[t]["perp"]); E["sym"] = E.tok.map(lambda t: TOK[t]["sym"])
     E = E.sort_values("t").reset_index(drop=True)
