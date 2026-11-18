@@ -37,7 +37,29 @@ def main():
     E = U.events()
     E = E[(E.grp == "инсайдеры") & (E.share >= 0.01) & (E["T"] >= T0) & (E["T"] < T1)]
     bt = {(r.slug, int(r.T), round(r.share * 100, 2)) for r in E.itertuples()}
+    compare("🔑 (команде и инвесторам)", bot, bt)
+    # 🔑⁺: все получатели, кроме казны — против событий s142 (U6)
+    sys.path.insert(0, os.path.join(HERE, "..", "s142"))
+    import any_test  # noqa: E402
+    bot_a = set()
+    for f in sorted(glob.glob(f"{U.LL}/e_*.json")):
+        slug = os.path.basename(f)[2:-5]
+        if slug not in M.index or not isinstance(M.at[slug, "fut"], str):
+            continue
+        try:
+            E = json.load(open(f))
+        except Exception:
+            continue
+        for c in scanner._iu_candidates(E, T0 - 1, "all"):
+            if c["T"] < T1:
+                bot_a.add((slug, int(c["T"]), round(c["share"], 2)))
+    A = any_test.events(); A = A[(A["T"] >= T0) & (A["T"] < T1)]
+    compare("🔑⁺ (все получатели)", bot_a, {(r.slug, int(r.T), round(r.share * 100, 2)) for r in A.itertuples()})
+
+
+def compare(lab, bot, bt):
     kb, kt = {x[:2] for x in bot}, {x[:2] for x in bt}
+    print(lab)
     print(f"бот: {len(kb)} разлоков, бэктест: {len(kt)}, совпали {len(kb & kt)}, только у бота {len(kb - kt)}, "
           f"только в бэктесте {len(kt - kb)}")
     db = {x[:2]: x[2] for x in bot}

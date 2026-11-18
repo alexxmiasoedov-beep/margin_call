@@ -2792,6 +2792,7 @@ IU_EVERY, IU_HORIZON_D, IU_ENTRY_D, IU_EXIT_D = 86400, 10, 7, 1   # распис
                                                                    # до разлока, выход через сутки после
 IU_MIN, IU_INS, IU_COOL_D = 1.0, ("insiders", "privateSale"), 7   # разлок команде и инвесторам ≥ 1% монет в обращении; одна
                                                                   # сделка на монету за 7 сут (research/s139, U2)
+IU_NOT = ("noncirculating", "burned")          # 🔑⁺: все получатели, кроме казны и сожжённого (research/s142, U6)
 IU_LATE_H, IU_STALE_H, IU_PX = 24, 36, (0.8, 1.25)   # вход — до 24 ч позже срока; расписание — не старше 36 ч; цена фьючерса
                                                      # к цене DefiLlama (у разных монет бывают одинаковые тикеры)
 IU_BATCH, IU_PASS_S, IU_TRIES = 10, 20, 3      # за проход — до 10 проектов и 20 с; проект, не отданный 3 раза, — до завтра
@@ -2816,10 +2817,11 @@ def _http_gz(url, timeout=30):
         trader.net_note(host, time.time() - t0, ok)
 
 
-def _iu_candidates(E, now):
-    """Разовые разлоки команде и инвесторам из файла проекта DefiLlama — как в бэктесте research/s139 (U2): события cliff
-    с категорией insiders или privateSale, события одних суток UTC складываются (срок — самое раннее); доля — к монетам
-    в обращении по расписанию: разлоченное по разделам, кроме noncirculating, на последнюю точку не позже T − 1 сут.
+def _iu_candidates(E, now, who="ins"):
+    """Разовые разлоки из файла проекта DefiLlama — как в бэктестах research/s139 (U2, who="ins": команда и инвесторы —
+    категории insiders и privateSale) и research/s142 (U6, who="all": все получатели, кроме noncirculating и burned).
+    События cliff одних суток UTC складываются (срок — самое раннее); доля — к монетам в обращении по расписанию:
+    разлоченное по разделам, кроме noncirculating, на последнюю точку не позже T − 1 сут.
     Возвращает [{T, share (%), names}] для разлоков ≥ 1% в (now, now + IU_HORIZON_D сут]."""
     nonc = set((E.get("categories") or {}).get("noncirculating") or [])
     secs = []
@@ -2837,7 +2839,8 @@ def _iu_candidates(E, now):
     agg = {}
     for ev in (E.get("metadata") or {}).get("events") or []:
         try:
-            if ev.get("unlockType") != "cliff" or ev.get("category") not in IU_INS:
+            cat = ev.get("category")
+            if ev.get("unlockType") != "cliff" or (cat not in IU_INS if who == "ins" else cat in IU_NOT):
                 continue
             t = int(float(ev["timestamp"])); n = sum(float(x) for x in (ev.get("noOfTokens") or [0]))
         except (KeyError, TypeError, ValueError, AttributeError):
@@ -2878,17 +2881,23 @@ def _iu_price(E):
 
 
 def _iu_what(c):
-    return (f"{c['fs']}: разлок команде и инвесторам {datetime.fromtimestamp(c['T'], timezone.utc):%d.%m %H:%M} UTC — "
+    who = "команде и инвесторам" if c.get("j", "IU") == "IU" else "всем получателям, кроме казны"
+    return (f"{c['fs']}: разлок {who} {datetime.fromtimestamp(c['T'], timezone.utc):%d.%m %H:%M} UTC — "
             f"{c['share']:.1f}% монет в обращении по расписанию DefiLlama")
 
 
+IU_J = {"IU": ("virtual_IU", "РАЗЛОК ИНСАЙДЕРАМ", "🔑"), "IUA": ("virtual_IUA", "РАЗЛОК ВСЕМ", "🔑⁺")}
+
+
 def insider_unlock_rule(state):
-    """Разлок инсайдерам (журнал 🔑, research/s139/ВЫВОДЫ.md, U2). Раз в сутки — список проектов с расписанием разлоков
-    DefiLlama (без ключа), потом файлы проектов по 10 за проход (со сжатием gzip; полный круг ~40 мин). Разлок одним куском
-    команде и инвесторам (insiders, privateSale) ≥ 1% монет в обращении по расписанию (_iu_candidates) в ближайшие 10 сут →
-    тикер и цена токена по coins.llama.fi, бессрочный фьючерс Binance, цена фьючерса к цене DefiLlama 0,8–1,25. →
-    Виртуальный шорт за 7 сут до разлока (бот опоздал — до 24 ч позже срока), выход через сутки после разлока, без тейка,
-    стоп +50%, плечо ×1; одна сделка на монету за 7 сут. Перенос разлока до входа — вход по новой дате. Сообщения для чата."""
+    """Разлок инсайдерам (журнал 🔑, research/s139/ВЫВОДЫ.md, U2) и его двойник 🔑⁺ — разлок всем получателям, кроме казны
+    (research/s142, U6). Раз в сутки — список проектов с расписанием разлоков DefiLlama (без ключа), потом файлы проектов
+    по 10 за проход (со сжатием gzip; полный круг ~40 мин). Разлок одним куском ≥ 1% монет в обращении по расписанию
+    (_iu_candidates) в ближайшие 10 сут: для 🔑 — команде и инвесторам (insiders, privateSale), для 🔑⁺ — всем, кроме
+    noncirculating и burned. → Тикер и цена токена по coins.llama.fi, бессрочный фьючерс Binance, цена фьючерса к цене
+    DefiLlama 0,8–1,25. → Виртуальный шорт за 7 сут до разлока (бот опоздал — до 24 ч позже срока), выход через сутки после
+    разлока, без тейка, стоп +50%, плечо ×1; в каждом журнале одна сделка на монету за 7 сут. Совместный вход — строкой
+    к сообщению 🔑. Перенос разлока до входа — вход по новой дате. Сообщения для чата."""
     now = time.time(); u = state.setdefault("iu", {}); msgs = []
     sched = u.setdefault("sched", {}); done = u.setdefault("done", {}); listed = False
     if not u.get("queue") and now - u.get("list_t", 0) >= IU_EVERY and now >= u.get("next", 0):
@@ -2920,7 +2929,8 @@ def insider_unlock_rule(state):
         for k in old:
             del sched[k]                                     # расписание проекта — свежее: разлок могли перенести
         try:
-            cands = _iu_candidates(E, now)
+            cands = ([dict(c, j="IU") for c in _iu_candidates(E, now)]
+                     + [dict(c, j="IUA") for c in _iu_candidates(E, now, "all")])
         except Exception as e:                               # неожиданная структура файла — проект пропускается до завтра
             log("РАЗЛОК ИНСАЙДЕРАМ", f"{slug}: не разобрать расписание DefiLlama ({e!r}) — до следующего обновления")
             continue
@@ -2934,46 +2944,51 @@ def insider_unlock_rule(state):
             continue
         info = _iu_price(E)
         if not info:
-            log("РАЗЛОК ИНСАЙДЕРАМ", f"{slug}: разлок инсайдерам есть, но coins.llama.fi не отдал тикер и цену токена — "
+            log("РАЗЛОК ИНСАЙДЕРАМ", f"{slug}: разлок ≥ {IU_MIN:g}% есть, но coins.llama.fi не отдал тикер и цену токена — "
                                      "до следующего обновления")
             continue
         coin, px = info
         fs = _fut_sym(coin) if coin not in BL_SKIP else None
         if not fs:
             continue                                         # у монеты нет бессрочного фьючерса Binance
+        mark = None
         for c in cands:
-            key = f"{fs}:{int(c['T'] // 86400)}"
+            key = ("+" if c["j"] == "IUA" else "") + f"{fs}:{int(c['T'] // 86400)}"   # 🔑 — «FS:сутки», 🔑⁺ — «+FS:сутки»
             if key in done:
                 continue
-            mark = trader.mark_price(fs) if c["T"] - IU_ENTRY_D * 86400 + IU_LATE_H * 3600 > now else None
+            if mark is None and c["T"] - IU_ENTRY_D * 86400 + IU_LATE_H * 3600 > now:
+                mark = trader.mark_price(fs) or 0.0
             c.update(slug=slug, coin=coin, fs=fs, px=px, chk=now,
                      ratio=round(mark / (px * _ul_mult(coin, fs)), 4) if mark and px > 0 else None)
             sched[key] = c
             if key not in old:
-                log("РАЗЛОК ИНСАЙДЕРАМ", _iu_what(c) + f"; получатели: {', '.join(c['names']) or '—'}; шорт "
+                log(IU_J[c["j"]][1], _iu_what(c) + f"; получатели: {', '.join(c['names']) or '—'}; шорт "
                     f"{datetime.fromtimestamp(c['T'] - IU_ENTRY_D * 86400, timezone.utc):%d.%m %H:%M} UTC"
                     + (f", цена фьючерса {c['ratio']:.2f} от цены DefiLlama" if c["ratio"] else ""))
     if u.get("queue") is not None and not q:
-        log("РАЗЛОК ИНСАЙДЕРАМ", f"расписание обновлено: проектов {u.get('n_ok', 0)}; разлоков инсайдерам ≥ {IU_MIN:g}% "
-                                 f"с фьючерсом Binance в ближайшие {IU_HORIZON_D} сут — {len(sched)}")
+        n_iu = sum(1 for c in sched.values() if c.get("j", "IU") == "IU")
+        log("РАЗЛОК ИНСАЙДЕРАМ", f"расписание обновлено: проектов {u.get('n_ok', 0)}; разлоков ≥ {IU_MIN:g}% с фьючерсом Binance "
+                                 f"в ближайшие {IU_HORIZON_D} сут: команде и инвесторам — {n_iu}, всем получателям — "
+                                 f"{len(sched) - n_iu}")
         for k in ("tries", "queue", "n_ok"):
             u.pop(k, None)
-    trades = state.get("virtual_IU", {}).get("trades", [])
+    opened = {}                                              # (монета, сутки) → {журнал: (сообщение, кандидат)}
     for key, c in sorted(sched.items(), key=lambda kv: kv[1]["T"]):
+        j = c.get("j", "IU"); vkey, tag, icon = IU_J[j]
         t_in = c["T"] - IU_ENTRY_D * 86400
         if now < t_in:
             continue
-        what = _iu_what(c)
+        what = f"{icon} " + _iu_what(c)
         if now > t_in + IU_LATE_H * 3600:
             del sched[key]; done[key] = now
-            log("РАЗЛОК ИНСАЙДЕРАМ", what + f" — срок входа {datetime.fromtimestamp(t_in, timezone.utc):%d.%m %H:%M} UTC "
-                f"прошёл больше {IU_LATE_H} ч назад (бот не работал или разлок появился в расписании поздно), сделки нет")
+            log(tag, what + f" — срок входа {datetime.fromtimestamp(t_in, timezone.utc):%d.%m %H:%M} UTC прошёл больше "
+                f"{IU_LATE_H} ч назад (бот не работал или разлок появился в расписании поздно), сделки нет")
             continue
         if now - c["chk"] > IU_STALE_H * 3600:
             if not c.get("stale"):
                 c["stale"] = True
-                log("РАЗЛОК ИНСАЙДЕРАМ", what + f" — расписание не обновлялось {(now - c['chk']) / 3600:.0f} ч (DefiLlama не "
-                                               "отвечала), вход ждёт обновления")
+                log(tag, what + f" — расписание не обновлялось {(now - c['chk']) / 3600:.0f} ч (DefiLlama не отвечала), "
+                                "вход ждёт обновления")
             continue
         if c.get("ratio") is None:
             mark = trader.mark_price(c["fs"])
@@ -2982,24 +2997,30 @@ def insider_unlock_rule(state):
             c["ratio"] = round(mark / (c["px"] * _ul_mult(c["coin"], c["fs"])), 4)
         if not IU_PX[0] <= c["ratio"] <= IU_PX[1]:
             del sched[key]; done[key] = now
-            log("РАЗЛОК ИНСАЙДЕРАМ", what + f" — цена фьючерса {c['ratio']:.2f} от цены DefiLlama: похоже, другой токен "
-                                           "с тем же тикером или ошибка данных, сделки нет")
+            log(tag, what + f" — цена фьючерса {c['ratio']:.2f} от цены DefiLlama: похоже, другой токен с тем же тикером "
+                            "или ошибка данных, сделки нет")
             continue
-        if _virt_is_open(state, "virtual_IU", c["fs"]) or any(
-                t["sym"] == c["fs"] and now - t["opened"] < IU_COOL_D * 86400 for t in trades):
+        if _virt_is_open(state, vkey, c["fs"]) or any(t["sym"] == c["fs"] and now - t["opened"] < IU_COOL_D * 86400
+                                                       for t in state.get(vkey, {}).get("trades", [])):
             del sched[key]; done[key] = now
-            log("РАЗЛОК ИНСАЙДЕРАМ", what + f" — сделка по монете открыта или была меньше {IU_COOL_D} сут назад, пропуск")
+            log(tag, what + f" — сделка по монете открыта или была меньше {IU_COOL_D} сут назад, пропуск")
             continue
         t_out = c["T"] + IU_EXIT_D * 86400
-        note = (f"DefiLlama: разлок команде и инвесторам {datetime.fromtimestamp(c['T'], timezone.utc):%d.%m %H:%M} UTC — "
+        who = "команде и инвесторам" if j == "IU" else "всем получателям, кроме казны"
+        note = (f"DefiLlama: разлок {who} {datetime.fromtimestamp(c['T'], timezone.utc):%d.%m %H:%M} UTC — "
                 f"{c['share']:.1f}% монет в обращении по расписанию; получатели: {', '.join(c['names']) or '—'}; "
                 f"выход через сутки после разлока, {datetime.fromtimestamp(t_out, timezone.utc):%d.%m %H:%M} UTC")
-        m = trader.virt_open(state, "virtual_IU", c["fs"], "IU", note, hold_h=round((t_out - now) / 3600, 2))
+        m = trader.virt_open(state, vkey, c["fs"], j, note, hold_h=round((t_out - now) / 3600, 2))
         if m:
             del sched[key]; done[key] = now
-            log("РАЗЛОК ИНСАЙДЕРАМ", c["fs"], note)
-            msgs.append(m)
+            log(tag, c["fs"], note)
+            opened.setdefault((c["fs"], int(c["T"] // 86400)), {})[j] = (m, c)
         # иначе Binance не отдал цену — повтор в следующем проходе, до 24 ч после срока
+    for both in opened.values():                             # совместный вход 🔑 и 🔑⁺ — строкой к сообщению 🔑
+        if "IU" in both and "IUA" in both:
+            msgs.append(both["IU"][0] + f"\n🔑⁺ тот же шорт (все получатели: {both['IUA'][1]['share']:.1f}% монет в обращении)")
+        else:
+            msgs.extend(m for m, _ in both.values())
     for k in [k for k, ts in done.items() if ts < now - 40 * 86400]:
         del done[k]
     return msgs

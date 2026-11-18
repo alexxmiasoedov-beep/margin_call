@@ -157,11 +157,23 @@ check(not any(k.startswith(("CCC:", "USDC:", "HHH:")) for k in keys), "CCC (не
 check(any(k.startswith("KKK:") for k in keys), "KKK: адреса нет в coins.llama.fi — тикер и цена по id CoinGecko")
 check(any("fff" in x and "не отдала расписание" in x for x in ALL), "FFF: 3 сбоя — до следующего обновления")
 check(sum(1 for k in keys if k.startswith("EEE:")) == 1, "EEE: второй разлок через 13,5 сут — за горизонтом 10 сут")
+plus = sorted(k for k in keys if k.startswith("+"))
+check(any(k.startswith("+HHH:") for k in plus) and not any(k.startswith("HHH:") for k in keys)
+      and all(any(k.startswith(f"+{x}:") for k in plus) for x in ("1000BBB", "DDD", "EEE", "KKK")),
+      f"🔑⁺: HHH (экосистема 10%) — только у двойника; 1000BBB, DDD, EEE, KKK — у обоих: {plus}")
+iua = lambda: state.get("virtual_IUA", {}).get("trades", [])
+check(any(t["sym"] == "AAA" for t in iua()) and not trades(),
+      "🔑⁺: AAA — аирдроп 50% за 2 сут до разлока команде, срок входа прошёл меньше 24 ч назад — вход с опозданием")
 print("   журнал:", *[x for x in ALL if "РАЗЛОК" in x], sep="\n   ")
 # 3. GGG: срок входа прошёл больше 24 ч назад — отмечен в обработанных в том же проходе
 check(any("GGG" in x and "срок входа" in x for x in ALL) and any(k.startswith("GGG:") for k in u["done"])
       and not any(k.startswith("GGG:") for k in u["sched"]), "GGG: срок входа прошёл")
-# 4. до срока входа — сделок нет; срок AAA — вход
+# 4. HHH: разлок только сообществу — вход одного 🔑⁺ своим сообщением
+CLOCK[0] = T0 + 1 * D + 30; m = run()
+check(len(m) == 1 and m[0].startswith("🔑⁺") and "HHH" in m[0] and any(t["sym"] == "HHH" for t in iua())
+      and not any(t["sym"] == "HHH" for t in trades()), "HHH: вход только 🔑⁺, отдельным сообщением")
+print("   сообщение:", m[0].replace("\n", " | "))
+# до срока входа 🔑 — сделок 🔑 нет; срок AAA — вход
 CLOCK[0] = T1 - 7 * D - 60; m = run()
 check(not m and not trades(), "за минуту до срока сделок нет")
 CLOCK[0] = T1 - 7 * D + 30; m = run()
@@ -191,6 +203,9 @@ check(not any(t["sym"] == "DDD" for t in trades()) and any("другой ток�
 # 8. EEE: вход по первому разлоку
 CLOCK[0] = T5 - 7 * D + 30; m = run()
 check(any(t["sym"] == "EEE" for t in trades()), "EEE: вход по первому разлоку")
+check(len(m) == 1 and "🔑⁺ тот же шорт" in m[0] and any(t["sym"] == "EEE" for t in iua()),
+      "EEE: совместный вход 🔑 и 🔑⁺ — одной строкой к сообщению 🔑")
+print("   сообщение:", m[0].replace("\n", " | "))
 # 9. устаревшее расписание: DefiLlama не отвечает двое суток — вход ждёт; после обновления — вход в пределах 24 ч
 FAIL["list"] = True; FAIL["proj"] = True
 b = next((c for k, c in u["sched"].items() if k.startswith("1000BBB:")), None)
@@ -213,10 +228,18 @@ check(any(k.startswith("EEE:") for k in u["sched"]), "EEE: второй разл
 CLOCK[0] = T5 + 5 * D - 7 * D + 30; run()
 check(sum(1 for t in trades() if t["sym"] == "EEE") == 1 and any("EEE" in x and "открыта или была" in x for x in LOG),
       "EEE: второй разлок — сделка открыта / была меньше 7 сут назад, пропуск")
+check(sum(1 for t in iua() if t["sym"] == "EEE") == 1 and sum(1 for x in LOG if "EEE" in x and "открыта или была" in x) == 2,
+      "EEE: и у 🔑⁺ второй вход пропущен — свой учёт 7 сут")
 # 11. выход по времени AAA
 CLOCK[0] = T1 + D + 120
 out = trader.virt_manage(state)
 ta = next(t for t in trades() if t["sym"] == "AAA")
 check(ta.get("closed") and "выход по времени" in ta.get("reason", ""), f"AAA закрыт по времени: {ta.get('reason')}")
 print("   закрытие:", next(x for x in out if "AAA" in x).replace("\n", " | "))
+# 12. EEE: совместная сделка 🔑 и 🔑⁺ закрывается в одном проходе — строкой к сообщению 🔑
+CLOCK[0] = T5 + D + 120
+out = trader.virt_manage(state)
+e = [x for x in out if "EEE" in x]
+check(len(e) == 1 and e[0].startswith("🔑 ") and "\n🔑⁺ выход по времени" in e[0], "EEE: закрытие 🔑⁺ — строкой к сообщению 🔑")
+print("   закрытие:", e[0].replace("\n", " | "))
 print("\nВсе проверки пройдены")
