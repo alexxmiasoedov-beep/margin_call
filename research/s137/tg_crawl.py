@@ -12,7 +12,7 @@ import sys
 import time
 import urllib.request
 
-UA = {"User-Agent": "Mozilla/5.0 (research; margin_call)"}
+UA = {"User-Agent": "research-script/1.0"}
 
 
 def page(ch, before=None):
