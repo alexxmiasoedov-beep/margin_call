@@ -1,10 +1,11 @@
-# Данные исследований margin_call (сохранены 26.10.2026)
+# Данные исследований margin_call (сохранены 26.10.2026, ончейн — 19.11.2026)
 
 Ветка только с данными, без общей истории с кодом. Скрипты и выводы — в ветке `main`, папка `research/`. Боту ветка
 не нужна: сервер забирает только `main`.
 
 Всё — открытые данные: свечи, фандинг и премии Binance, объявления Binance, ставки маржи Binance, архив публичного
-канала MarginData. Файлы — pickle (Python 3, numpy) и CSV, сжаты xz; крупные порезаны на части по 45 МБ.
+канала MarginData, переводы токенов Ethereum (публичные RPC), метки адресов бирж (Dune spellbook, Blockscout), монеты
+в обращении (CoinMarketCap data-api). Файлы — pickle (Python 3, numpy) и CSV, сжаты xz; крупные порезаны на части по 45 МБ.
 
 | После распаковки | Что внутри | Период |
 |---|---|---|
@@ -25,14 +26,31 @@
 git clone --branch data --single-branch https://github.com/alexxmiasoedov-beep/margin_call.git mc_data_src
 mkdir -p mc_data/s2 mc_data/s12 && cd mc_data
 cat ../mc_data_src/k2y.pkl.xz.part-* > k2y.pkl.xz && cat ../mc_data_src/prem.pkl.xz.part-* > prem.pkl.xz
+cat ../mc_data_src/onchain.tar.xz.part-* > onchain.tar.xz
 cp ../mc_data_src/small.tar.xz . && sha256sum -c ../mc_data_src/SHA256SUMS
-xz -d < k2y.pkl.xz > s2/k2y.pkl && xz -d < prem.pkl.xz > s12/prem.pkl && tar -xJf small.tar.xz
-rm k2y.pkl.xz prem.pkl.xz small.tar.xz
+xz -d < k2y.pkl.xz > s2/k2y.pkl && xz -d < prem.pkl.xz > s12/prem.pkl && tar -xJf small.tar.xz && tar -xJf onchain.tar.xz
+rm k2y.pkl.xz prem.pkl.xz small.tar.xz onchain.tar.xz
 ```
 
 `small.tar.xz` даёт `s2/fund2y.pkl`, `s7/margin.pkl`, `s10/ann.pkl`, `s12/perp_kind.pkl`, `s12/ann_perp.pkl`
 и `s11/rates/`. Скриптам `research/s12` нужны ещё их модули: скопируйте `research/s12/*.py` в `mc_data/s12/`
 (и создайте пустой `mc_data/s12/__init__.py`), запускайте из `mc_data`: `python3 s12/firstborrow.py`.
+
+## Ончейн: заводы токенов на биржи (research/s160–s170, сохранены 19.11.2026)
+
+`onchain.tar.xz` (части `onchain.tar.xz.part-00…02`, 97 МБ) распаковывается в ту же папку данных:
+
+| После распаковки | Что внутри | Период |
+|---|---|---|
+| `s160/raw/b<блок>.json.gz` | переводы ERC-20 261 токена с фьючерсом Binance на 5331 адрес бирж (метки на 18.11.2026), от 0,05% монет в обращении: `[блок, токен, от, кому, сумма, tx, logIndex]`, файлы по 100 тыс. блоков | блоки 10,95–26,4 млн (10.2020 – 11.2026) |
+| `s160/sets.json`, `s160/labels/` | метки бирж (`cex`: адрес → [биржа, название]; Dune spellbook и Blockscout) и токены (`toks`: адрес → фьючерс, тикер) | |
+| `s160/circ/<id CMC>.json` | монеты в обращении и цена по дням, CMC data-api: `[[дата, обращение, цена]]` | 09.2020 – 11.2026 |
+| `s160/cache_blocktime.json`, `s160/cache_hop.json` | время блоков; шаг назад — откуда пришли токены отправителя | |
+| `s160/tg/` | частичная выгрузка каналов BlockBeats и Odaily (s162) | |
+| `s167/raw`, `s167/circ`, `s167/toks.json` | то же для 43 токенов ERC-20, снятых с фьючерсов Binance до 10.2024 | блоки 10,95–20,9 млн |
+| `s167/post/` | 15-мин свечи фьючерсов после конца периода (проверка s167) | 10–11.2026 |
+| `s168/work`, `s168/labels` | промежуточные данные изучения s168 (метки адресов, выборки происхождения токенов) | |
+| `s160_*.pkl` … `s170_*.pkl` | события и сделки бэктестов s160–s170 | |
 
 Остальные данные исследований (стаканы, сделки, Корея и Турция, посты CryptoCode, позиции) сюда не вошли — их
 скачивают заново скрипты в `research/` (источники — data.binance.vision, публичные API бирж, t.me).
