@@ -1,0 +1,28 @@
+                                      addr  safe  threshold   api     n  n_tr    lag_med   lag_p25    lag_p75
+0xbe8e3e3618f7474f8cb1d074a26affef007e98fb False        NaN   NaN   NaN   NaN        NaN       NaN        NaN
+0x3e40d73eb977dc6a537af587d48316fee66e9c8c False        NaN   NaN   NaN   NaN        NaN       NaN        NaN
+0xe30ed74c6633a1b0d34a71c50889f9f0fdb7d68a  True        3.0 200.0 200.0  71.0  18.844453  0.387499  73.232622
+0x57a8865cfb1ecef7253c27da6b4bc3daee5be518 False        NaN   NaN   NaN   NaN        NaN       NaN        NaN
+0x65bb797c2b9830d891d87288f029ed8dacc19705  True        3.0 200.0 200.0  66.0   0.156804  0.000000   2.153549
+0xb35096b074fdb9bbac63e3adae0bbde512b2e6b6  True        5.0 200.0 200.0 129.0  38.914155  0.000000  61.253619
+0x690f0581ececcf8389c223170778cd9d029606f2  True        3.0 200.0 200.0 170.0   7.514918  0.000000  61.883508
+0xdf2c270f610dc35d8ffda5b453e74db5471e126b  True        2.0 200.0 200.0  67.0   0.201613  0.090662   2.194637
+0xf06016d822943c42e3cb7fc3a6a3b1889c1045f8  True        2.0 200.0 200.0 136.0   2.224995  0.201324   7.542597
+0xfeb4acf3df3cdea7399794d0869ef76a6efaff52  True        6.0 200.0 200.0 199.0 136.190605 79.793355 205.744801
+0x2b9d5c7f2ead1a221d771fb6bb5e35df04d60ab0  True        3.0 200.0 200.0 165.0   0.000000  0.000000   7.024769
+0xcad001c30e96765ac90307669d578219d4fb1dce  True        4.0 200.0 200.0 108.0   0.000000  0.000000  24.881783
+0xd7a029db2585553978190db5e85ec724aa4df23f False        NaN   NaN   NaN   NaN        NaN       NaN        NaN
+0xe94b5eec1fa96ceecbd33ef5baa8d00e4493f4f3  True        4.0 200.0  79.0  47.0  49.053732 13.764558 168.904513
+0x6d903f6003cca6255d85cca4d3b5e5146dc33925 False        NaN   NaN   NaN   NaN        NaN       NaN        NaN
+0x3d9819210a31b4961b30ef54be2aed79b9c9cd3b False        NaN   NaN   NaN   NaN        NaN       NaN        NaN
+0xec834bd1f492a8bd5aa71023550c44d4fb14632a  True        3.0 200.0 200.0 120.0   8.973171  1.425174  23.301487
+0xd9f80bdb37e6bad114d747e60ce6d2aaf26704ae False        NaN   NaN   NaN   NaN        NaN       NaN        NaN
+0xcafeacdadd29f55ce935492e20f1f982df3fb51d False        NaN   NaN   NaN   NaN        NaN       NaN        NaN
+0x99f4176ee457afedffcb1839c7ab7a030a5e4a92  True        3.0 200.0 200.0 124.0   1.219087  0.121381  36.927042
+0xdaeada3d210d2f45874724beea03c7d4bbd41674  True        5.0 200.0 200.0 116.0  23.513742  7.531709  61.798438
+0xe7af7c5982e073ac6525a34821fe1b3e8e432099 False        NaN   NaN   NaN   NaN        NaN       NaN        NaN
+0xeb3107117fead7de89cd14d463d340a2e6917769  True        4.0 200.0 200.0  76.0   2.497161  0.712618   8.225554
+0x5a7c5505f3cfb9a0d9a8493ec41bf27ee48c406d  True        2.0 200.0 166.0 106.0   8.596447  0.413886  46.660558
+0x10a19e7ee7d7f8a52822f6817de8ea18204f2e4f  True        6.0 200.0 200.0 165.0  39.341042 20.524215  67.664436
+
+адресов с крупными выходами: 25; Safe: 16; с историей переводов: 16; медиана по Safe медиан задержки «подача → исполнение», ч: 8.1

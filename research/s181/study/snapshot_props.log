@@ -1,0 +1,63 @@
+  1/124 0xgov.eth: предложений 27
+  21/124 cakevote.eth: предложений 3741
+  41/124 dydxgov.eth: предложений 63
+  61/124 iotex.eth: предложений 17
+  81/124 opencampusdao.eth: предложений 16
+  101/124 stormxio.eth: предложений 9
+  121/124 vote.turbocouncil.eth: предложений 8
+
+предложений (пространство × перп): 19013; пространств 124; перпов 107
+при живом перпе: 11917
+
+В месяц по периодам (при живом перпе):
+  все предложения                                  115.73 / 257.05 / 116.65   (всего 11917, перпов 91)
+  продажа/диверсификация/OTC — в заголовке           0.87 /   0.91 /   0.44   (всего 54, перпов 16)
+    …и принято                                       0.54 /   0.54 /   0.36   (всего 35, перпов 14)
+    …принято и есть дата или график                  0.21 /   0.29 /   0.28   (всего 19, перпов 8)
+  управление казной/runway — в заголовке             0.29 /   1.16 /   0.80   (всего 55, перпов 15)
+  продажа или казна — в заголовке                    1.00 /   1.83 /   1.00   (всего 93, перпов 25)
+    …и принято                                       0.58 /   1.37 /   0.88   (всего 69, перпов 21)
+  продажа в тексте + казна + свой токен              3.00 /   8.15 /   5.47   (всего 406, перпов 44)
+  маркетмейкер — в заголовке                         0.04 /   0.25 /   0.20   (всего 12, перпов 7)
+  гранты/бюджеты/программы — в заголовке             6.62 /  16.51 /   6.43   (всего 722, перпов 51)
+  выкуп (buyback) — в заголовке                      0.29 /   0.37 /   0.92   (всего 39, перпов 19)
+
+продажа в заголовке — пространства: {'snapshot.dcl.eth': 25, 'gitcoindao.eth': 5, 'cakevote.eth': 3, '1inch.eth': 2, 'balancer.eth': 2, 'officialoceandao.eth': 2, 'ousdgov.eth': 2, 'lido-snapshot.eth': 2, 'aavegotchi.eth': 2, 'sushigov.eth': 2, 'etherfi-dao.eth': 1, 'cow.eth': 1, 'apecoin.eth': 1, 'floki-inu.eth': 1, 'origingov.eth': 1}
+доля принятых: 65% с датой или графиком: 52%
+
+примеры заголовков (продажа/диверсификация, принято):
+  2021-05-02 officialoceandao.eth         OCEAN    AI Synthetic Data Generation - Sell sensitive data with zero-privacy risks
+  2021-06-11 gitcoindao.eth               GTC      [Execution Phase] How do we best go forward to divest our position of AKITA?
+  2021-07-06 snapshot.dcl.eth             MANA     Should we convert 1/5th of the DAO&rsquo;s MANA to stablecoin to diversify and stabilize the treasury?
+  2021-07-26 uniswapgovernance.eth        UNI      Consensus Check - Create Uniswap Volume KPI Options to help divest Uniswap’s Community Treasury into Stablecoins
+  2021-12-01 snapshot.dcl.eth             MANA     Should we convert 1/8th of the DAO’s MANA to stablecoin to diversify and stabilize the treasury?
+  2021-12-28 origingov.eth                OGN      OUSD - Manually sell CVX?
+  2022-01-06 snapshot.dcl.eth             MANA     Land Sale over Periodic Payments
+  2022-06-06 snapshot.dcl.eth             MANA     Decentraland scenes as NFTs: Should scenes also be NFTs that can be sold within the Decentraland marketplace?
+  2022-07-06 gitcoindao.eth               GTC      Gitcoin $3 Million Treasury Diversification
+  2022-07-11 1inch.eth                    1INCH    [1IP-08] Simple diversification mechanism for 1inch DAO Treasury
+  2022-08-10 snapshot.dcl.eth             MANA     [Resubmission] Easy Land Renting - Lands for everyone! [+5% to DAO per sale]
+  2022-08-13 gitcoindao.eth               GTC      Withdraw $10MM of GTC to diversify our treasury and increase governance partners
+  2022-09-09 balancer.eth                 BAL      [BIP-61] Operating Procedures for DAO's Selling Their Locked BAL Position OTC
+  2022-10-06 lido-snapshot.eth            LDO      Proposal to Diversify LEGO budget for Q4 22 and moving further
+  2022-10-13 lido-snapshot.eth            LDO      Proposal to Diversify LEGO budget for Q4 22 and moving further (restart)
+  2022-12-08 balancer.eth                 BAL       [BIP-129] Swap BAL for USDC using Aave’s Bonding Contract
+  2023-02-10 snapshot.dcl.eth             MANA     Should we diversify the DAO's treasury exposure to $MANA?
+  2023-02-28 snapshot.dcl.eth             MANA     Should we diversify the DAO's treasury exposure to $MANA? V2
+  2023-07-05 ousdgov.eth                  OGN      Swap one third (1/3) of rETH for WETH
+  2023-07-13 ousdgov.eth                  OGN      Swap one half (1/2) of rETH for WETH
+  2023-11-13 1inch.eth                    1INCH    [1IP-45] Swap $ARB Tokens to USDC and Bridge to the Ethereum Mainnet
+  2023-11-29 cakevote.eth                 CAKE     Have you ever sold any of your CAKE?
+  2024-01-03 snapshot.dcl.eth             MANA     Decentraland DAO Treasury Diversification ( Phase A )
+  2024-01-24 snapshot.dcl.eth             MANA     Decentraland DAO Treasury Diversification ( Phase A )
+  2024-05-14 gitcoindao.eth               GTC      SGTM 001: Converting $5M GTC to Stables 
+  2024-05-22 gitcoindao.eth               GTC      [REVOTE] SGTM 001: Converting $5M GTC to Stables 
+  2024-12-04 snapshot.dcl.eth             MANA     Decentraland DAO Treasury Diversification ( Phase B )
+  2024-12-06 sushigov.eth                 SUSHI    Treasury Diversification Proposal [Signal]
+  2024-12-09 snapshot.dcl.eth             MANA     Decentraland DAO Treasury Diversification ( Phase B )
+  2024-12-14 sushigov.eth                 SUSHI    Treasury Diversifications [Implementation]
+  2024-12-18 snapshot.dcl.eth             MANA     Decentraland DAO Treasury Diversification ( Phase B )
+  2024-12-23 etherfi-dao.eth              ETHFI    #9 - Proposal: Diversification of ETHFI DAO Treasury through Investment in Real-World Assets
+  2025-03-24 floki-inu.eth                1000FLOKI PROPOSAL: REMOVE THE TOKENFI BUY/SELL TRANSACTION TAX
+  2025-10-29 cow.eth                      COW      CIP-73: General Authorisation & Confidence Mandate to Sell CoW DAO’s Stake in MEV Blocker
+  2026-06-08 sparkfi.eth                  SPK      [Ethereum] Spark Liquidity Layer - Onboard Binance with OTC-Buffer

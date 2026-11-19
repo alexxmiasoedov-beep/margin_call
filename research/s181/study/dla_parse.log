@@ -1,0 +1,2 @@
+записей (протокол × сеть): 659; протоколов 407; адресов-владельцев 985, из них в сети ethereum 414; записей с ownTokens 368
+адресов по сетям: {'ethereum': 414, 'arbitrum': 196, 'base': 85, 'bsc': 71, 'polygon': 58, 'optimism': 53, '?': 37, 'robinhood': 32, 'avax': 27, 'kava': 16, 'fantom': 11, 'plasma': 10, 'trader-joe-stek': 10, 'monad': 10, 'stable': 10}
