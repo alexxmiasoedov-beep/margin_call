@@ -41,7 +41,7 @@ def main():
               f"всего ${r.vtot:,.0f}, доля {r.sh_side:.1%}")
     print("\n== Ритм D2: крупнейший SNR (односторонний) ==")
     d2 = T["d2"]
-    x = d2[(d2.snr_oth < 5)].sort_values("snr", ascending=False).head(10)
+    x = d2[(d2.snr_oth < 5) & (d2.period <= 200)].sort_values("snr", ascending=False).head(10)
     for r in x.itertuples():
         print(f"  {r.per} {r.mkt} {r.s} {pd.Timestamp(r.d, unit='s').date()} час {r.h:02d} UTC "
               f"{'продажа' if r.side < 0 else 'покупка'}: период {r.period:.2f} с, SNR {r.snr:.0f}")

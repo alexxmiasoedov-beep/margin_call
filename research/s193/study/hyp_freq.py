@@ -132,7 +132,7 @@ def main():
                   f" у края суток (конец не виден) {edge:.0%}")
     # Г3: ритм
     print("\n== Г3: односторонний ритм два часа подряд без эпизода D1/D1n той же стороны ==")
-    x = d2[d2.tags.str.contains("srs") & (d2.mkt == "um") & (d2.snr >= 50) & (d2.snr_oth < 5)].copy()
+    x = d2[d2.tags.str.contains("srs") & (d2.mkt == "um") & (d2.snr >= 50) & (d2.snr_oth < 5) & (d2.period <= 200)].copy()
     for per in PERS:
         n = nd.get(per, 1)
         y = x[x.per == per].sort_values(["s", "d", "side", "h"])

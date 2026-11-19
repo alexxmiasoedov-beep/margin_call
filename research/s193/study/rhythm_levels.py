@@ -15,7 +15,8 @@ def main():
     E = pd.read_pickle(f"{D}/episodes.pkl")
     srs = days[days.tags.str.contains("srs") & (days.mkt == "um")]
     nd = srs.groupby("per").size()
-    x = d2[d2.tags.str.contains("srs") & (d2.mkt == "um")].copy()
+    # периоды > 200 с (k < 18) — остаток красного шума у нижнего края спектра (300, 277, 257, 240, 225 с), не ритм
+    x = d2[d2.tags.str.contains("srs") & (d2.mkt == "um") & (d2.period <= 200)].copy()
     # белый шум: SNR ~ Exp(1)/ln2, максимум по ~1790 частотам — около 11,6; порог 50 — p ≈ 1790·2^-50
     print("== D2: часы с ритмом (SNR ≥ 50), фьючерсы SRS ==")
     for per in PERS:
