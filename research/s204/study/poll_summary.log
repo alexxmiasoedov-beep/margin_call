@@ -1,0 +1,29 @@
+запись: 2026-11-19T19:49:17Z — 2026-11-19T20:40:20Z, опросов 12, ошибок 0
+
+Upbit, последний снимок: рынков KRW 300, с флагом 26
+  CONCENTRATION_OF_SMALL_ACCOUNTS: 1 (с перпом Binance 1)
+  DEPOSIT_AMOUNT_SOARING: 7 (с перпом Binance 7)
+  GLOBAL_PRICE_DIFFERENCES: 5 (с перпом Binance 4)
+  TRADING_VOLUME_SOARING: 18 (с перпом Binance 13)
+  WARNING: 5 (с перпом Binance 4)
+
+Bithumb, последний снимок /market/virtual_asset_warning: 29 предупреждений, монет 19
+  DEPOSIT_AMOUNT_SUDDEN_FLUCTUATION CAUTION: 1 (с перпом 1)
+  DEPOSIT_AMOUNT_SUDDEN_FLUCTUATION DANGER: 10 (с перпом 8)
+  SPECIFIC_ACCOUNT_HIGH_TRANSACTION CAUTION: 4 (с перпом 3)
+  SPECIFIC_ACCOUNT_HIGH_TRANSACTION DANGER: 2 (с перпом 1)
+  TRADING_VOLUME_SUDDEN_FLUCTUATION CAUTION: 1 (с перпом 1)
+  TRADING_VOLUME_SUDDEN_FLUCTUATION DANGER: 10 (с перпом 6)
+  TRADING_VOLUME_SUDDEN_FLUCTUATION WARNING: 1 (с перпом 1)
+  концы (KST): [('2026-11-21 01:59:59', 29)]
+Bithumb /market/all market_warning (유의): 16
+
+событий за запись (появление/снятие/смена): 34
+   ('bithumb_warn', 'KRW', 'PRICE_DIFFERENCE_HIGH', 'off') 1
+   ('upbit', 'BTC', 'GLOBAL_PRICE_DIFFERENCES', 'off') 8
+   ('upbit', 'BTC', 'GLOBAL_PRICE_DIFFERENCES', 'on') 9
+   ('upbit', 'USDT', 'GLOBAL_PRICE_DIFFERENCES', 'off') 8
+   ('upbit', 'USDT', 'GLOBAL_PRICE_DIFFERENCES', 'on') 8
+
+Bithumb: снято за запись 1
+   2026-11-19T20:40:20Z KRW-CBK PRICE_DIFFERENCE_HIGH CAUTION конец 2026-11-20 05:37:59 в истории: True 2026-11-20 04:38:00

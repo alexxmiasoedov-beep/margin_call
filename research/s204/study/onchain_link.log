@@ -1,0 +1,18 @@
+/home/user/margin_call/research/s204/study/onchain_link.py:115: UserWarning: Discarding nonzero nanoseconds in conversion.
+  hit += any(timedelta(0) < (u - t.to_pydatetime()) <= timedelta(hours=30) for u in Bset.get(c, []))
+/home/user/margin_call/research/s204/study/onchain_link.py:115: UserWarning: Discarding nonzero nanoseconds in conversion.
+  hit += any(timedelta(0) < (u - t.to_pydatetime()) <= timedelta(hours=30) for u in Bset.get(c, []))
+/home/user/margin_call/research/s204/study/onchain_link.py:115: UserWarning: Discarding nonzero nanoseconds in conversion.
+  hit += any(timedelta(0) < (u - t.to_pydatetime()) <= timedelta(hours=30) for u in Bset.get(c, []))
+ончейн: переводов на Upbit/Bithumb 18248 до 2026-11-05 02:49:01.948999882 токенов в сборе 236
+
+Upbit D (новые эпизоды, токены сбора, до 2026-11-05): 780; с переводом на Upbit в окне 24 ч >= 0,05% обращения 0 (0%), >= 0,5% 0 (0%); >= 0,05% за 72 ч 0 (0%)
+  переводы на Upbit >= 0.5% обращения (монето-сутки) с 23.03.2026: 0, из них с флагом D на следующий пересчёт 0 (0%)
+  переводы на Upbit >= 1.0% обращения (монето-сутки) с 23.03.2026: 0, из них с флагом D на следующий пересчёт 0 (0%)
+  переводы на Upbit >= 2.0% обращения (монето-сутки) с 23.03.2026: 0, из них с флагом D на следующий пересчёт 0 (0%)
+
+Bithumb D (новые, токены сбора, до 2026-11-05): 4062; с переводом на Bithumb в 24 ч до флага >= 0,05% 543 (13%), >= 0,5% 24 (1%); >= 0,05% за 72 ч 640 (16%)
+  по годам (n, доля с переводом >= 0,05% за 24 ч): {2023: (305, 0.19), 2024: (1482, 0.13), 2025: (1947, 0.15), 2026: (328, 0.03)}
+  переводы на Bithumb >= 0.5% обращения (монето-сутки) с 05.07.2023: 241, с флагом D Bithumb в следующие 30 ч 32 (13%)
+  переводы на Bithumb >= 1.0% обращения (монето-сутки) с 05.07.2023: 69, с флагом D Bithumb в следующие 30 ч 8 (12%)
+  переводы на Bithumb >= 2.0% обращения (монето-сутки) с 05.07.2023: 26, с флагом D Bithumb в следующие 30 ч 1 (4%)
