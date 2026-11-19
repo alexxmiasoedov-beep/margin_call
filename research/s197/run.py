@@ -81,7 +81,7 @@ def load(per):
     for c in ("x01", "x05"):
         E["b_" + c] = np.where(E["t_" + c].notna(), E["t_" + c], E.t_vis)
     E["b_vis"] = E.t_vis
-    E["perp"] = E.sym.astype(str) + "USDT"
+    E["perp"] = E.sym.astype(str)                     # ключи свечей — тикер без USDT
     U = unlocks(per)
 
     def near(s, T):
