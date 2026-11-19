@@ -1,0 +1,56 @@
+всего метрик 1276, доступны 552 (без ограничений 97, с окном 455), недоступны 724
+окна доступных с ограничением: [(('2025-11-19T19:01:35Z', '2026-10-20T19:01:35Z'), 455)]
+шаг доступных: [('1d', 249), ('5m', 246), ('1h', 34), ('8h', 9), ('1s', 6), ('7d', 3), ('1m', 2), ('15m', 2), ('6h', 1)]
+версии: [(('original:v1',), 550), (('original:v1', 'modern:v1'), 2)]
+
+метрика | доступна | ограничена | шаг | с | по | версии
+social_volume_total | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+social_dominance_total | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+unique_social_volume_total_1d | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+unique_social_volume_total_1h | True | True | 1h | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+sentiment_positive_total | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+sentiment_negative_total | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+sentiment_balance_total | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+sentiment_weighted_total | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+age_consumed | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+age_destroyed | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+dormant_circulation_90d | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+dormant_circulation_180d | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+dormant_circulation_365d | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+exchange_inflow | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+exchange_outflow | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+exchange_balance | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+exchange_inflow_usd | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+exchange_inflow_per_exchange | False | True | 5m | None | None | original:v1
+exchange_outflow_per_exchange | False | True | 5m | None | None | original:v1
+exchange_balance_per_exchange | False | True | 5m | None | None | original:v1
+active_deposits | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+active_deposits_5m | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+active_deposits_per_exchange | False | True | 1d | None | None | original:v1
+deposit_transactions | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+deposit_transactions_per_exchange | False | True | 1d | None | None | original:v1
+whale_transaction_count_100k_usd_to_inf | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+whale_transaction_count_1m_usd_to_inf | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+mvrv_usd | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+mvrv_usd_30d | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+mvrv_usd_365d | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+mvrv_usd_intraday | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+network_growth | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+daily_active_addresses | True | False | 1d | None | None | original:v1
+active_addresses_24h | True | False | 5m | None | None | original:v1
+supply_on_exchanges | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+percent_of_total_supply_on_exchanges | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+price_usd | True | False | 1s | None | None | original:v1
+volume_usd | True | False | 1s | None | None | original:v1
+marketcap_usd | True | False | 1s | None | None | original:v1
+circulation | True | False | 1d | None | None | original:v1
+transaction_volume | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+dev_activity | True | False | 5m | None | None | original:v1,modern:v1
+social_volume_telegram | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+social_volume_twitter | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+social_volume_reddit | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+community_messages_count_total | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+amount_in_top_holders | True | True | 1d | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+whale_transaction_volume_100k_usd_to_inf | True | True | 5m | 2025-11-19T19:01:35Z | 2026-10-20T19:01:35Z | original:v1
+
+доступные по группам: [('прочее', 172), ('sentiment', 86), ('mvrv', 47), ('social_dominance', 33), ('circulation', 22), ('price', 21), ('exchange', 20), ('unique_social', 18), ('dormant_circulation', 17), ('realized', 12), ('social_volume', 11), ('active_addresses', 9), ('age_', 9), ('transaction', 9), ('dev_activity', 7), ('community', 5), ('fees', 5), ('github', 5), ('volume', 5), ('marketcap', 4), ('network_growth', 4), ('whale', 4), ('amount_in', 3), ('nvt', 3), ('active_deposits', 2), ('deposit_', 2), ('dex', 2), ('labelled', 2), ('supply', 2), ('total_supply', 2), ('withdrawal', 2), ('etf', 1), ('miners', 1), ('nft', 1), ('spent_coins', 1), ('trending', 1), ('twitter', 1), ('velocity', 1)]

@@ -1,0 +1,10 @@
+https://bsc-rpc.publicnode.com блок 134559153; все токены → горячий Binance, 2000 блоков: {'code': -32701, 'message': 'Please specify an address in your request or, to remove restrictions, order a dedicated full node here: https://www.allnodes.com/bnb/host'}
+   переводы CAKE, 2000 блоков, 0 блоков назад (~0 ч): 456
+   переводы CAKE, 2000 блоков, 20000 блоков назад (~4 ч): 564
+   переводы CAKE, 2000 блоков, 100000 блоков назад (~21 ч): 0
+   переводы CAKE, 2000 блоков, 1000000 блоков назад (~208 ч): 0
+https://bsc-dataseed.bnbchain.org блок 134559160; все токены → горячий Binance, 2000 блоков: {'code': -32005, 'message': 'limit exceeded'}
+   переводы CAKE, 2000 блоков, 0 блоков назад (~0 ч): {'code': -32005, 'message': 'limit exceeded'}
+   переводы CAKE, 2000 блоков, 20000 блоков назад (~4 ч): {'code': -32005, 'message': 'limit exceeded'}
+   переводы CAKE, 2000 блоков, 100000 блоков назад (~21 ч): {'code': -32005, 'message': 'limit exceeded'}
+   переводы CAKE, 2000 блоков, 1000000 блоков назад (~208 ч): {'code': -32005, 'message': 'limit exceeded'}

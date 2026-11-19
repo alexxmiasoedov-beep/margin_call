@@ -1,0 +1,18 @@
+[san] blockchains getAvailableBlockchains slugs=  → 200, остаток мес/час/мин 1000/500/100, 3311 Б, 0.26 с
+сеть | slug | инфраструктура | биржевые | метки | держатели | чистый ончейн | финансовые
+ethereum | ethereum | ETH | True | True | True | True | True
+bitcoin | bitcoin | BTC | True | False | True | True | True
+bitcoin-cash | bitcoin-cash | BCH | False | False | False | True | True
+litecoin | litecoin | LTC | False | False | False | True | True
+xrp | xrp | XRP | False | False | False | True | True
+binance-coin | binance-coin | BEP20 | False | False | True | True | True
+dogecoin | dogecoin | DOGE | False | False | False | True | True
+matic-network | matic-network | Polygon | False | False | False | True | True
+cardano | cardano | Cardano | False | False | False | True | True
+avalanche | avalanche | Avalanche | False | False | False | True | True
+optimism | optimism | Optimism | False | False | False | True | True
+arbitrum | arbitrum | Arbitrum | False | False | False | True | True
+[san] all_projects allProjects slugs=  → 200, остаток мес/час/мин 914/499/99, 205563 Б, 1.98 с
+
+проектов: 2504
+инфраструктура: [('ETH', 856), (None, 717), ('Solana', 223), ('Own', 210), ('BEP20', 173), ('Base', 40), ('Polygon', 37), ('Arbitrum', 31), ('Avalanche', 20), ('Tron', 17), ('Optimism', 17), ('Sui', 15), ('Chiliz', 13), ('ICP', 13), ('TON', 9), ('Cosmos', 8), ('Substrate', 8), ('BEP2', 8), ('Klaytn', 7), ('NEO', 6), ('Cardano', 6), ('BTC', 6), ('Robinhood', 4), ('EOS', 4), ('Waves', 4)]

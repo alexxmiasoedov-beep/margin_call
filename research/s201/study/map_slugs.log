@@ -1,0 +1,31 @@
+перпов живых в окне: 812 с кандидатами: 545 slug-кандидатов: 631
+цен Santiment: 202910 slug с ценой: 624
+сопоставлено перпов: 515 из 545 с кандидатами
+перпов, где цену прошли ≥ 2 slug: 25
+  1000FLOKI: bnb-floki-inu(BEP20,1.000); floki-inu-v2(ETH,1.000) → floki-inu-v2
+  AAVE: aave(ETH,1.000); p-aave(Polygon,1.000); o-aave(Optimism,1.000) → aave
+  ALT: altlayer(ETH,0.999); alitas(BEP20,0.995) → altlayer
+  CHR: bnb-chromia(BEP20,0.999); chromia(ETH,0.999) → chromia
+  CRV: curve(ETH,1.000); arb-curve(Arbitrum,1.000) → curve
+  CYBER: o-cyberconnect(Optimism,1.000); cyberconnect(ETH,1.000) → cyberconnect
+  EPIC: epic-cash(Own,1.249); epic-chain(ETH,0.999) → epic-chain
+  ESPORTS: yooldo(nan,1.002); bnb-yooldo(BEP20,1.002) → yooldo
+  GMX: arb-gmx(Arbitrum,1.000); a-gmx(Avalanche,1.000) → arb-gmx
+  HOT: holo(ETH,1.000); hydro-protocol(ETH,1.001) → holo
+  ID: bnb-space-id(BEP20,1.000); space-id(ETH,1.000) → space-id
+  MAGIC: arb-magic-token(Arbitrum,1.000); magic-token(ETH,1.000) → magic-token
+  NXPC: a-maplestory-universe(Avalanche,0.999); bnb-maplestory-universe(BEP20,0.999) → a-maplestory-universe
+  PENDLE: pendle(ETH,1.000); arb-pendle(Arbitrum,1.000) → pendle
+  POL: p-matic-network(Polygon,1.000); polygon-ecosystem-token(ETH,1.000) → polygon-ecosystem-token
+  SNX: synthetix-network-token(ETH,0.999); o-synthetix-network-token(Optimism,0.999) → synthetix-network-token
+  STG: stargate-finance(ETH,0.999); arb-stargate-finance(Arbitrum,0.999) → stargate-finance
+  STRK: strike(nan,1.004); starknet-token(ETH,1.000) → starknet-token
+  SUSHI: sushi(ETH,0.999); bnb-sushi(BEP20,0.999); arb-sushi(Arbitrum,0.999) → sushi
+  SYN: arb-synapse-2(Arbitrum,1.000); synapse-2(ETH,1.000) → synapse-2
+  UNI: uniswap(ETH,1.000); p-uniswap(Polygon,1.000) → uniswap
+  USDC: o-usd-coin(Optimism,1.000); arb-usd-coin(Arbitrum,1.000); usd-coin(ETH,1.000); a-usd-coin(Avalanche,1.000); sol-usd-coin(Solana,1.000); p-usd-coin(Polygon,1.000); bnb-usd-coin(BEP20,1.000) → usd-coin
+  WLD: worldcoin-org(ETH,1.000); o-worldcoin-org(Optimism,1.000) → worldcoin-org
+  XNY: bnb-codatta(BEP20,1.004); codatta(nan,1.004) → codatta
+  ZRO: arb-layerzero(Arbitrum,0.999); o-layerzero(Optimism,0.999); layerzero(ETH,0.999) → layerzero
+инфраструктура основных slug: {'ETH': 208, 'BEP20': 62, 'Own': 60, 'Solana': 47, 'None': 47, 'Base': 15, 'Sui': 8, 'Arbitrum': 7, 'Substrate': 5, 'Cosmos': 5, 'Tron': 4, 'BTC': 3, 'Avalanche': 3, 'BEP2': 3, 'TON': 3, 'Cardano': 2, 'Chiliz': 2, 'NEO': 2, 'ONT': 2, 'Optimism': 2, 'VeChain': 2, 'ALGO': 1, 'Aptos': 1, 'BCH': 1, 'Celo': 1, 'Dogecoin': 1, 'ETC': 1, 'EOS': 1, 'Graphene': 1, 'Hyperliquid': 1, 'ICP': 1, 'IOTA': 1, 'Kava': 1, 'Kusama': 1, 'Linea': 1, 'LTC': 1, 'Robinhood': 1, 'Qtum': 1, 'Sonic': 1, 'Polygon': 1, 'Stellar': 1, 'XRP': 1, 'Zilliqa': 1, 'zkSync': 1}
+не прошли цену: 30 ARX BNC BOB BOT CAT COIN DJT EDEN EWT FIGHT FLM GME GPRO META MSTR NOW OBOL PENG PERP PONKE PORT3 QUICK SPACE SWELL SXP TOKEN TON VRT WEN XCN
