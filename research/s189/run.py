@@ -99,7 +99,7 @@ def run(per):
                 if h == 4:
                     R.loc[ix[ok], "stop4"] = stp[ok]
                     mv = FB.alt_mv(t[Ii[ok]] + 900, tend[ok])
-                    R.loc[ix[ok], "hed4"] = net[ok] + side * mv
+                    R.loc[ix[ok], "hed4"] = net[ok] - side * mv        # шорт + лонг индекса, лонг + шорт индекса
             R.loc[ix, "pl4"] = FB.placebo(sym, Ii, 0.15, 4, side)
     keep = ["kind", "b", "sym", "D", "H", "T", "r24", "gate", "ftx", "blvt", "ftx_coin", "phi_g", "phi_f", "krw", "side",
             "net1", "net4", "net24", "stop4", "hed4", "pl4"]

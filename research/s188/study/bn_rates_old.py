@@ -27,7 +27,7 @@ for per in ("2020–2022", "2022–2024"):
 coins = [s for s, _ in sorted(tv.items(), key=lambda z: -z[1]) if s in have and s not in C.bad_set()][:60]
 print("монет:", len(coins), ", ".join(coins), flush=True)
 t0, t1 = C.ts("2020-09-01"), C.ts("2024-10-01")
-for c in coins:
+for c in (coins[::-1] if "--rev" in sys.argv else coins):
     fn = f"{OUT}/{c}.csv"
     if os.path.exists(fn):
         continue
