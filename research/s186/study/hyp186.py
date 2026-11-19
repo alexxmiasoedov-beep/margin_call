@@ -209,8 +209,8 @@ def main():
                 L(f"  r24 ≥ {thr:.0%}: {(e2.r24 >= thr).sum() / mo:.1f} в мес.; r24 ≤ −{thr:.0%}: "
                   f"{(e2.r24 <= -thr).sum() / mo:.1f} в мес.")
             up = e2[e2.r24 >= 0.10].copy()
-            L("  " + describe_flow((up.M * up.r24 / up.v7).values, "поток/суточный оборот перпа Binance при r24 ≥ 10%"))
-            L("  " + describe_flow((up.M * up.r24 / up.q_base).values, "поток/оборот свечи 16:00–16:15 Binance при r24 ≥ 10%"))
+            L("  " + describe_flow((up.M * up.r24 / up.v7).values, "K=2: поток/суточный оборот перпа Binance при r24 ≥ 10%"))
+            L("  " + describe_flow((up.M * up.r24 / up.q_base).values, "K=2: поток/оборот свечи 16:00–16:15 Binance при r24 ≥ 10%"))
             gp = pickle.load(open(f"{C.OUT}/gate_perp_daily.pkl", "rb")) if os.path.exists(f"{C.OUT}/gate_perp_daily.pkl") else {}
             gv = np.full(len(up), np.nan)
             for i, (b, D) in enumerate(zip(up.b.astype(str), up.D)):
@@ -219,11 +219,17 @@ def main():
                     w = df.qv[(df.index >= D - 7 * C.DAY) & (df.index < D)]
                     if len(w):
                         gv[i] = w.mean()
-            L("  " + describe_flow(up.M.values * up.r24.values / gv, "поток/суточный оборот перпа Gate при r24 ≥ 10%"))
+            L("  " + describe_flow(up.M.values * up.r24.values / gv, "K=2: поток/суточный оборот перпа Gate при r24 ≥ 10%"))
             L(f"  оборот перпа Gate к перпу Binance (медиана по событиям): {np.nanmedian(gv / up.v7.values) * 100:.1f}%")
             L(f"  пересечения от цены 16:00: +12% (3S) {(e2.up_12 >= 0).sum() / mo:.1f}, +20% (3L) "
               f"{(e2.up_20 >= 0).sum() / mo:.1f}, −12% (3L) {(e2.dn_12 >= 0).sum() / mo:.1f}, −20% (3S) "
               f"{(e2.dn_20 >= 0).sum() / mo:.1f}, ±15% (MEXC) {((e2.up_15 >= 0) | (e2.dn_15 >= 0)).sum() / mo:.1f} в мес.")
+            for col, name in (("up_12", "+12%"), ("up_6_67", "+6,67%")):
+                cx = e2[e2[col] >= 0]
+                te = (cx.D - C.DAY + 16 * 3600 + 900 * (cx[col].astype(np.int64) + 1)).values
+                pj, pa = pre_journal(cx.b.astype(str).values, te, J)
+                L(f"  пересечение {name} от 16:00: {len(cx) / mo:.1f} в мес.; вход журнала за 48 ч до пересечения — "
+                  f"{pa * 100:.0f}%; " + ", ".join(f"{j} {v * 100:.0f}%" for j, v in sorted(pj.items(), key=lambda z: -z[1])))
             ev = e2[e2.r24 >= 0.10]
             pj, pa = pre_journal(ev.b.astype(str).values, (ev.D + 16 * 3600).values, J)
             L(f"  E2 (r24 ≥ 10%): вход журнала за 48 ч до 16:00 — {pa * 100:.0f}%; " +

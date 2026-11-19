@@ -74,6 +74,7 @@ def main():
     F = U["F"]
     F = F[F.addr.notna()].reset_index(drop=True)
     days = pickle.load(open(f"{C.OUT}/cmc_lt_daily.pkl", "rb"))["ftx"]
+    days = {k: v[~v.index.duplicated(keep="last")].sort_index() for k, v in days.items()}   # стыки лет в ответах CMC
     snaps = []
     for y in range(2019, 2023):
         for m in range(1, 13):
