@@ -1,0 +1,21 @@
+Coin Metrics Community: активов с AdrActCnt (1d) 492 | с AdrNewCnt (1d) 230
+ликвидных перпов (за все периоды) 663 | с рядом активных адресов 70
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=audio_eth&metrics=
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=audio_eth&metrics=
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=audio_eth&metrics=
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=audio_eth&metrics=
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=axs_eth&metrics=Ad
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=axs_eth&metrics=Ad
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=axs_eth&metrics=Ad
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=axs_eth&metrics=Ad
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=band_eth&metrics=A
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=band_eth&metrics=A
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=band_eth&metrics=A
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=band_eth&metrics=A
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=chz_eth&metrics=Ad
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=chz_eth&metrics=Ad
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=chz_eth&metrics=Ad
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=chz_eth&metrics=Ad
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=ftm_eth&metrics=Ad
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=ftm_eth&metrics=Ad
+  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=ftm_eth&metrics=Ad
