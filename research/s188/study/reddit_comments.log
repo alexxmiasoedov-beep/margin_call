@@ -1,0 +1,203 @@
+тредов: 20
+
+### r/BitcoinMarkets 2021-06-09 ↑47 комм. 78: What's Going on With BTC Short Interest?
+  ТЕКСТ: I see BTC short interest on Bitfenex just skyrocketed today past levels from May 17/18 when we saw BTC drop from 45k to 30k. What are the implications of this? I'm kind of a noob, is this a short squeeze due to the high shorts interest from Jun 7-9 getting wrecked by the El Salvador pump? Or what's going on?
+  [33] The folks who made money shorting the last dozen short-lived bounces and rallies over the past two months are making the same play again.   I believe it will turn out differently for them this time and that they've gone to the well once too often, but they're the ones who have been making bank the last two months, not me, so who knows.
+  [29] "Everyone knows" is when everyone gets wrecked
+  [14] I guess it's before five where you live.
+  [12] No. I'm saying that inflation is bad for all aspects of the economy. I realize retail traders say buying bitcoin is a "hedge" against inflation. In reality that's just not true as Bitcoin holdd no "actual" value except  among the people who own/trade it (i.e you cant currently go to McDonald's and buy a hamburger with Bitcoin. Therefore in actuality it holds no value). Therefore, when inflation rises Bitcoin is bound to keep dropping unless the w
+  [11] In a country like Argentina, the economy sucks, inflation is high, and gold goes up anyway. You can't buy a McDonald's with gold. Gold has no value according to your logic.
+  [10] Sure the shorts increased like now when btc went from 45-30k, but check the covid dump . Short interest spiked into 4K and we only went up . So it’s a data point but wouldn’t take it too serious .
+  [9] I’ve been stunned by those ballsy enough to short bitcoin for the last 6 years (humble brag). I guarantee over half of them are homeless now, sucking suck for a few bucks so they can get drunk
+  [9] Price dropped from 20k to 3k last bear. There’s plenty money to be made in shorts.
+
+### r/BitcoinMarkets 2021-11-04 ↑14 комм. 84: Crypto Interest Rates - Summary Table For November.
+  [5] Where do you get the default risk rates for these platforms?
+  [3] Is there any details on why an institution was deemed "High Risk" ?
+  [1] [removed]
+  [1] [removed]
+  [1] [removed]
+  [1] those [implied default risks](https://ebrary.net/14256/economics/credit_spreads_implied_probability_default) are pretty high.
+  [1] [removed]
+  [1] [removed]
+
+### r/BitcoinMarkets 2021-05-30 ↑28 комм. 28: Where does the profit come from when a perp future is closed?
+  ТЕКСТ: [deleted]
+  [15] To clear up some confusion, you don't buy 1000 lots at 100x, you accept a contract of 100000 lots at a certain price. And you give the exchange some bitcoin or cash deposit so they can make sure that users can never go negative on their exchange. If you deposit a little, then you have a high leverage, if you deposit a lot of margin balance compared to the contract size, you have a small leverage.  if someone gets lucky, that $100,000,000 profit c
+  [8] The profit comes from someone else longing/shorting at current price.  Your counterparty from the beginning of the trade may still be in his trade, and the exchange will find someone else for him to close with.
+  [7] Alice and bob both agree to enter into a trade. Alice is long, Bob is short.   They each put up $5 of collateral and trade 5 contracts, each valued at $1, between each other. There is a a total of $10 of margin put into the system, $5 from each player. The total open interest of the system is $5.    The price goes up, those contracts are now valued at $1.50. Alice is long, so she's up 50%. Bob is short, so he's down 50%. They close the trade.   A
+  [3] If one brokerage / platform has too much price difference with all the others, the arbitrage will fill the gap.  So in your case, if your "lucky" group all try to close their positions, then there will be a supply / demand imbalance, and the price will rise / fall in relation to other platforms.  Outside traders will come in and buy at a discount / sell at a premium. Your lucky group all get paid at a slightly lower than market value rate, and th
+  [3] For every long contact you buy, someone buys a short. Or, they increase the funding.
+  [2] https://www.bitmex.com/app/perpetualContractsGuide
+  [2] Its called fiat money. Its not real. It comes out of thin air.
+  [1] [deleted]
+
+### r/algotrading 2022-08-12 ↑6 комм. 15: Sharing v0 of our OSS perp funding rate arb bot
+  ТЕКСТ: started with ts, but will prob re-write in rust/python/cpp. we're working w/ traders on refining this rn... thought why not share with the community in the meantime :)  [https://github.com/mrgnlabs/funding-rate-arb](https://github.com/mrgnlabs/funding-rate-arb)  feedback v welcome, enjoy!
+  [4] Tried it and it stole all my coins.  Can you please give them back, I pinged you multiple times
+  [3] lol dayum
+  [1] lol, i'm having fun tweaking this one
+  [1] Please man, it's a huge chunk of my savings
+  [1] what are you talking about
+  [1] You stole all my coins, the code sends back my private key to your server.  Stop pretending
+  [1] 🤔
+  [1] ok buddy show me on chain lol, send the txn
+
+### r/algotrading 2021-05-26 ↑3 комм. 22: FTX Funding Arb, BOT Development
+  ТЕКСТ: FTX has 2 books  1) Spot trading   	a. Margin borrowing is allowed 	b. Margin borrowed assets count as collateral  2) Perpetual futures trading   	a. A funding rate is applied every hour, based on the spot/perpetual price difference  By going long/short on the side that collects funding, the trade pays out with no delta risk. Most people call it the 'carry' trade     The BOT  Hand trading this arb takes time and results in sub-optimal fills. I am looking for someone to develop a bot that will automate most the of the trade work  The potential profit can be seen in the historic funding rates, here is a sample API of an asset  https://ftx.com/api/funding_rates?start_time=1610323200&end_time=1629200000&future=BNB-PERP  If you are interested in this project and have a posting history that gives confidence in your ability, let me know-
+  [3] So my original question still stands.  If you are locking in triple digit returns, why are you concerned with a point or two of slippage?  This sub isn't hostile to any ideas, the sub is hostile to people coming in with something that's been well known and trumpeting it like it's some shiny new thing, and that something this easy is something a halfway competent developer would need help with.  These trades have been discussed to death in various
+  [2] Borrowing the alt requires paying margin interest which is higher than the perp funding right now so that's a no-go either.  I don't get why you're being so defensive.  I've done the trade before, and I'm trying to give you pointers.  Carry trade is like trading 101.
+  [2] I have looked, and I am not seeing why you keep pointing it. Maybe you didn't post the right example, but for the bnb perp you linked, it is showing a daily funding of several bps at most. I don't get where you are extrapolating 200%/year roi? Especially taking into account the drag of execution cost. You even said it yourself in your OP that you are seeing suboptimal fills if you actually try to implement this trade. Algo trading is not magic. I
+  [1] I agree 200%+ apy trades with 0 delta risk is considered almost a waste of time in crypto. My guess was that this sub might find value in a trade with this level of return, maybe everyone here considers this too low  There are risks involved with the basis, understanding how trading bands, the liquidation engine, etc work. The information is all out there though  This is a simple trade and idea, I don't view that as a negative
+  [1] [deleted]
+  [1] You're about two weeks too late to the party.  I was running this exact trade for the past year, after last week it's basically collapsed.  You really don't need an algo for it either; I was making 20% without trying, half a percent in slippage wasn't the end of the world.
+  [1] [deleted]
+  [1] > Historic funding rates are available, they are in fact what best signals the overall market structure.  This is what people thought running inter exchange arb back in 2017.  Turns out it wasn't the case, and that it was indeed an anomaly that had gone away for good.  The high funding rate is wholly dependent on retail folks who believe BTC is going to moon and that only a sucker would sell a future at a 30% premium.  After the crash, those peop
+
+### r/BitcoinMarkets 2026-04-25 ↑11 комм. 16: Someone asked me yesterday if trading perps was actually worth 6 years and I've been chewing on it since.
+  ТЕКСТ: Started in 2019 with $2k on Deribit was obsessed with Bitmex liquidation engines specifically, read everything i could find. First month up 40%, third month down 60%, classic arc. Blew the account chasing a sol perp short that summer, which is funny to think about now because sol didn't even matter then.  Put another $3k in early 2020. Covid crash happened a few weeks later. Got lucky being short btc into it but closed way too early because I was scared. 3x'd the account in a week anyway, felt like a genius for exactly 11 days.  The years in between kind of blur. 2021 was mostly btc and eth swings, defi summer i ignored, nfts I ignored, watched ethereum go parabolic without really participating. Got to around $28k by late 2021.       Got engaged that fall also, felt good about things in general.  >!Oh and i got divorced in 2023. Different story, don't really want to get into it here. Did
+  [9] Ran the math on your numbers out of curiosity. $5k in 2019-2020, $12k post-FTX rebuild, $61k now.    If you'd just DCA'd that same $17k into BTC spot on the same Bmex or Kraken starting Jan 2019 you'd be sitting on roughly $180-200k depending on timing.       Not saying this to be cruel, you clearly know it, just putting it here because every aspiring perp trader reading this thread needs to see both numbers side by side before they decide.
+  [5] Fair warning I'm gonna get slightly technical here but bear with me.  One, the liquidation engine point.       OP started on deribit studying bitmex liq mechanics specifically and thats not accidental. Fair price marking vs last-traded-price liquidation is genuinely the difference between surviving a wick and getting stopped out on a move that didnt happen on the broader market. Most people dont check this until after they get wrecked.  Two, the 
+  [3] long story short lol
+  [2] i think the "filter" doing all the work in 2020 was hilarious because there was basically one venue that fit it and everyone knew it, you didnt pick it as much as you ran out of alternatives.       funny it ended up being the right answer anyway
+  [2] I don't buy it.  Usually, the losses teach what hodlers already know. There's a reason I'm a hodler, not a trader.  When I was getting started in Bitcoin, I spent a lot of time trying to figure out what the most common mistakes were, so I could avoid making those same mistakes.  The three biggest mistakes I saw again and again and again:  1. People lost coins on exchanges that collapsed.  2. People lost coins by not doing self custody right (hard
+  [2] Everyone’s got their own path and their own way of looking at it. To actually win over the long run, you usually need a decent amount of capital and not everyone has that. Sometimes trading ends up being the only real option.       The key thing is sticking to solid risk-reward and risk management, and actually having a strategy.
+  [2] Damn looks like quite a hard thing to do 
+  [1] Man, he laid out his whole life for us in a single thread.  I went through those tough times too honestly, I was glad to have made it through them. I was also glad to have worked on Bitmex back then, I took on some funds under management and lost quite a bit.       Luckily, the investor had bought Bitcoin at 3k$ on my advice, so basically all the losses were covered.
+
+### r/algotrading 2021-05-06 ↑14 комм. 5: Who's running the "Coinbase Effect" algo? //new listing => buy/sell; exactly 24 hours later => stop
+  [15] Was not shocked the latest round of "surprise" Coinbase listings led to instant spikes in the respective cryptocurrencies. What I found interesting was that trading volume began to plummet at exactly 24 hours after the announce time for all four currencies. Wondering if it's mostly led by algos using the same parameters.
+  [1] [removed]
+  [1] Wrong subreddit?
+  [1] Denke ich auch
+  [-3] WHO-Notfallzulassung für chinesischen Corona-Impfstoff von Sinopharm
+
+### r/BitcoinMarkets 2021-08-23 ↑2 комм. 24: I've noticed that coins spike when binance announces new coins, and not when they're actually listed. Any bot for this?
+  ТЕКСТ: I've noticed that coins spike when binance announces new coins, and not when they're actually listed.  This is an example announcement : [https://www.binance.com/en/support/announcement/3c5c8af23a624818a75bf18b1faeb7c0](https://www.binance.com/en/support/announcement/3c5c8af23a624818a75bf18b1faeb7c0)     The coin hit 125% in the next 15 mins.      Any bot that does this?   \- Checks for new Binance announcements  \- Check if coin exists in any current exchanges - Huobi, Kraken, FTX etc  \- Purchases $X in the respective exchange.  I remember seeing a simple bot to buy when a new coin is listed, though that loses significant gain
+  [4] Buy the rumor, sell the news.
+  [1] [removed]
+  [1] [removed]
+  [1] [removed]
+  [1] [removed]
+  [1] [removed]
+  [1] [removed]
+  [1] [removed]
+
+### r/algotrading 2021-08-28 ↑297 комм. 62: The trading algorithm I made can now detect a new coin within 0.3 seconds of it being listed on Binance
+  ТЕКСТ:  It's been about two weeks now since I initially shared with you a tool that I had made in order to quickly buy into a new coin listing to take advantage of the initial surge in the price.  I've spent the past two weeks, debugging, fixing and optimising this code to get it to a level where it actually works. It's been a challenge to test since I have to wait for a new coin order and then check if it broke or not, but I think I finally got there.  Before I go explaining how the tool works, let me explain why I think that this particular strategy has some potential:  As some of you may have noticed, many coins seem to go through to what I would like to call a "lightning-pump" during their first few seconds of being listed on an exchange.  Have a look at ICP:  https://preview.redd.it/t4v9v0a2m3k71.png?width=2650&format=png&auto=webp&s=8f8cae249025e9dc832036e275dcf30beeaf3aab  In under a min
+  [72] This solution is a total waste of resources and is too basic.  First you can't be the fastest doing this. Your code is totally sync, meaning you are waiting after the network (you can't reduce the call time, but you can hide the response time). If you want to be fast, be fast: send request at the maximum rate you want . Every .05 second if you want. You need to call Sam shardy client with an async wrapper. Or better, do your own client, with less
+  [54] Don't they pump/dump super hard because of the lack of bids and asks
+  [26] New coins aren't shortable when they first come out, they usually add margin feature later, at least that's the case with Binance.
+  [16] Awsome answer!
+  [15] Have you considered to open a websocket? Running your first iteration I saw we need more speed too.   I'm adapting it to my other algo trading services, and I can't spam the API because I could block another services. That was my thinking and working on implementing it.
+  [15] [deleted]
+  [12] [deleted]
+  [10] Is it even possible to short shitcoins?
+
+### r/algotrading 2021-02-05 ↑10 комм. 29: Crypto Trading Bot That Capitalizes on Crypto Pump and Dumps Automatically?
+  ТЕКСТ: NOT Promoting pump a dumps at all mods! Software question...  Pump and dump crypto groups seem to cause anyone who is not a leader of the group and able to accumulate the coin before and set a limit sell order to get left holding the bag (if I'm wrong about this please enlighten me).  But is it possible to create a software that could watch say the top 300 alt coins with a high degree of accuracy, and automatically buy anything that spiked 50% + in a matter of seconds and automatically sell it all if it hits a100% profit or a 10% loss  (or something along those lines)?  If so it seems it would be an automated way to detect and cash in on all these little pump and dumps that are constantly happening with these smaller alt coins.  I was thinking of paying developer to make it, as I imagine if it does exist, no one would share it? 
+  [7] here's your answer op...   the best way to take advantage of FOMO is advertising your bot on reddit
+  [6] Someone relatively low skilled could probably do this for you with Gunbot, but momentum trading like this will leech away your capital pretty quickly
+  [2] No, but you're assuming that 1. You'll get the entry you want during a high volume surge, 2. That your stoploss will have zero slippage on the way down. Neither is a good assumption.
+  [2] This makes sense, but how do you see a wallet addresses of people who were doing this for altcoins that pumped?
+  [1] Thanks I'll look into gunbot.  If the automated triggers work, and it only buys on rapid spikes like this and the automated sell orders work, how could it leech capital?
+  [1] Trade fees on crypto exchanges are high. And, without reward to risk calculation to guard your trade decision (something difficult if not impossible to get right when momentum trading on a symbol that may be at its all time high or low), you'll end up in losing positions far more often.  Even with stop losses on multi leg entry orders, you'll probably lose more than you gain.
+  [1] Are there any situations besides a pump and dump where a coin shows a 30%+ gain in under a minute?
+  [1] It would never be perfect of course and doesn't need to be, it just had to not lose money.  Why would the entry or slippage be so bad as to lose money on a situation like this?  It shoots up to 1000% + in many cases, and the drop is slower it takes several minutes
+
+### r/algotrading 2026-02-22 ↑460 комм. 43: I ADMIT IT. I OVERFIT. I HAVE SELECTION BIAS.
+  [87] But if you overfit AND make money… is that ok?
+  [38] I think that’s called luck? 🙂
+  [18] honestly respect the self awareness, most people never get there  overfitting is so easy to do cause ur brain WANTS the backtest to work. what gave it away for you - was it forward test performance or did u catch it in the data?
+  [15] Is there anything I can do about it?   I don’t overfit the data or do any curve fitting during backtesting. But when I create 8 strategies, and only 2 beat the market out of sample, deleting the other 6 is overfitting.
+  [15] Detection algorithms with little modification should work across disparate tickers. A good lineup is QQQ, SPY, IWM. If you can find signals consistently in that mess your functioning from raw data and overfit is unlikely.   Some hand tuning to a specific investment is expected. Mostly to deal with the influence of human traders.   When I was building a backtesting engine and I was using hyper parallelized vectorized learning for regime detection 
+  [9] So what are you doing about it?
+  [8] Yes there is a lot you can do about it, that’s essentially the ‘name of the game’.
+  [6] ok?  
+
+### r/algotrading 2025-04-30 ↑298 комм. 94: Is this actually overfit, or am I capturing a legitimate structural signal?
+  [51] Anything as clean as that is bound to be overfit, experience is hell of an anti-drug.  In algotrading if it's too good to be true, then it's never true there is no maybe.
+  [44] Doing a $100 live test at Alpaca/Tradier/etc will tell you a whole lot quickly. There are probably issues...but also...reality will give you a lot of feedback pretty quickly. (And then if you run a backtest and papertrades for the same period of reality and get different results, you can see how to fix your testing to match what really happened.)  It seems backwards, but IMO saves a lot of time and everything else is a guess. Really helps your te
+  [39] I’ve been experimenting with unsupervised models to detect short-term directional pressure in markets using only OHLC data no volume, no external indicators, no labels. The core idea is to cluster price structure patterns that represent latent buying/selling pressure, then map those clusters to directional signals. It’s working surprisingly well maybe too well which has me wondering whether I’m looking at a real edge or just something tightly fit
+  [37] Is this some high-level Python clustering library?   I know a little about this approach, but I think everything depends on how you engineered your features. 75% win rate seems really high, especially if you're really filtering out flat signals. I doubt it's possible to consistently predict price based only on OHLC data, maybe only a few ticks ahead.
+  [35] It's not backwards, it's exactly how it should be done. System testing must quickly go from questions to answers. Many developers spend far, far too long on the questions.
+  [21] If your preprocessing is applied to the whole of train/test data together then this is data leakage. You need to fit the preprocessing on train only, then apply to test.
+  [20] do you use the same data for training and testing ? If yes it is overfit, other it is not. I think it is as simple as that. But it looks like overfit to me
+  [18] Fair point, but no I’m not using the same data for training and testing. It’s a walk-forward setup: the GMM is trained on a past window, then applied to future, unseen candles. No leakage. Also, this is unsupervised I'm not fitting to labels or optimising for accuracy. The model clusters structural patterns in OHLC data, and I assign directional labels *after* clustering based on centroid behaviour. So, if it looks predictive, that’s emerging fro
+
+### r/BitcoinMarkets 2021-12-12 ↑51 комм. 115: As mentioned in the Daily, I'm backtesting 20 random days to see how well you'd do countertrading this sub's sentiment.
+  ТЕКСТ: I started with February 5, 2019.  This place used to be a lot different, huh? Very few posts are strictly bullish or bearish. Most are either talking about TA and trading strategies specifically or things that were going on in the crypto world at the time (namely the QuadrigaCX bankruptcy and its ramifications).  Oh, and CuK was exactly the same. Handful of people are still here that I saw.  Bullish comments: 4  Bearish comments: 6  Bull/Bear Ratio: 0.67/1  Daily close (2/4/19): 3459.13  Daily close (2/5/19): 3466.36 (+0.21%)  Daily close (2/6/19): 3413.77 (-1.52%)  Daily close (2/12/19): 3632.07 (+4.78)  Daily close (2/19/19): 3947.09 (+13.87%)  Daily close (3/5/19): 3896.38 (+12.4%)  Had you longed after reading the comments from the very beaten down commentors on that day, you would have fared well as long as your stop was lower than 3391.02.  Next up is November 19, 2018. I read a to
+  [7] I keep thinking about the nonsense that youtubers have been doing with readings and analysis that doesn't get anywhere.  one thing is clear in btc, we can only read the past!
+  [7] March 7, 2018  Again, there are a ton of comments and I get the picture. I counted 5 bullish comments and 17 bearish ones before I stopped. I doubt it's going to flip as I get deeper into the thread, so...  Bullish comments: 5  Bearish comments: 17  Bull/bear ratio: 0.29/1  3/6/18 daily close: 10779.90  3/7/18 daily close: 9965.57 (-7.55%)  3/8/18 daily close: 9395.01 (-5.72%)  3/14/18 daily close: 8269.81 (-17.02%)  3/21/18 daily close: 8929.28 
+  [7] Should write a python script to automate this task and see how far on/off the forum sentiment is.
+  [6] March 8, 2020  I get the picture here. People were really bearish. I don't have to keep reading to see that.  Bullish comments (that I counted): 5  Bearish comments (that I counted): 20  Bull/bear ratio: 0.25/1  Daily close (3/7/20): 8909.95  Daily close (3/8/20): 8108.12 (-9%)  Daily close (3/9/20): 7923.64 (-2.3%)  Daily close (3/15/20): 5392.31 (-33.5%)  Daily close (3/22/20): 5830.25 (-28.1%)  Daily close (4/5/20): 6791.13 (-16.2%)  Yeah, tha
+  [5] May 19, 2019  Again, I got deep enough to get the picture.   Bullish comments: 12  Bearish comments: 10  Bull/bear ratio: 1.2/1  Daily close 5/18/19: 7271.21  Daily close 5/19/19: 8197.69 (+11.3%)  Daily close 5/20/19: 7978.31 (-2.68%)  Daily close 5/26/19: 8673.22 (+5.48%)  Daily close 6/2/19: 8742.96 (+6.24%)  Daily close 6/16/19: 8994.49 (+8.86%)  So, the slight majority were bullish and they were correct.  Next up, September 8, 2020
+  [3] …….yep
+  [3] > you would have fared well as long as your stop was lower than 3391.02.  It was, but then I moved it up. Doh!
+  [2] September 8, 2020  Wasn't thousands of comments to sift through this time, thankfully.  Bullish comments: 10  Bearish comments: 14  Bull/bear ratio: 0.714/1  Daily close 9/7/20: 10369.56  Daily close 9/8/20: 10131.52 (-2.3%)  Daily close 9/9/20: 10242.35 (+1.1%)  Daily close 9/15/20: 10796.95 (+6.16%)  Daily close 9/22/20: 10538.46 (+3.86%)  Daily close 10/6/20: 10621.66 (+4.61%)  Not a huge move, but countertrading would have worked in this case
+
+### r/algotrading 2021-04-23 ↑464 комм. 92: Thanks to all the help from this sub, I was able to create a “technically” profitable (crypto) algo. IRL infinite money glitch here I come!
+  [58] Also, by technically profitable, I mean I’ve tested it using data that I collected every second for just over an hour (~4300 data points)  Edit: I should clarify that I’m also not considering fees nor spread.
+  [52] Wait, sorry to try to poke holes, I hope ur strat hauls ass, but you're trying to trade within hour?  Lowest fees are on Binance, and are 0.1%, combine that with .2% bid/ask spread and its a real up hill battle to trade high frequency (i've yet to do well on anything other then multiday long term momentum trades)  Have you tried live testing yet?  If fees become problematic, consider using RH since you can trade crypto with no fees  (you don't re
+  [29] "just" scaling it up 60 times is also giving the real world that much more time to mess up your prediction
+  [29] [deleted]
+  [23] This isn't fool proof because RH doesn't charge spot for crypto. When you buy you pay over spot and when you sell you get less than spot.
+  [14] I’ve heard it said that the difference between HFT and longer time frames is like the difference between quantum mechanics and classical physics. They unintuitively work by a completely different set of rules. Finding a profitable strategy that works on both is like proving string theory.
+  [13] Modified golden cross, variably weighted based on a few other TIs essentially
+  [12] Haha I said technically profitable for a reason lol, and my end goal is to just scale my timeframe up around 60x so instead of doing everything based on seconds, it’ll be based on minutes, although I’ll have to readjust basically everything.   Thank you for the comment though, truthfully the more holes people poke at this, the more I’ll be able to learn.  So in essence my plan is to take what I learned from this, and create a whole new algo with 
+
+### r/algotrading 2020-08-26 ↑260 комм. 114: My automated algo switching crypto trade bot is finally profitable...again
+  [61] Some notes about my homebrew bot, for those who haven't seen me post about it before:  * Completely custom written in C# * Trades on Bittrex and Binance (this instance is for Bittrex), provides Watcher services for Bittrex (crypto), Coinsquare (crypto), and AlphaVantage (stocks) to give me buy/sell signals for specific stocks/trading pairs I want to monitor, in order to manually trade (this is what you see below the 'Current Estimated Bittrex Bal
+  [49] it's never too late to start learning programming
+  [24] Technical indicators are just mathematical formulas updated every X periods
+  [23] I feel like coming up with the strategies and algorithms is harder than the actual programming in place, do you have any advice for developing the algorithms?
+  [21] If you’re running 30k tests live do you worry that you’ll be finding strategies that happen to work live not because they’re effective but because of the sheer number of tests you do.   Like if I run 30,000 random number generators live which just buy and sell at will I’ll end up with some really successful results just because of the large number of tests. I’m wondering how you test the significance of your results when deciding to go live and e
+  [21] Why even bother posting then if you’re not looking for feedback or willing to answer questions?  From your comments you’re basically running a forward test of 30k different strategies, which I’m willing to assume most are technical indicators with differing parameters and combinations, then you’re investing in the best ones over the sample set. The fact that it’s “live” still doesn’t address my question about how you are not just overfitting resu
+  [17] I wish I was as handy in this sort of stuff.
+  [17] Yeah that still doesn’t address what I’m talking about though, something could get lucky for 90 days too especially if you’re running 30k tests.
+
+### r/algotrading 2021-07-04 ↑274 комм. 61: I turned a profit by buying cryptocurrency using a trading algorithm that buys based on Reddit posts sentiment
+  ТЕКСТ: I coded a crypto trading algorithm that places trades on Binance based on Reddit post sentiment on relevant cryptocurrency subreddits.  &#x200B;  Despite my rational mind telling me it's not the best decision to just let this run on a live account, I decided to bite the bulltet and let the script run for a week with the following configuration:   * The bot scans the top 10 posts in hot on /r/cryptocurrency, /r/crypto_currency, /r/cryptocurrencies and /r/worldnews.  * It looks for keywords in the posts title and description, containing any of the top 40 coins by marketcap * It then analyses the sentiment of all posts that mention any of the top 40 cryptos * If the compound sentiment is positive, the algo will buy that coin.  With that logic in mind, here is last week’s performance broken down – all generated by the Reddit hivemind.  I am now hodling 11 coins in my portfolio, all because t
+  [150] This doesn’t support your algo. This is the principle that trading in a rising market is generally successful.
+  [59] One week of results is insufficient to draw conclusions.  Additionally, you’ll want to compare against buy and hold of an equal weight portfolio for all coins you are watching over the same period. This will at least allow you to compare your algo performance vs market performance.  Good luck.
+  [34] Bitcoin is currently still up 10% compared to last week. In about an hour it will be around 4%, or pretty much equal to OP's "profit". ETH is up \~20% and LTC >15%. Considering that, OP is actually underperfoming compared to the market.
+  [18] If his risk is lower than the market, that’s fine.
+  [16] Won’t the market all tank at once if crypto panic sells? My sense is the entire market goes up and down based on Bitcoin sentiment.
+  [15] 7,5% drawdown on ALGO in 2 days, scary. I would suggest waiting at least 3 months to see if results are still looking good. This is still impresive tho
+  [15] That... is not how percentages work...  If you hold $100 in each coin and each goes down 7.5%, then your portfolio goes down 7.5%. You are confused.
+  [8] This is cool, can you please describe your exit strategy?
+
+### r/algotrading 2021-02-22 ↑722 комм. 127: [ Update ] To my last post in here reddit users told me to flip my algorithm around and it worked, cant wait to run this on the live market (Bitcoin trading strategy)
+  [563] OP, a little tid bit. I've had my fair share of profitable algos, and noticed that switching to a dark theme consistently improves performance by +5% or more. You should try it and get back to us.
+  [279] buy 53721.56  sell 53722.23  &#x200B;  lmao are you trolling
+  [153] Don't get disheartened by some of the comments. Ppl are just pointing out obvious pitfalls.  I think it's pretty awesome that you got a profitable system going. That's a great Step 1. Now try and figure out if you cover fees, spread, slippage etc.  But most importantly- hang in there and keep grinding
+  [124] Yea fees alone eating you.
+  [122] This is a joke, right?
+  [121] Tomorrow:  [ update ] my backwards algo didn’t work because if it was that easy everyone would be a billionaire.
+  [105] What is slippage sir, I have no spread my bitcoin exchange only show one price  Please see squiggly lines go Up and print(f”{balance*1000}”) loop again  Push to prod at 18:00 UTC
+  [102] Lol I hope so. We watch the algorithm make 8+ trades in a 30s video. Spread? Slippage? Fees?
+
+### r/algotrading 2026-11-15 ↑1 комм. 0: Backtested a long-only "abnormal day + funding filter" momentum strategy on crypto perps (2020–2026) — worth forward testing?
+  ТЕКСТ: [removed]
+
+### r/algotrading 2021-09-06 ↑42 комм. 34: Stop hunting at its prime
+  ТЕКСТ: [deleted]
+  [24] * What is the pair/underlying?  * Is this charting tick trades? * The chart/axes needs better labeling.  I'd guess the bid/ask spread gets blown out for a few seconds, meaning the wild price jumps are just trades against the front of book rather than malicious stop hunting.
+  [12] Where are you even able to get data that granular?
+  [10] That is called a bid ask spread LOL
+  [8] The chart above shows the first 3 seconds after a signal was received.  This is why strategies based on just “be first”,  won’t work unless you are able to outsmart multi million dollars HTF firms. You are basically being liquidated by their strategies.   Note: Note how this algo bumps the price up 3% in less than 3 microseconds to increase profitability.
+  [7] Dude, you're so full of shit, it's not "simple really" most people need to get to a masters level electrical engineering degree to be exposed to what you just said, and for the high schoolers can do it comment, yes absolutely, but they are either inspired by, or mentored by somebody pointing them in the right direction, who has, or works with equivalently talented folks. Don't bullshit people......
+  [6] [deleted]
+  [4] Sorry, where's the 'stop hunting'? Looks like price moves up, then flattens off as it encounters more resistance (larger quantities on the offer vs aggressive buys), with occasional dips down to the bid when someone crosses the spread to sell.  Am I missing something here?  Also, where does one see 'this algo' pushing the price up 3% in 3 micros? Looks like it happens over a period of 2+ seconds according to your chart?
+  [3] Binance API — aggregates trades. More info here: https://dev.binance.vision/t/recent-trades-historical-and-aggregate/128/2
+
+### r/algotrading 2021-01-14 ↑80 комм. 71: What are indicators of short squeeze?
+  ТЕКСТ: What is a good way to detect when a stock is about to rise due to a short squeeze? The number of shorts passes the number of available stocks? What are good resources to track these numbers?
+  [191] Feeling bad about missing GME?
+  [94] r/wsb is such a great example of survivorship bias. Everyone sees one person posting about his 30x gains on options, but for every big score posted you don’t see the 1000 people that had options expire worthless.  You can probably get better odds by sending those 1000 people to a casino and having them all play red/black on the roulette wheel. Sure, most people will lose, but a some people (24?) will hit the correct red/black bet five times in a 
+  [40] Short % Float divided by price change
+  [28] LOL. Yea. I am a value investor at heart. GME would not have been on my radar at all.
+  [26] Visited for the memes, stayed for the gainz
+  [26] To be fair, there’s plenty of loss porn in there. It’s just not as common as of late because seemingly everything has just been going up recently
+  [22] It is kind of frustrating, my algo gets me a solid (if small) increase, but random stuff off wsb is where the vast majority of my gains come in from.
+  [18] Definitely isnt a guaranteed profit. One guy even made an algo that traded in line with the sentiment of wsb and one that did the contrary. The one that did the opposite actually made ~20/30% gain, the other lost about 3% if I remember correctly.

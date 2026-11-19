@@ -1,0 +1,185 @@
+постов: 77908 {'algotrading': 52770, 'BitcoinMarkets': 25138}
+охват: {'BitcoinMarkets': '2020-01 … 2026-11', 'algotrading': '2019-01 … 2026-11'}
+
+== займы: постов 164 (BitcoinMarkets 143, algotrading 21)
+    154 ↑   38 комм.  2021-02-06  r/BitcoinMarkets: Bitfinex repaid the remaining loan balance of $550 million to Tether
+     94 ↑   50 комм.  2020-02-12  r/BitcoinMarkets: Coinbase Pro launches margin trading
+     49 ↑   32 комм.  2023-04-26  r/algotrading: Crypto Margin trading ban Canada
+     47 ↑   78 комм.  2021-06-09  r/BitcoinMarkets: What's Going on With BTC Short Interest?
+     46 ↑   23 комм.  2020-03-23  r/BitcoinMarkets: Alert ! do not use poloniex margin trading
+     43 ↑   22 комм.  2020-11-24  r/BitcoinMarkets: Coinbase Pro Disables Margin Trading
+     28 ↑   48 комм.  2022-05-02  r/BitcoinMarkets: BTC-backed loans?
+     21 ↑   11 комм.  2021-02-02  r/algotrading: Hi -- looking for recommendations for high frequency crypto-brokers that allow fast trading on margin
+     14 ↑   84 комм.  2021-11-04  r/BitcoinMarkets: Crypto Interest Rates - Summary Table For November.
+      9 ↑    9 комм.  2024-08-25  r/BitcoinMarkets: Btc usdt margin buy at binance
+      9 ↑    4 комм.  2025-03-20  r/BitcoinMarkets: Donald Trump Urges the Federal Reserve to Cut Interest Rates!
+      8 ↑   15 комм.  2025-01-28  r/BitcoinMarkets: Looking for some advice - sell vs collateralized loan?
+      6 ↑    0 комм.  2020-06-29  r/algotrading: Trading with Bybit: Liquidation, Margin, and USDT Contracts
+      5 ↑   17 комм.  2021-06-11  r/BitcoinMarkets: Margin Trading in US
+      5 ↑   14 комм.  2021-10-04  r/algotrading: Question about liquidation prices in Binance's margin trading
+      4 ↑    2 комм.  2020-10-04  r/algotrading: I learned: In crypto markets you can also earn with margin funding instead of trading
+      3 ↑   28 комм.  2022-05-11  r/BitcoinMarkets: Could someone explain to me Margin Trading?
+      3 ↑   27 комм.  2020-01-09  r/BitcoinMarkets: Starting with margin trading on Kraken and would appreciate some help
+
+== фандинг и базис: постов 191 (algotrading 99, BitcoinMarkets 92)
+     43 ↑   42 комм.  2020-11-19  r/BitcoinMarkets: We made a tool to watch combined orderbooks for perpetuals
+     34 ↑   22 комм.  2021-07-22  r/algotrading: Overfitting in hyperparameter optimization
+     28 ↑   28 комм.  2021-05-30  r/BitcoinMarkets: Where does the profit come from when a perp future is closed?
+     28 ↑   18 комм.  2023-02-19  r/algotrading: Looking for an efficient way of strategy hyperparameter optimization in python
+     21 ↑    5 комм.  2019-10-18  r/algotrading: Source of Perpetual Futures leverage vs spot market
+     20 ↑   15 комм.  2022-04-07  r/algotrading: BTC-PERPETUAL Trading System with a Python Server and React.js Front-End; So I made this trading system nearly two years
+     16 ↑   29 комм.  2023-10-26  r/BitcoinMarkets: What would happen if a nation started using its central bank to perpetually purchase Bitcoin?
+     14 ↑    8 комм.  2025-05-30  r/algotrading: Perplexitys new backtesting approach
+     14 ↑   23 комм.  2021-02-24  r/BitcoinMarkets: Portfolio tracker with cost basis averaging?
+     11 ↑   16 комм.  2026-04-25  r/BitcoinMarkets: Someone asked me yesterday if trading perps was actually worth 6 years and I've been chewing on it since.
+      9 ↑    6 комм.  2025-10-20  r/algotrading: Comparison of top foundational models with real money trading crypto perpetual futures.
+      9 ↑    2 комм.  2024-05-04  r/BitcoinMarkets: How to read Funding Rate Chart? 
+      7 ↑    3 комм.  2021-02-20  r/algotrading: Searching for Potential Superperformer stocks with Python
+      7 ↑    0 комм.  2020-12-28  r/algotrading: Is there a websocket feed for bitz.ai's perpetual/swap/futures products?
+      6 ↑    4 комм.  2020-01-17  r/algotrading: Can someone explain to me how perpetual futures contracts work in cryptocurrency?
+      6 ↑   41 комм.  2022-07-26  r/algotrading: On Hyperparametric Optimisation
+      6 ↑    1 комм.  2020-10-22  r/BitcoinMarkets: Aggregated Open Interest and Funding Rate Indicators
+      6 ↑   15 комм.  2022-08-12  r/algotrading: Sharing v0 of our OSS perp funding rate arb bot
+
+== сквизы, ликвидации, OI: постов 139 (BitcoinMarkets 104, algotrading 35)
+    144 ↑   66 комм.  2021-10-23  r/BitcoinMarkets: Kucoin is using Cloudflare to deny website access during big price movement to profit on liquidations
+     66 ↑   38 комм.  2021-07-21  r/BitcoinMarkets: Bitcoin Price Bounce Above $30K Triggers Massive Liquidations
+     50 ↑   62 комм.  2021-03-15  r/BitcoinMarkets: Explanation of last night BTC long liquidation
+     35 ↑   27 комм.  2020-06-02  r/BitcoinMarkets: MASSIVE liquidations
+     33 ↑   13 комм.  2019-07-18  r/algotrading: Historical tick--by-tick cryptocurrency market data replay API (trades,quotes, liquidations, order book data)
+     19 ↑    8 комм.  2020-01-31  r/BitcoinMarkets: Price, Open Interest, Longs/Shorts Liquidation in one chart!
+     18 ↑    1 комм.  2020-10-09  r/algotrading: Live liquidations monitor for top cryptocurrency exchanges
+     12 ↑    4 комм.  2026-09-26  r/algotrading: Historical BTC liquidation heatmap data/API for backtesting anyone?
+     11 ↑   12 комм.  2020-07-13  r/BitcoinMarkets: Anyone have historical Bitmex open interest data or know any source one can get it from?
+      9 ↑   33 комм.  2021-04-24  r/BitcoinMarkets: How do I not get liquidated?
+      7 ↑    9 комм.  2022-10-30  r/algotrading: Where to get open interest data in real time for Cryptos?
+      6 ↑    1 комм.  2020-10-22  r/BitcoinMarkets: Aggregated Open Interest and Funding Rate Indicators
+      6 ↑    0 комм.  2020-06-29  r/algotrading: Trading with Bybit: Liquidation, Margin, and USDT Contracts
+      5 ↑   14 комм.  2021-10-04  r/algotrading: Question about liquidation prices in Binance's margin trading
+      4 ↑    6 комм.  2023-10-30  r/BitcoinMarkets: Crypto Miner Short Squeeze Incoming?
+      3 ↑    8 комм.  2021-07-29  r/BitcoinMarkets: How can I assess the risk of liquidation in wide, high leveraged grid trading?
+      2 ↑    0 комм.  2019-09-27  r/algotrading: Hilarious Crypto Music Video: Lil Bubble - Liquidated (Avril Lavigne - Complicated | Bitcoin Parody Version)
+      2 ↑    0 комм.  2022-01-16  r/BitcoinMarkets: Bollinger Band Squeeze Trading Strategy
+
+== листинги и Корея: постов 259 (BitcoinMarkets 233, algotrading 26)
+    297 ↑   62 комм.  2021-08-28  r/algotrading: The trading algorithm I made can now detect a new coin within 0.3 seconds of it being listed on Binance
+    213 ↑   41 комм.  2021-08-19  r/algotrading: Here's the new trading algorithm I've been working on guys: this one is able to buy a coin the moment it's listed on Bin
+    163 ↑   34 комм.  2021-10-26  r/algotrading: Finally did it: I made a crypto trading bot that automatically places orders on new listings before they get added on Bi
+     34 ↑   14 комм.  2020-07-14  r/BitcoinMarkets: South Korea plans Taxes for Bitcoin and other Cryptocurrencies
+     14 ↑    5 комм.  2021-05-06  r/algotrading: Who's running the "Coinbase Effect" algo? //new listing => buy/sell; exactly 24 hours later => stop
+     11 ↑    9 комм.  2024-03-12  r/BitcoinMarkets: Looking for a certain post listing some cycle top indicators
+     11 ↑    1 комм.  2021-09-03  r/algotrading: I finally did it - my crypto trading algo successfully bought a new coin within 0.2 seconds of it being listed on Binanc
+     10 ↑   30 комм.  2021-08-23  r/BitcoinMarkets: [Caution] DO NOT USE BITGLOBAL / BITHUMB GLOBAL!!!
+     10 ↑   14 комм.  2021-09-13  r/BitcoinMarkets: South Korea’s plan for crypto exchange registration rolls around on Sept. 24
+      7 ↑    2 комм.  2021-08-15  r/BitcoinMarkets: Here's the new trading algorithm I made guys: this one is able to buy a coin the moment it's listed on Binance. I've ope
+      4 ↑    5 комм.  2023-07-31  r/BitcoinMarkets: The SEC wants Coinbase $COIN to delist all Crypto except for Bitcoin $BTC:
+      2 ↑   12 комм.  2021-03-16  r/BitcoinMarkets: How to buy Newly Listed Coins Faster?!?!
+      2 ↑   24 комм.  2021-08-23  r/BitcoinMarkets: I've noticed that coins spike when binance announces new coins, and not when they're actually listed. Any bot for this?
+      1 ↑    1 комм.  2021-12-01  r/BitcoinMarkets: Bithumb vs Bitglobal (ex Bithumb Global)
+      1 ↑    0 комм.  2021-11-11  r/BitcoinMarkets: 🔥 Don't miss O2OX token listing on Coinsbit & Dex-trade Exchange ! 🔥
+      1 ↑    0 комм.  2021-12-03  r/BitcoinMarkets: Is this action remind you of the CBOE listing?
+      1 ↑    0 комм.  2021-12-17  r/BitcoinMarkets: VPAD WHITELISTING LIVE
+      1 ↑    0 комм.  2021-11-08  r/BitcoinMarkets: 🔥 Don't miss O2OX token listing on Coinsbit & Dex-trade Exchange ! 🔥
+
+== пампы и манипуляции: постов 255 (BitcoinMarkets 216, algotrading 39)
+    362 ↑   94 комм.  2021-07-22  r/BitcoinMarkets: Are we going to expect another Dump by the end of July?
+    131 ↑  123 комм.  2021-05-22  r/BitcoinMarkets: this dump feels familiar
+     87 ↑   38 комм.  2022-03-29  r/BitcoinMarkets: BTC pumps over 46k and erases all year losses debunking all claims that it’s dead
+     85 ↑   36 комм.  2022-04-01  r/BitcoinMarkets: The real reason BTC is pumping
+     70 ↑  109 комм.  2021-04-18  r/BitcoinMarkets: Why is Elon Musk pumping the “joke” coin?
+     31 ↑   34 комм.  2019-12-25  r/algotrading: How to technically predict Crypto dumps (shortly after e.g. bad news came out)?
+     26 ↑   18 комм.  2025-12-02  r/BitcoinMarkets: Bitcoin just survived another Market Manipulation Monday
+     12 ↑   51 комм.  2023-08-01  r/BitcoinMarkets: Why did BTC pump so much at the end of 2020?
+     10 ↑    6 комм.  2021-03-16  r/BitcoinMarkets: Chart Manipulation Tool Idea
+     10 ↑   29 комм.  2021-02-05  r/algotrading: Crypto Trading Bot That Capitalizes on Crypto Pump and Dumps Automatically?
+      6 ↑   56 комм.  2021-11-12  r/BitcoinMarkets: Who is going to tell them about the dumperino after the pumperino?
+      5 ↑   19 комм.  2019-04-03  r/algotrading: Missed the latest Bitcoin Pump? I bet you wouldn't have if you knew this :
+      5 ↑   17 комм.  2021-05-27  r/BitcoinMarkets: Why Bitcoin dumped. Distribution and Trend.
+      3 ↑    1 комм.  2021-01-28  r/BitcoinMarkets: 3 Actionable Ways to Fight Wall Street's Market Manipulation
+      3 ↑    3 комм.  2025-07-16  r/algotrading: Binance pump dump detector
+      2 ↑    0 комм.  2021-02-06  r/BitcoinMarkets: AUDIO/USDT... potential to pump 20x?
+      2 ↑    0 комм.  2021-03-07  r/BitcoinMarkets: Bitcoin pump started at 2pm
+      2 ↑   11 комм.  2019-08-01  r/algotrading: How to detect next Bitcoin dump?
+
+== разлоки: постов 30 (BitcoinMarkets 29, algotrading 1)
+      2 ↑    0 комм.  2025-04-15  r/BitcoinMarkets: Unlock the Power of Your Digital Assets with Multicoin Capital.
+      1 ↑    0 комм.  2025-10-21  r/algotrading: Risk Exposure Alert: The Algorithmic Danger of $1.02B Unlocks and 75x Memecoin Futures
+      1 ↑    0 комм.  2024-08-15  r/BitcoinMarkets: Unlock the Future with BBCGoldCoin ($BBCG)
+
+      1 ↑    0 комм.  2024-08-19  r/BitcoinMarkets: Bitcoin for Billions: Unlocking mass adoption with Jan Smejkal
+      1 ↑    0 комм.  2024-10-05  r/BitcoinMarkets: TradingView Premium Free – All Features Unlocked!
+      1 ↑    0 комм.  2024-07-10  r/BitcoinMarkets: Unlock Your Financial Potential with PrimeXBT: The Ultimate Trading Platform
+      1 ↑    0 комм.  2025-01-25  r/BitcoinMarkets: Unlock Hidden Bitcoin Treasures with AI Seed Phrase Finder! 💰🔑
+      1 ↑    0 комм.  2025-02-15  r/BitcoinMarkets: 🔥Unlock a surprise $SHELL gift bag, BGB holders! 🎉
+      1 ↑    0 комм.  2025-03-25  r/BitcoinMarkets: Unlocking Bitcoin Success
+      1 ↑    0 комм.  2025-08-13  r/BitcoinMarkets: 2025 Bitcoin Price Forecast: Unlocking Trends with the Legendary WD Gann Trading Strategy
+      1 ↑    0 комм.  2025-08-31  r/BitcoinMarkets: Unlock the Power Zones
+      1 ↑    0 комм.  2025-10-05  r/BitcoinMarkets: Unlock Stable Daily Crypto Ready with Innovative MEV Staking
+      1 ↑    0 комм.  2025-11-26  r/BitcoinMarkets: Hey! I added 150 USD to your Kraken Pro account. Unlock it after you signup and trade with code gqwy5pch or through this
+      1 ↑    0 комм.  2026-07-23  r/BitcoinMarkets: CRYPTO UNLOCKED
+
+The Truth About Cryptocurrency, Future Predictions & The Top 10 Cryptocurrencies Worth Watching
+      1 ↑    0 комм.  2026-11-10  r/BitcoinMarkets: Can Advanced Crypto Trading Bot Development Unlock Your Next Big Business Opportunity?
+      1 ↑    0 комм.  2020-03-24  r/BitcoinMarkets: 138,000 BTC / $930,000,000 of BTC about to be unlocked soon with Mt Gox creditor distribution
+      1 ↑    0 комм.  2020-04-13  r/BitcoinMarkets: Satoshi Nakamoto unlocked Pandora's box. Bitcoin has a tremendous advantage in many areas compared to the traditional fi
+      1 ↑    0 комм.  2020-06-01  r/BitcoinMarkets: Ripple Unlocks 500 Million XRP as Analysts Point to Immense Weakness
+
+== ошибки бэктеста: постов 448 (algotrading 442, BitcoinMarkets 6)
+    460 ↑   43 комм.  2026-02-22  r/algotrading: I ADMIT IT. I OVERFIT. I HAVE SELECTION BIAS.
+    383 ↑   76 комм.  2021-10-31  r/algotrading: This is how I use walkforward optimization
+    382 ↑  119 комм.  2021-08-26  r/algotrading: Seems too good to be true. I should check my backtesting code again!
+    320 ↑   66 комм.  2026-01-05  r/algotrading: Ah, that sweet moment of bliss before you realise you've coded in epic look-ahead bias...
+    298 ↑   94 комм.  2025-04-30  r/algotrading: Is this actually overfit, or am I capturing a legitimate structural signal?
+    260 ↑   77 комм.  2026-09-14  r/algotrading: Do you guys think this is overfit
+    212 ↑  141 комм.  2020-06-21  r/algotrading: My first algo trading bot in Python is getting amazing backtest results but I'm wary of trading live. Any advice on comm
+    200 ↑   86 комм.  2021-04-12  r/algotrading: Overfitting and slippage resistant algo, with 2 parameters, walk-forward, and simple predictive metric.
+    197 ↑  130 комм.  2022-03-02  r/algotrading: trade_count: 661, strategy_profit: 8348.32%, max_drawdown: 22.89%. Is this too good to be true? I could not find any bug
+    194 ↑   28 комм.  2020-07-30  r/algotrading: Intuitive Illustration of Overfitting
+    164 ↑  131 комм.  2022-09-13  r/algotrading: I found a strategy that looks like a money printing machine and start trading it LIVE, but it seems too good to be true.
+    161 ↑  125 комм.  2020-05-24  r/algotrading: What is the probability that this algo is overfitted?
+    151 ↑   61 комм.  2019-08-25  r/algotrading: Overfitting
+    149 ↑   25 комм.  2019-05-13  r/algotrading: Creating a Survivorship Bias-Free S&P 500 Dataset with Python
+    148 ↑   84 комм.  2022-02-11  r/algotrading: Would you guys use this strategy? I can only imagine that it is overfit
+    139 ↑   57 комм.  2019-01-09  r/algotrading: backtest. I guess something is wrong
+    130 ↑  128 комм.  2022-01-03  r/algotrading: Thoughts on this strategy? Orange is equity curve of the strategy the blue line is the underlying asset. Strategy underp
+    125 ↑   62 комм.  2021-05-13  r/algotrading: Getting good results using MT5 strategy tester to optimize my EA. One month forward out-of-sample test also done to conf
+
+== киты и ончейн: постов 154 (BitcoinMarkets 134, algotrading 20)
+    107 ↑   21 комм.  2022-04-06  r/BitcoinMarkets: Whales in Bitcoin represent the same 1% problem we have in fiat, we have yet to escape it
+     90 ↑    9 комм.  2022-04-02  r/BitcoinMarkets: "History favors the bulls, and this could be replicated in the upcoming whale battle for dominance "
+     49 ↑   28 комм.  2021-01-06  r/BitcoinMarkets: What are some good resources for (free) Bitcoin analysis? (Whale watch, Sentiment analysis, Search engine trends, etc.)
+     41 ↑   18 комм.  2022-04-16  r/BitcoinMarkets: Bitcoin sees largest exchange outflow in 5 weeks; Will the price finally rise?
+     40 ↑   11 комм.  2020-07-02  r/BitcoinMarkets: Bitcoin Continues To Be The Preferred Of The 'crypto Whales' With More Than 400 Thousand Btc Transferred In June
+     33 ↑   42 комм.  2021-07-05  r/BitcoinMarkets: Bitcoin On-Chain Data Shows Possible Undervaluation of BTC Price
+     30 ↑    0 комм.  2020-08-13  r/BitcoinMarkets: Bitcoin On-Chain Data Shows Maturing Market Treating $10K as a Strong Support Level
+     26 ↑   22 комм.  2022-04-01  r/BitcoinMarkets: Is crypto just a fad for big whales to make more money, or will it change the future of many industries?
+     23 ↑    9 комм.  2021-06-21  r/BitcoinMarkets: Neurowhales - Bitcoin predictive model based on neural networks and on-chain wallets information
+     17 ↑    4 комм.  2025-08-21  r/algotrading: Setting up BTC onchain data as an indicator on Tradingview
+      9 ↑   22 комм.  2022-07-04  r/BitcoinMarkets: Why is the biggest BTC whale, Michael Saylor, CEO of MicroStrategy, calling for government intervention?
+      9 ↑    3 комм.  2025-02-14  r/algotrading: Can Bitcoin exchange outflows predict price moves?
+      7 ↑   14 комм.  2020-06-10  r/algotrading: My Bitcoin trading algorithm live results - 54.33% accuracy, 3.9+ sharpe ratio, seeking thoughts/feedback/improvements/t
+      7 ↑   75 комм.  2021-11-20  r/BitcoinMarkets: On-Chain Market Intelligence Tools
+      6 ↑    0 комм.  2020-04-21  r/BitcoinMarkets: Whalepool - Bitcoin Volume Validator
+      6 ↑    2 комм.  2020-09-13  r/algotrading: completely on chain crypto price feed
+      6 ↑   20 комм.  2022-08-02  r/algotrading: Crypto On-chain Analysis?
+      5 ↑   21 комм.  2026-03-22  r/algotrading: I built real-time orderflow analytics for crypto — VPIN, Smart Money Delta, cross-exchange data. Free screener.
+
+== настроение: постов 260 (BitcoinMarkets 205, algotrading 55)
+    818 ↑  114 комм.  2021-04-21  r/algotrading: I coded a Binance trading algorithm that analyses the news sentiment from the top 100 crypto feeds and makes buying deci
+    722 ↑  127 комм.  2021-02-22  r/algotrading: [ Update ] To my last post in here reddit users told me to flip my algorithm around and it worked, cant wait to run this
+    274 ↑   61 комм.  2021-07-04  r/algotrading: I turned a profit by buying cryptocurrency using a trading algorithm that buys based on Reddit posts sentiment
+    252 ↑   57 комм.  2021-06-29  r/algotrading: I coded a cryptocurrency trading algorithm that analyses Reddit posts sentiment, and places trades based on it. I've bee
+    229 ↑   63 комм.  2021-04-09  r/algotrading: I wrote a script to analyse the daily news sentiment for any given cryptocurrency to help me understand what the media i
+    187 ↑   21 комм.  2021-03-20  r/algotrading: I created a universal Binance crypto-trading bot that uses Twitter as the main source of signal
+    169 ↑   69 комм.  2021-02-11  r/BitcoinMarkets: Twitter is about to buy Bitcoin
+    136 ↑   29 комм.  2021-02-20  r/algotrading: I made a twitter bot that tweets when cryptocurrencies experience significant trade signals
+    126 ↑   23 комм.  2021-04-26  r/BitcoinMarkets: I have released a more powerful version of my crypto algorithm that places trades based on daily news sentiment, and it'
+    118 ↑   54 комм.  2021-07-03  r/BitcoinMarkets: I configured a crypto trading bot to buy crypto based on Reddit post sentiment from relevant subreddits, it's running ri
+     78 ↑   48 комм.  2021-06-03  r/BitcoinMarkets: Looking for crypto Breaking News/feeds platform . Twitter and the like doesn't cut it, too much junk.
+     78 ↑   26 комм.  2020-02-04  r/BitcoinMarkets: Bitcoin 🐂 bullish sentiment just passed the highest point since we started measuring it over a year ago
+     74 ↑   18 комм.  2019-06-05  r/algotrading: API with new type of sentiment data for crypto + code for strategies
+     64 ↑   14 комм.  2021-07-03  r/algotrading: Best quantitative tools/repos/apis for Sentiment & Social Media analysis of individual Stock/Crypto tickers
+     61 ↑   26 комм.  2021-07-19  r/BitcoinMarkets: My crypto trading algorithm that detects surges across all coins on Binance is getting its own app and it's made by redd
+     57 ↑   30 комм.  2019-03-08  r/algotrading: Currently working on a project to visualise and analyse sentiment data from Tweets/Reddit/Google Trends and Github. Will
+     51 ↑  115 комм.  2021-12-12  r/BitcoinMarkets: As mentioned in the Daily, I'm backtesting 20 random days to see how well you'd do countertrading this sub's sentiment.
+     49 ↑   28 комм.  2021-01-06  r/BitcoinMarkets: What are some good resources for (free) Bitcoin analysis? (Whale watch, Sentiment analysis, Search engine trends, etc.)

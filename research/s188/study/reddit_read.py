@@ -29,7 +29,7 @@ T = {
     "сквизы, ликвидации, OI": r"squeeze|liquidat|open interest|\bOI\b",
     "листинги и Корея": r"listing|listed|delist|upbit|bithumb|korea|kimchi",
     "пампы и манипуляции": r"\bpump|\bdump|p&d|manipulat|wash trad",
-    "разлоки": r"unlock|vesting|token release",
+    "разлоки": r"\bunlock|\bvesting\b|token release",
     "ошибки бэктеста": r"overfit|look.?ahead|survivor|curve.?fit|out.of.sample|walk.?forward|data snoop|p.?hack"
                        r"|too good to be true|backtest.*(wrong|lie|bias|mistake|bug|pitfall)",
     "киты и ончейн": r"whale|on.?chain|exchange (inflow|outflow)|smart money",
