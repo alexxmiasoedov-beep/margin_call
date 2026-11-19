@@ -10,6 +10,7 @@
   python3 catalog.py search   — префиксы a–z, 0–9 по индикаторам и стратегиям, страницы до порога бустов;
   python3 catalog.py pages    — страницы скриптов топа (дата, бусты, просмотры, описание, таймфрейм публикации);
   python3 catalog.py source   — исходники открытых скриптов топа через pine-facade → /home/user/mc_data/s187/pine/;
+  python3 catalog.py extra    — первые страницы поиска по названиям из списка задачи (QQE MOD, Range Filter, …);
   python3 catalog.py table    — сводная таблица → catalog.csv (метаданные, без исходников).
 
 Запросы — не чаще одного в 3 с, User-Agent «research-script/1.0», при 429/403 и сетевых ошибках — растущая пауза.

@@ -48,6 +48,8 @@ def main():
     A = {per: pd.read_pickle(f"{OUT}/s189_{per}.pkl") for per in C.PER}
     for X in A.values():
         X["T"] = X["T"].astype(np.int64)
+        for c in ("gate", "ftx", "blvt", "ftx_coin", "krw"):
+            X[c] = X[c].fillna(False).astype(bool)
     P3 = list(C.PER)
     a = lambda X: X.kind == "a"  # noqa: E731
     print("s189 — ребаланс токенов с плечом; доход на сделку после комиссии и фандинга, стоп 15%")

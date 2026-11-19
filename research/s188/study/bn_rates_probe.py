@@ -6,6 +6,7 @@
   - живость ряда: доля суток, когда ставка изменилась; число различных значений;
   - загрузка x = ставка / 10-й перцентиль своих прошлых 30 сут (как s40); события «x ≥ 3 впервые за 7 сут» (В1 s40)
     и «x ≥ 3 при фандинге за 7 сут ≥ 0» (направленный займ, s11) — в месяц;
+  - ранний этап (s40): ставка уходит с пола — x ≥ 1,5 впервые после 7 сут с x < 1,2 при f7 ≥ 0;
   - недельная корзина «дорогой займ при фандинге ≥ 0»: понедельник, монеты с x ≥ 1,5 и f7 ≥ 0, сколько их на срез
     (если медиана < 5, корзина из 5 не набирается);
   - пересечение событий со входами журналов (±7 сут).
@@ -57,7 +58,7 @@ def main(full=False):
         J = C.journals(per)
         jt = {s: np.sort(x.t.values) for s, x in J.groupby("s")}
         mon = C.months(per)
-        live, ndist, ev1, ev2, nbask = [], [], [], [], []
+        live, ndist, ev1, ev2, ev3, nbask = [], [], [], [], [], []
         for c, s in R.items():
             s = s[(s.index >= t0 - 40 * DAY) & (s.index < t1)]
             if len(s) < 60:
@@ -67,6 +68,12 @@ def main(full=False):
             ndist.append(ins.nunique())
             fl = s.rolling(30, min_periods=20).quantile(0.10).shift(1)
             x = s / fl
+            # ранний этап (s40): ставка уходит с пола — x ≥ 1,5 впервые после ≥ 7 сут с x < 1,2, фандинг за 7 сут ≥ 0
+            calm = (x < 1.2).astype(int).rolling(7, min_periods=7).sum().shift(1) == 7
+            ff = f7.get(c)
+            for t in x[(x >= 1.5) & calm & (x.index >= t0)].index:
+                if ff is not None and t in ff.index and ff.loc[t] >= 0:
+                    ev3.append((c, t))
             hit = x[(x >= 3) & (x.index >= t0)].index
             last = -10 ** 12
             for t in hit:
@@ -107,6 +114,11 @@ def main(full=False):
                   f"при f7 ≥ 0 — {len(e2d)} ({len(e2d) / md:.1f} в месяц)")
         print(f"  то же при f7 ≥ 0 (направленный займ): {len(ev2)} событий, {len(ev2) / mon:.1f} в месяц; "
               f"вход журнала ±7 сут {ov(ev2):.0%}")
+        print(f"  ранний этап — ставка уходит с пола (x ≥ 1,5 после 7 сут x < 1,2) при f7 ≥ 0: {len(ev3)} событий, "
+              f"{len(ev3) / mon:.1f} в месяц; вход журнала ±7 сут {ov(ev3):.0%}")
+        if t0 < C.ts("2023-02-20") < t1:
+            e3d = [z for z in ev3 if z[1] >= C.ts("2023-02-20")]
+            print(f"    из них после 20.02.2023: {len(e3d)} ({len(e3d) / ((t1 - C.ts('2023-02-20')) / (30.4 * DAY)):.1f} в месяц)")
         nb = np.array(nbask)
         print(f"  корзина «x ≥ 1,5 и f7 ≥ 0» на понедельник: монет медиана {np.median(nb):.0f}, p25 "
               f"{np.quantile(nb, .25):.0f}, p75 {np.quantile(nb, .75):.0f}; срезов с ≥ 5 монетами {np.mean(nb >= 5):.0%}")

@@ -1,5 +1,6 @@
 """s188 — проба: часовая ставка займа OKX (открытый finance/savings/lending-rate-history, без ключа; история с ~01.2022)
-как датчик загрузки пула там, где ставка Binance ещё администрируемая (до 02.2023). 20 оборотных монет, 01.2022–09.2024,
+как датчик загрузки пула там, где ставка Binance ещё администрируемая (до 02.2023). 12 оборотных монет, 01.2022–05.2023
+(ETH — до 09.2024),
 страницы по 100 часов назад по времени, пауза 0,35 с (предел OKX — 6 запросов в секунду), после ошибки 20–60 с.
 Только ряд ставок, без доходов. Итог — /home/user/mc_data/s188/okx/<монета>.csv (время, rate, lendingRate)."""
 import json
@@ -11,10 +12,9 @@ OUT = "/home/user/mc_data/s188/okx"
 os.makedirs(OUT, exist_ok=True)
 UA = {"User-Agent": "research-script/1.0"}
 B = "https://www.okx.com/api/v5/finance/savings/lending-rate-history"
-COINS = ["ETH", "SOL", "XRP", "DOGE", "ADA", "LTC", "AVAX", "ETC", "LINK", "DOT", "FIL", "EOS", "SAND", "AXS", "NEAR",
-         "ATOM", "APE", "CRV", "UNI", "TRX"]
+COINS = ["ETH", "SOL", "XRP", "DOGE", "ADA", "AVAX", "LINK", "DOT", "FIL", "SAND", "APE", "CRV"]
 T0 = 1640995200 * 1000          # 01.01.2022
-T1 = 1727740800 * 1000          # 01.10.2024
+T1 = 1685577600 * 1000          # 01.06.2023 (ETH — до 10.2024)
 for c in COINS:
     fn = f"{OUT}/{c}.csv"
     if os.path.exists(fn):
