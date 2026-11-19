@@ -1,0 +1,159 @@
+== funding-rate: 4
+      28 hypurrquant/perp-cli  2026-05-23  mit   Multi-DEX perpetual futures CLI + MCP server — Pacifica (Solana), Hyperliquid, Lighter (Ethereum). 
+       6 AlgoVaultLabs/crypto-quant-signal-mcp  2026-08-27  mit  AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime 
+       2 bykarantelicom/bykaranteli-mcp  2026-09-25  mit  MCP server for live crypto derivatives data from bykaranteli.com: funding, open interest, liquidatio
+       1 StephanAkkerman/funding-rate-heatmap  2024-07-07  mit  Coinglass's Crypto Funding Rate Heatmap open-sourced
+== funding-rate-arbitrage: 0
+== margin-trading: 12
+      86 elys-network/elys  2026-03-25  other  Elys Network is a DeFi Proof of Stake blockchain built using Cosmos SDK, bridging the gap between We
+      65 blocknomic-technologies/open-trading-platform-UI  2020-08-12  agpl-3.0  The Open Trading Platform UI is a front-end module for trading across 5 crypto currency exchanges al
+      29 panifie/PingPong.jl  2024-04-13  gpl-3.0  Cryptocurrency trading bot, and backtesting framework in julia
+      14 Zizwar/deno-trading-bot  2023-02-15  mit  technical strategies and indicators for trading 
+      13 Zizwar/deno-trading-bot  2023-02-15  mit  technical strategies and indicators for trading 
+       6 protofire/dydx-subgraph  2022-12-10    Subgraph for dYdX Margin Trading protocol and derivatives
+       1 gowthamsundaresan/scrat-v1-interface  2023-07-30    frontend for self custody margin trading dApp. built on top of the scrat-v1 smart contract.
+       1 ZaneH/phemex-margin-example  2023-12-05    This example shows how to open and close a position using the example client from Phemex.
+       1 gowthamsundaresan/scrat-v1  2023-08-16    self custody margin trading smart contract for Polygon. 3-4x leverage on longs and shorts.
+       0 DurnaceUtah/Krux-Binance-Trading-Bot-Futures-Crypto-Coins-Volatility  2024-08-21  mit  This repository provides Krux, a trading bot for Binance focused on futures trading of cryptocurrenc
+       0 Quantiris/Krux-Binance-Trading-Bot-Futures-Crypto-Coins-Volatility  2025-01-23  mit  This repository provides Krux, a trading bot for Binance focused on futures trading of cryptocurrenc
+       0 insipx/EveOnlineMarketFinder  2017-05-23    Find The Best Margin Trades in the Eve Market
+== short-squeeze: 0
+== pump-and-dump: 1
+       1 Takk8IS/kucoin-pumpdump-crypto-alerts-telegram-bot  2024-07-26  cc0-1.0  The Kucoin PumpDump Crypto Alerts Telegram Bot is an automated system designed to monitor and analys
+== pump-detection: 0
+== liquidation: 22
+    1113 cypherpunk-symposium/dark-forest-toolkit  2025-10-22    👾 notes and resources on blockchain's maximal extractable value (MEV): on the hope of non-predatory 
+     894 autistic-symposium/mev-toolkit  2024-12-03    👾 catalog of resources on blockchain's maximal extractable value: on the hope of non-predatory free 
+     557 flashbots/mev-inspect-rs  2022-11-23  mit  Discover historic Miner Extractable Value (MEV) opportunities
+     245 haydenshively/New-Bedford  2024-11-25    Flash swap liquidation bot for compound.finance + flashbots
+     191 haydenshively/Nantucket  2023-01-24  mit  Flash loan liquidation bot for compound.finance
+      40 aoki-h-jp/binance-bulk-downloader  2025-01-13  mit  A Python library to efficiently and concurrently download historical data files from Binance. Suppor
+      31 morpho-org/sdks  2026-04-07  mit  Collection of SDKs to ease interactions with the Morpho protocol and Morpho Vaults
+      30 yuichiroaoki/aaveV2-liquidation-example  2022-10-23    Aave V2 Liquidation Example on Ethereum Mainnet
+      20 lbkolev/aave-liquidation  2025-04-10    
+      19 StephanAkkerman/liquidations-chart  2024-06-23  mit  Coinglass's total liquidation chart open-sourced
+      15 ashutoshvarma/aave-v2-liquidator  2023-12-15  gpl-3.0  A Fast & Modern Liquidation Bot for Aave/Moola V2  
+       5 interlay/bots  2023-03-21    TypeScript bots for the Kintsugi and Interlay networks
+       5 haxpor/bybit-shiprekt  2022-03-28  mit  Inspired by Kraken Shiprekt Telegram group, but this is for Bybit
+       4 guzus/tribe3-v1-liquidation-bot  2023-09-02  mit  simple liquidation bot for tribe3 v1 beta
+       2 fabston/Bitmex-Liquidation-Feed  2020-11-18  mit  📡 Fetch BitMEX liquidation data.
+== liquidations: 1
+       0 bokiko/btc-liquidations  2026-03-18  mit  Real-time Bitcoin liquidation monitor across Binance, Bybit, OKX, Hyperliquid & Aevo
+== upbit: 21
+      55 uJhin/upbit-client  2024-07-17  mit  Upbit(업비트) Cryptocurrency Exchange Open API Client of Multi-Programming Language Support
+      49 uJhin/python-upbit-client  2024-07-17  mit  Upbit(업비트) Cryptocurrency Exchange OPEN API Client for Python
+      24 globophobe/asyncio-quant-tick  2024-03-17  mit  🔌 Aggregate candlesticks from high frequency tick data from WebSockets
+      20 uJhin/upbit-client-docs  2023-05-22  apache-2.0  Upbit(업비트) Client Official Reference Documents
+      18 wonism/upbit-api-node  2023-01-03  mit  Upbit API for Node.js
+      12 Arc-Jung/UPbit-coin-auto-trading  2022-04-26    Auto coin trading application with serverless / 업비트 코인 자동화 거래 서버리스 어플리케이션
+       7 loldruger/upbit-rs  2024-08-25    upbit-api on rust
+       7 designmeme/python-upbit-api  2025-08-13  mit  💙 Python Upbit API Wrapper
+       5 jongmin92/spring-boot-starter-upbit  2021-10-14  mit  Upbit(업비트) Open API Client Spring Boot Starter
+       3 isac322/aio-upbit  2023-04-07  mit  Upbit Client supports asyncio
+       2 custardcream98/Alfred-UPbit_Tracker  2021-08-29  gpl-3.0  업비트에서 가상화폐 가격을 가져오는 알프레드 워크플로우입니다. Alfred Workflow for UPbit users.
+       1 ccxt-net/ccxt.simple  2025-08-07  mit  CCXT.SIMPLE – CryptoCurrency eXchange Trading Library Simple 
+       1 juhonamnam/tap-cat  2022-11-20    Cryptocurrency Auto Trade 가상화폐 자동매매 프로젝트입니다.
+       1 hexoul/go-upbit  2019-04-19  mit  Upbit API Client
+       1 custardcream98/Alfred-UPbit_MyAssetValue  2021-09-01  gpl-3.0  업비트에서 내 자산 정보를 가져오는 워크플로우입니다. Alfred Workflow for UPbit users.
+== bithumb: 5
+     747 DigitalRuby/ExchangeSharp  2025-03-15  mit  ExchangeSharp is a powerful, fast and easy to use .NET/C# API for interfacing with many crypto curre
+     732 DigitalRuby/ExchangeSharp  2024-04-12  mit  ExchangeSharp is a powerful, fast and easy to use .NET/C# API for interfacing with many crypto curre
+      51 jihoonerd/Coiner  2020-06-23  apache-2.0  Automatic Cryptocurrency Trading System by using Bithumb API
+      18 Coac/bithumb.js  2018-01-01  mit  Bithumb exchange api wrapper
+       0 sedoll/bithumb-kakao-api  2025-04-26    빗썸, 카카오를 활용한 코인 시세 알리미
+== kimchi-premium: 2
+       1 partrita/kimchi-gold  2026-04-12  apache-2.0  한국 국내 금시세와 국제 금시세간에 존재하는 김치 프리미엄을 계산합니다.
+       0 bubilife1202/crossfin  2026-02-22  mit  The only way AI agents access Asian crypto markets. Routing engine + x402 payments across 9 exchange
+== open-interest: 2
+      12 anshuthopsee/nse-oi-visualizer  2024-09-27    A simple real-time Open Interest & Strategy Profit and Loss Visualizer for Indian Benchmark Indices 
+       2 bykarantelicom/bykaranteli-mcp  2026-09-25  mit  MCP server for live crypto derivatives data from bykaranteli.com: funding, open interest, liquidatio
+== crypto-lending: 0
+== lending-bot: 1
+      47 huaying/bitfinex-lending-bot  2023-01-05    Bitfinex Lending Bot automates the funding on Bitfinex 自動放貸機器人
+== new-listings: 0
+== binance-announcements: 0
+== listing-bot: 0
+== whale-alert: 2
+       7 enzosv/whalesummary  2022-02-25    Like https://t.me/whale_alert_io but summarized
+       0 imryan/WhaleAlert  2020-08-08  mit  🐋 Swift implementation of the WhaleAlert API.
+== smart-money: 4
+      20 demwick/polymarket-agent-mcp  2026-11-05  mit  The most comprehensive MCP server for Polymarket — 48 tools spanning direct trading, market discover
+      16 tigusigalpa/nansen-go  2026-07-14  mit  A lightweight, dependency-free Golang client for the Nansen AI API. Context-aware, concurrency-safe,
+       0 Vo1ganin/crypto-claude-skills  2026-04-24  mit  Claude Code & AI agent skills for on-chain crypto data APIs — Dune, Solscan Pro, Nansen, Solana RPC 
+       0 dadang11/cryptoiz-mcp  2026-04-25    
+== market-making: 60
+   21244 hummingbot/hummingbot  2026-11-16  apache-2.0  Open source software that helps you create and deploy high-frequency crypto trading bots
+    4858 nkaz001/hftbacktest  2025-12-23  mit  Free, open source, a high frequency trading and market making backtesting and trading bot, which acc
+    2329 barter-rs/barter-rs  2026-08-24  mit  Open-source Rust framework for building event-driven live-trading & backtesting systems
+    2045 rorysroes/SGX-Full-OrderBook-Tick-Data-Trading-Strategy  2022-08-27    Providing the solutions for high-frequency trading (HFT) strategies using data science approaches (M
+    2011 rorysroes/SGX-Full-OrderBook-Tick-Data-Trading-Strategy  2022-08-27    Providing the solutions for high-frequency trading (HFT) strategies using data science approaches (M
+    1125 stellar-deprecated/kelp  2023-11-03  other  Kelp is a free and open-source trading bot for the Stellar DEX and 100+ centralized exchanges
+    1098 stellar-deprecated/kelp  2023-11-03  other  Kelp is a free and open-source trading bot for the Stellar DEX and 100+ centralized exchanges
+     508 tar-ser/solana-liquidity-guard  2025-03-03  mit  is a powerful tool for projects with >$100k liquidity. It provides automatic pool rebalancing, hacke
+     433 HarrierOnChain/Prediction-Markets-Trading-Bot-Toolkits  2026-09-07  mit  Rust trading bots for prediction markets — Polymarket, Kalshi, Limitless. Copy Trading is production
+     223 vj013il/Solana-Liquidity-Maker-Boost  2025-03-29  mit  Low-latency liquidity management Solana, TWAP/VWAP execution for OTC-sized orders, High-frequency LP
+     220 vj013il/Auto-Solana-Liquidity-Maker  2025-03-26  mit  Solana Market Maker, DEX Arbitrage Bot, Automated Liquidity Management, Solana Trading Bot, DeFi Too
+     217 KodAgge/Reinforcement-Learning-for-Market-Making  2023-06-29    Using tabular and deep reinforcement learning methods to infer optimal market making strategies
+     196 carlos8f/bot18  2022-12-02  other  Bot18 is a high-frequency cryptocurrency trading bot developed by Zenbot creator @carlos8f
+     182 vj013il/Solana-Token-LiquidityPool-Volume-Boost  2025-04-01  mit  Solana Token Price Stability. Solana High-Frequency Trading Bot. Solana Liquidity Optimization. Sola
+     163 zbarge/stocklook  2018-06-22  mit  crypto currency library for trading & market making bots, account management, and data analysis
+== cash-and-carry: 0
+== delta-neutral: 1
+      10 dante4rt/delta-neutral-trading-bot  2024-10-16  mit  A Delta Neutral Trading Bot utilizing Binance API to execute spot and futures trades with a neutral 
+== basis-trading: 0
+== freqtrade-strategies: 11
+    5560 freqtrade/freqtrade-strategies  2026-09-08  gpl-3.0  Free trading strategies for Freqtrade bot
+    1026 Rikj000/MoniGoMani  2023-03-11  gpl-3.0  Isn't that what we all want? Our money to go many? Well that's what this framework/strategy hopes to
+    1018 Rikj000/MoniGoMani  2023-03-11  gpl-3.0  Isn't that what we all want? Our money to go many? Well that's what this framework/strategy hopes to
+     206 brookmiles/freqtrade-stuff  2021-05-20    A place to publish notes, examples, etc.
+      59 Ph3nol/FT-Trading-Bot  2023-01-13    Fully Dockerized cryptocurrencies Trading Bot, based on Freqtrade engine. Multi instances.
+      57 TheoBrigitte/freqtrade  2025-03-09    Freqtrade strategies, configurations and dry-runs
+      24 miwtoo/ft-action-zone  2022-05-07    trading strategy for freqtrade crypto bot it base on CDC-ActionZone 
+      10 just-nilux/freqtrade_questdb  2023-08-10    Freqtrade consumer strategy to receive the dataframes of producers and store them in QuestDB for sto
+       7 meesvw/freqtrade-egg  2022-07-04  mit  Redpie trading platform
+       2 jotica80/free-bot  2026-04-15  mit  🤖 Automate your trading with Free Bot, a powerful tool for maximizing profits through effective stra
+       1 ariswibono/horizon  2026-07-29  mit  Linear Regression Slope + EMA Trend strategy for trading tokenized stock futures on Freqtrade (Binan
+== crypto-sentiment: 2
+      21 SpiralDevelopment/crypto-sentiment-data  2020-07-23  mit  A collection of scripts to collect crypto market sentiment data
+       3 sarahm44/crypto-sentiment-analysis  2022-08-10    Analysis of the sentiment of the latest news articles on Bitcoin and Ethereum using sentiment analys
+== borrow: 3
+      67 ladroid/CppBorrowChecker  2023-02-13    Simple C++ borrow checker
+       3 AreaLayer/Jet-USDJJ  2022-07-14  mit  Stablecoin on Lightning Network
+       0 bhemen/aave-data  2024-12-19    Borrowing and lending data sets from the Aave protocol on Ethereum
+== margin: 61
+    3532 Haehnchen/crypto-trading-bot  2026-08-02  mit  Cryptocurrency trading bot in javascript for Bitfinex, Bitmex, Binance, Bybit ... (public edition)
+    3266 Haehnchen/crypto-trading-bot  2024-10-03  mit  Cryptocurrency trading bot in javascript for Bitfinex, Bitmex, Binance, Bybit ... (public edition)
+    2431 layoutBox/PinLayout  2025-07-23  mit  Fast Swift Views layouting without auto layout. No magic, pure code, full control and blazing fast. 
+    2401 layoutBox/PinLayout  2025-07-23  mit  Fast Swift Views layouting without auto layout. No magic, pure code, full control and blazing fast. 
+    2023 rebassjs/grid  2019-08-06  mit  This package has moved and renamed
+     679 muesli/reflow  2024-04-18  mit  A collection of (ANSI-sequence aware) text reflow operations & algorithms
+     275 actuallyakash/spacers  2023-03-23  mit  🔳 when you need more __space__. Quick margin/padding for your no-code tools.
+     213 jameslnewell/styled-components-spacing  2022-12-09    Responsive margin and padding components for styled-components 💅.
+     157 devxoul/UINavigationItem-Margin  2017-10-31  mit  Margins for UINavigationItem
+      82 SpicyTaco/SpicyTaco.AutoGrid  2023-08-14  mit  A magical replacement for the built in WPF Grid and StackPanel
+      51 levantAJ/PaddingLabel  2020-06-06  mit  A label with padding for iOS
+      42 asika32764/silicone  2018-06-03  mit  A simple css helper to extend bootstrap and other css frameworks
+      30 RusinovAnton/scss-mixins-collection  2022-12-02  mit  Collection of handy scss mixins
+      30 RusinovAnton/scss-mixins-collection  2022-12-02  mit  Collection of handy scss mixins
+      29 rbardini/storybook-addon-paddings  2024-04-03  mit  🔲 A Storybook addon to add different paddings to your preview
+== short-interest: 0
+== binance-margin: 2
+      54 oliver-zehentleitner/unicorn-fy  2025-06-19  mit  A Python SDK to convert received raw data from crypto exchange API endpoints into well-formed python
+      26 oliver-zehentleitner/unicorn-binance-trailing-stop-loss  2024-09-03  other  A Python library by LUCIT with a command line interface for a trailing stop loss and smart entry on 
+== perpetual-futures: 15
+    2131 enarjord/passivbot  2026-10-16  unlicense  Trading bot running on Bybit, Bitget, OKX, GateIO, Binance, Kucoin, WEEX and Hyperliquid
+    1184 HammerGPT/Hyper-Alpha-Arena  2026-05-13  apache-2.0  AI Trading platform for Hyperliquid & Binance Futures AI 自动交易平台，支持 Hyperliquid 和币安合约
+      36 Julian-dev28/pathiel  2026-11-13  mit  AI trading agent for Hyperliquid: Claude trades perps through MCP with an exact stop and target on e
+      28 hypurrquant/perp-cli  2026-05-23  mit   Multi-DEX perpetual futures CLI + MCP server — Pacifica (Solana), Hyperliquid, Lighter (Ethereum). 
+      12 EternaHybridExchange/eterna-mcp  2026-10-02  mit  No-KYC managed MCP trading exchange for AI agents: sandboxed TypeScript SDK, isolated sub-accounts, 
+       8 EternaHybridExchange/eterna-mcp  2026-07-20  mit  No-KYC managed MCP trading exchange for AI agents: sandboxed TypeScript SDK, isolated sub-accounts, 
+       6 AlgoVaultLabs/crypto-quant-signal-mcp  2026-08-27  mit  AI trading brain for crypto perps — composite signals, funding rate arb scanning, and market regime 
+       5 Anish-Agnihotri/stockgecko.com  2026-03-26  agpl-3.0  Track & trade 24/7 real-world asset perps: 14 venues, 280+ markets.
+       1 Alpha-Serpentis-Developments/Aevo4J  2024-01-11  apache-2.0  Aevo4J is an unofficial implementation of Aevo's REST APIs and WebSockets for JVM languages
+       0 kamiyoai/percli  2026-04-06  apache-2.0  CLI toolkit for the Percolator risk engine — simulate, test, and operate perp markets on Solana.
+       0 byteball/perp_stats  2025-03-28    Statistics for pythagorean perpetual futures https://pyth.ooo
+       0 byteball/perpetual-aa  2024-07-16    Perpetual futures/stablecoins based on Pythagorean bonding curves https://pyth.ooo
+       0 byteball/perpetual-ui-vue  2025-03-28    Pythagorean perpetual futures https://pyth.ooo
+       0 arthur-orderly/permissionless-listing  2026-02-08    Permissionless perpetual futures listing system for Orderly Network — smart contracts (Foundry) + fr
+       0 BlitzTrading/dca-ladder-calculator  2026-10-11  mit  Free DCA ladder calculator for crypto futures: average entry, take-profit and liquidation price afte
+== telegram-signals: 0

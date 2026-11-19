@@ -15,6 +15,7 @@ import pickle
 import re
 import time
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -144,12 +145,12 @@ def blvt_tokens():
     return pd.DataFrame(out)
 
 
-def cmc_daily(cid):
+def cmc_daily(cid, years=range(2019, 2025)):
     p = f"{C.RAW}/cmc_{cid}.json"
     if os.path.exists(p):
         return json.load(open(p))
     out = []
-    for y in range(2019, 2025):
+    for y in years:
         t0, t1 = C.ts(f"{y}-01-01"), C.ts(f"{y + 1}-01-01")
         code, raw = C.get(f"{CMC}/cryptocurrency/historical?id={cid}&convertId=2781&timeStart={t0}&timeEnd={t1}"
                           f"&interval=1d", headers={"Accept": "application/json"})
@@ -214,7 +215,9 @@ def main():
     L("топ-15 базовых по 24ч обороту токенов, $ млн:", ", ".join(f"{k} {v / 1e6:.2f}" for k, v in top.items()))
     # --- FTX
     F = ftx_tokens()
-    F["addr"] = [cmc_contract(c) for c in F.cmc_id]
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        F["addr"] = list(ex.map(cmc_contract, F.cmc_id))
+        list(ex.map(lambda c: cmc_daily(c, range(2019, 2023)), F.cmc_id))
     fd = {}
     for _, r in F.iterrows():
         q = cmc_daily(r.cmc_id)
@@ -232,6 +235,8 @@ def main():
       C.iso(F["last"].dropna().median()))
     # --- Binance BLVT
     B = blvt_tokens()
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        list(ex.map(lambda c: cmc_daily(c, range(2020, 2025)), B.cmc_id))
     bd = {}
     for _, r in B.iterrows():
         q = cmc_daily(r.cmc_id)
@@ -241,11 +246,27 @@ def main():
             bd[r.token] = df.set_index("t")[["c", "v"]].astype(float)
     B["first"] = B.token.map(lambda s: int(bd[s][bd[s].v > 0].index.min()) if s in bd and (bd[s].v > 0).any() else None)
     B["last"] = B.token.map(lambda s: int(bd[s][bd[s].v > 0].index.max()) if s in bd and (bd[s].v > 0).any() else None)
+    # даты торгов по архиву Binance (месячные файлы дневных свечей спота): точнее CMC, у которого нет части токенов
+    s3 = {}
+    for tok in B.token:
+        p = f"{C.RAW}/s3_{tok}.xml"
+        if not os.path.exists(p):
+            code, raw = C.get("https://s3-ap-northeast-1.amazonaws.com/data.binance.vision?delimiter=/&prefix="
+                              f"data/spot/monthly/klines/{tok}USDT/1d/")
+            open(p, "wb").write(raw if code == 200 else b"")
+            time.sleep(0.2)
+        months_ = sorted(set(re.findall(rf"{tok}USDT-1d-(\d{{4}}-\d{{2}})\.zip<", open(p, encoding="utf-8",
+                                                                                     errors="ignore").read())))
+        if months_:
+            m0, m1 = pd.Timestamp(months_[0] + "-01", tz="UTC"), pd.Timestamp(months_[-1] + "-01", tz="UTC")
+            s3[tok] = (int(m0.timestamp()), int((m1 + pd.offsets.MonthEnd(0)).timestamp()))
+    B["first"] = [s3[t][0] if t in s3 else f for t, f in zip(B.token, B["first"])]
+    B["last"] = [s3[t][1] if t in s3 else l_ for t, l_ in zip(B.token, B["last"])]
     L("\n== Binance BLVT: токенов:", len(B), "базовых:", B.und.nunique())
     for u, g in B.groupby("und"):
         L(f"  {u}: объявление листинга {C.iso(g.t_list.iloc[0]) if pd.notna(g.t_list.iloc[0]) else '—'}, "
           f"прекращение {C.iso(g.t_cease.iloc[0]) if pd.notna(g.t_cease.iloc[0]) else '—'}, "
-          f"котировки CMC {C.iso(g['first'].min()) if pd.notna(g['first'].min()) else '—'} … "
+          f"торги (архив Binance / CMC) {C.iso(g['first'].min()) if pd.notna(g['first'].min()) else '—'} … "
           f"{C.iso(g['last'].max()) if pd.notna(g['last'].max()) else '—'}")
     # --- прочие биржи
     O = other_lists()

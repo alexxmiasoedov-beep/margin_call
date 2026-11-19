@@ -55,12 +55,15 @@ def gate_mult(cd_rows, gdaily, G):
     """Множитель ребаланса Gate по оценке AUM из оборота токенов за 7 сут до T: Σ L(L−1)·оборот/K_GATE."""
     lev = dict(zip(G.pair, G.lev))
     und = dict(zip(G.pair, G.und))
+    t_switch = C.ts("2025-04-01") + 16 * 3600       # до 01.04.2025 токены «3x» Gate держали целевое плечо 2,3
     by = {}
     for pair, df in gdaily.items():
         if pair not in lev:
             continue
         s = df.qv.rolling(7, min_periods=1).mean().shift(1)          # только сутки до T
-        by.setdefault(und[pair], []).append(lev[pair] * (lev[pair] - 1) * s / K_GATE)
+        L0 = float(lev[pair])
+        Le = np.where((abs(L0) == 3) & (df.index.values < t_switch), np.sign(L0) * 2.3, L0)
+        by.setdefault(und[pair], []).append(pd.Series(Le * (Le - 1), index=df.index) * s / K_GATE)
     Mu = {u: pd.concat(v, axis=1).sum(axis=1) for u, v in by.items()}
     out = np.full(len(cd_rows), np.nan)
     bb = cd_rows.b.astype(str).values
@@ -180,6 +183,23 @@ def main():
         L(f"  контроль: монеты без FTX и BLVT, 00 UTC, r24 ≥ 10%: {(c0.r24 >= 0.10).sum() / mo:.1f} в мес.; "
           f"монеты FTX в 04/08/12/20 UTC, r24 ≥ 10%: " +
           ", ".join(f"{h:02d} {((cd.H == h) & cd.ftx & (cd.r24 >= 0.10)).sum() / mo:.1f}" for h in (4, 8, 12, 20)))
+        # события s135 (скачок ≥ 5% за 00–01 UTC у монет без рынка к воне) и входы ⏰ по наличию токенов FTX —
+        # только монета и время (доходы файла не читаются)
+        p135 = f"{C.D}/s135_{per}.pkl"
+        if os.path.exists(p135):
+            s135 = pd.read_pickle(p135)[["s", "t", "open0"]]
+            s135 = s135[s135.open0.astype(bool)]
+            s135["b"] = s135.s.map(C.C3.base)
+            d0 = (s135.t // C.DAY) * C.DAY
+            ftx_now = np.array([any(t0 <= d <= t1 for t0, t1, _ in iv_ftx.get(b, [])) for b, d in zip(s135.b, d0)])
+            bin_now = np.array([any(t0 <= d <= t1 for t0, t1, _ in iv_bin.get(b, [])) for b, d in zip(s135.b, d0)])
+            L(f"  s135 (00–01 UTC, без рынка к воне): событий {len(s135)} ({len(s135) / mo:.1f} в мес.), у монет FTX "
+              f"{ftx_now.sum()} ({ftx_now.mean() * 100:.0f}%), BLVT {bin_now.sum()}")
+            o9 = J[J.j == "⏰"].copy()
+            o9["b"] = o9.s.map(C.C3.base)
+            d9 = (o9.t // C.DAY) * C.DAY
+            f9 = np.array([any(t0 <= d <= t1 for t0, t1, _ in iv_ftx.get(b, [])) for b, d in zip(o9.b, d9)])
+            L(f"  ⏰: входов {len(o9)}, у монет FTX {f9.sum()} ({f9.mean() * 100 if len(f9) else 0:.0f}%)")
         # --- E2: Gate (выжившие токены), якорь 16 UTC
         e2 = cd[(cd.H == 16) & cd.gate].copy()
         L(f"\nE2 Gate, 16:00 UTC: монето-суток с токенами Gate (выжившие пары): {len(e2)}")
@@ -188,9 +208,19 @@ def main():
             for thr in THR:
                 L(f"  r24 ≥ {thr:.0%}: {(e2.r24 >= thr).sum() / mo:.1f} в мес.; r24 ≤ −{thr:.0%}: "
                   f"{(e2.r24 <= -thr).sum() / mo:.1f} в мес.")
-            up = e2[e2.r24 >= 0.10]
-            L("  " + describe_flow((up.M * up.r24 / up.v7).values, "поток/суточный оборот перпа при r24 ≥ 10%"))
-            L("  " + describe_flow((up.M * up.r24 / up.q_base).values, "поток/оборот свечи 16:00–16:15 при r24 ≥ 10%"))
+            up = e2[e2.r24 >= 0.10].copy()
+            L("  " + describe_flow((up.M * up.r24 / up.v7).values, "поток/суточный оборот перпа Binance при r24 ≥ 10%"))
+            L("  " + describe_flow((up.M * up.r24 / up.q_base).values, "поток/оборот свечи 16:00–16:15 Binance при r24 ≥ 10%"))
+            gp = pickle.load(open(f"{C.OUT}/gate_perp_daily.pkl", "rb")) if os.path.exists(f"{C.OUT}/gate_perp_daily.pkl") else {}
+            gv = np.full(len(up), np.nan)
+            for i, (b, D) in enumerate(zip(up.b.astype(str), up.D)):
+                df = gp.get(b)
+                if df is not None and len(df):
+                    w = df.qv[(df.index >= D - 7 * C.DAY) & (df.index < D)]
+                    if len(w):
+                        gv[i] = w.mean()
+            L("  " + describe_flow(up.M.values * up.r24.values / gv, "поток/суточный оборот перпа Gate при r24 ≥ 10%"))
+            L(f"  оборот перпа Gate к перпу Binance (медиана по событиям): {np.nanmedian(gv / up.v7.values) * 100:.1f}%")
             L(f"  пересечения от цены 16:00: +12% (3S) {(e2.up_12 >= 0).sum() / mo:.1f}, +20% (3L) "
               f"{(e2.up_20 >= 0).sum() / mo:.1f}, −12% (3L) {(e2.dn_12 >= 0).sum() / mo:.1f}, −20% (3S) "
               f"{(e2.dn_20 >= 0).sum() / mo:.1f}, ±15% (MEXC) {((e2.up_15 >= 0) | (e2.dn_15 >= 0)).sum() / mo:.1f} в мес.")
@@ -209,10 +239,13 @@ def main():
         cd["ar"] = cd.r24.abs()
         cd["ratio"] = cd.q_slot / cd.q_base
         cd["pratio"] = cd.q_pre / cd.q_pre_base
-        groups = [("FTX", cd.ftx), ("без FTX/BLVT", ~cd.ftx & ~cd.blvt)] if per != "2024–2026" else \
-                 [("Gate", cd.gate), ("без Gate", ~cd.gate)]
-        if per == "2022–2024":
-            groups = [("Gate", cd.gate), ("без Gate", ~cd.gate), ("BLVT", cd.blvt)]
+        none = ~cd.ftx & ~cd.blvt & ~cd.gate
+        if per == "2020–2022":
+            groups = [("FTX", cd.ftx), ("BLVT", cd.blvt), ("Gate", cd.gate), ("без токенов", none)]
+        elif per == "2022–2024":
+            groups = [("BLVT", cd.blvt), ("Gate", cd.gate), ("без токенов", none)]
+        else:
+            groups = [("Gate", cd.gate), ("без токенов", none)]
         fp = {}
         for gname, gm in groups:
             for h in (0, 4, 8, 12, 16, 20):

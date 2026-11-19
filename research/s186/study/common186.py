@@ -23,7 +23,7 @@ UA = {"User-Agent": "research-script/1.0", "Accept-Encoding": "gzip"}
 DAY = 86400
 PER = C3.PER
 PERS = C3.PERS
-LT_RE = re.compile(r"^(.+?)(\d+)(L|S)$")          # BTC3L, SOL5S, …
+LT_RE = re.compile(r"^(.+)(10|2|3|5)(L|S)$")      # BTC3L, SOL5S, C983L → C98 + 3L, NAS1003L → NAS100 + 3L
 
 
 def get(url, data=None, headers=None, tries=4, timeout=90):
