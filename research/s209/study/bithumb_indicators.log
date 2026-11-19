@@ -1,0 +1,13 @@
+монет Bithumb (живых, KRW): 483 с перпом Binance: 360
+1/360 BTC 3 с
+51/360 CELR 107 с
+101/360 GMX 208 с
+151/360 ACE 307 с
+201/360 DEEP 407 с
+251/360 PARTI 507 с
+301/360 ZBT 606 с
+351/360 CAP 704 с
+заполнено по монетам: {'supply': 360, 'netdep': 207, 'holders': 360, 'top_hold': 360, 'top_trade': 360} wealthy/stat с рядом: 288
+пример DOGE: {"symbol": "DOGE", "supply": {"coinType": "C0565", "accumulationDepositAmt": "2855535421", "depositChangeRate": "0.03", "mktType": "C0100", "timestamp": "2026-11-20 07:30:30", "serverTime": "2026-11-20 07:34:56"}, "netdep": {"coinType": "C0565", "purityDeposit": "129767", "mktType": "C0100", "timestamp": "2026-11-20 07:34:55", "serverTime": "2026-11-20 07:34:57"}, "holders": {"coinType": "C0565", "numberOfHolders": "345449", "timestamp": "2026-11-20 07:30:30", "serverTime": "2026-11-20 07:34:57"}, "top_hold": {"coinType": "C0565", "holdingPercentage": "3", "timestamp": "2026-11-20 07:30:30", "serverTime": "2026-11-20 07:34:58"}, "top_trade": {"coinType": "C0565", "tradingPercentage": "52", "timestamp": "2026-11-20 07:32:40", "serverTime": "2026-11-20 07:34:58"}, "wealthy": {"holdPercentList": [{"standardDate": "2026-11-13", "percent": 33}, {"standardDate": "2026-11-14", "percent": 32}, {
+займ под продажу (assets-status): монет 35 время 2026-11-20T07:31:01.721683
+файл /home/user/mc_data/s209/bithumb/snap_20261119T2244.json.gz 68832 байт

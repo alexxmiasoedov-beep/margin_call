@@ -1,0 +1,14 @@
+рынков KRW с перпом Binance: 243
+/home/user/margin_call/research/s209/study/upbit_premium.py:43: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  recs, to, solely = [], datetime.utcnow() + timedelta(days=1), False
+1/243 KRW-0G записей 424 запросов 3 за 3 с
+26/243 KRW-AVNT записей 431 запросов 105 за 50 с
+51/243 KRW-CFX записей 112 запросов 180 за 78 с
+76/243 KRW-EUL записей 117 запросов 261 за 103 с
+101/243 KRW-IOST записей 884 запросов 345 за 130 с
+126/243 KRW-MEGA записей 204 запросов 429 за 156 с
+151/243 KRW-ORBS записей 884 запросов 513 за 185 с
+176/243 KRW-SAFE записей 757 запросов 592 за 207 с
+201/243 KRW-T записей 884 запросов 681 за 232 с
+226/243 KRW-WLFI записей 445 запросов 769 за 257 с
+готово: рынков 243, строк 138089, даты 2024-06-19T00:00:00 … 2026-11-19T00:00:00, запросов 827, 274 с

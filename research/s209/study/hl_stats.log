@@ -1,0 +1,24 @@
+hlp_positions: 17.7 МБ за 2 с, строк 155276, поля ['coin', 'daily_ntl', 'daily_ntl_abs', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 229, из них с перпом Binance 210
+daily_notional_liquidated_by_coin: 6.4 МБ за 1 с, строк 67898, поля ['coin', 'daily_notional_liquidated', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 358, из них с перпом Binance 210
+v2/daily_notional_liquidated_by_coin: HTTP 403 b'<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>'
+daily_unique_users_by_coin: 27.2 МБ за 2 с, строк 214766, поля ['coin', 'daily_unique_users', 'percentage_of_total_users', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 639, из них с перпом Binance 210
+open_interest: 13.0 МБ за 1 с, строк 155276, поля ['coin', 'open_interest', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 229, из них с перпом Binance 210
+funding_rate: 12.8 МБ за 1 с, строк 155271, поля ['coin', 'sum_funding', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 229, из них с перпом Binance 210
+daily_usd_volume_by_coin: 18.9 МБ за 2 с, строк 214766, поля ['coin', 'daily_usd_volume', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 639, из них с перпом Binance 210
+daily_trades_by_coin: 16.0 МБ за 1 с, строк 214766, поля ['coin', 'daily_trades', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 639, из них с перпом Binance 210
+v2/daily_trades_by_coin: HTTP 403 b'<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>'
+liquidity_by_coin: 51.7 МБ, ключи ['chart_data']
+daily_notional_liquidated_by_leverage_type: 0.1 МБ за 0 с, строк 562, поля ['daily_notional_liquidated', 'leverage_type', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 0, из них с перпом Binance 0
+hlp_liquidator_pnl: 0.0 МБ за 1 с, строк 130, поля ['time', 'total_pnl'], даты 2025-03-05T00:00:00 … 2025-07-12T00:00:00, монет 0, из них с перпом Binance 0
+cumulative_hlp_liquidator_pnl: 0.0 МБ за 1 с, строк 130, поля ['cumulative_pnl', 'time'], даты 2025-03-05T00:00:00 … 2025-07-12T00:00:00, монет 0, из них с перпом Binance 0
+daily_inflow: 0.1 МБ за 1 с, строк 1026, поля ['inflow', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 0, из них с перпом Binance 0
+daily_unique_users: 0.1 МБ за 1 с, строк 1026, поля ['daily_unique_users', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 0, из них с перпом Binance 0
+daily_usd_volume: 0.1 МБ за 1 с, строк 1026, поля ['daily_usd_volume', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 0, из них с перпом Binance 0
+largest_users_by_usd_volume: 0.1 МБ, ключи ['table_data']
+largest_user_depositors: 0.1 МБ, ключи ['table_data']
+largest_liquidated_notional_by_user: 0.1 МБ, ключи ['table_data']
+largest_user_trade_count: 0.1 МБ, ключи ['table_data']
+asset_ctxs: 27.5 МБ за 4 с, строк 155276, поля ['avg_open_interest', 'avg_oracle_px', 'coin', 'first_oracle_px', 'last_oracle_px', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 229, из них с перпом Binance 210
+slippage_by_coin: HTTP 403 b'<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>'
+total_open_interest: HTTP 403 b'<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>'
+daily_usd_volume_by_crossed: 0.2 МБ за 1 с, строк 2052, поля ['crossed', 'daily_usd_volume', 'time'], даты 2023-06-13T00:00:00 … 2026-04-03T00:00:00, монет 0, из них с перпом Binance 0

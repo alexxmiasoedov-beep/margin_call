@@ -1,0 +1,43 @@
+s209 проба 2026-11-19T22:47:53.098964+00:00
+upbit_premium_days                  200  154 точек, 2024-06-19T00:00:00 … 2024-11-19T00:00:00
+upbit_premium_hours                 200  200 точек, 2024-06-19T16:00:00 … 2024-06-27T23:00:00
+upbit_market_event_records          200  всего 279 записей в окне (история с 23.03.2026, s204)
+upbit_volume_power                  200  снимок, рынков 300
+upbit_interval_change_rate          200  снимок, рынков 883
+upbit_lending_budgets               200  снимок 2026-11-20T07:00:00+09:00, монет 31
+upbit_lending_autorepay             200  месяц 2025-09-01T09:00:00+09:00, монет 2 (с 09.2025)
+upbit_daily_asset                   200  снимок 2026-11-18, монет 361
+upbit_datalab_static_asset_status   200  снимок, монет 363
+upbit_datalab_page                  403  Cloudflare: заблокировано
+upbit_datalab_api                   403  Cloudflare: заблокировано
+bithumb_wealthy_stat                200  7 точек, 2026-11-13 00:00 … 2026-11-19 00:00
+bithumb_wealthy_netbuy_rank         200  снимок 2026-11-19 00:00:00
+bithumb_internal_supply             200  снимок {'coinType': 'C0565', 'accumulationDepositAmt': '2855535421', 'depositChangeRate': '0.03', 'mktType': 'C0100', 'timestamp': '2026-11-20 07:40:28', 'serverTime': '2026-11-20 07:48:01'}
+bithumb_net_deposit_24h             200  снимок {'coinType': 'C0565', 'purityDeposit': '128824', 'mktType': 'C0100', 'timestamp': '2026-11-20 07:47:57', 'serverTime': '2026-11-20 07:48:01'}
+bithumb_holders                     200  снимок {'coinType': 'C0565', 'numberOfHolders': '345447', 'timestamp': '2026-11-20 07:40:28', 'serverTime': '2026-11-20 07:48:01'}
+bithumb_top10_holders               200  снимок {'coinType': 'C0565', 'holdingPercentage': '3', 'timestamp': '2026-11-20 07:40:28', 'serverTime': '2026-11-20 07:48:02'}
+bithumb_top10_traders               200  снимок {'coinType': 'C0565', 'tradingPercentage': '52', 'timestamp': '2026-11-20 07:42:43', 'serverTime': '2026-11-20 07:48:02'}
+bithumb_lending_assets              200  снимок 2026-11-20T07:48:01.373886, монет 35
+bithumb_lending_autorepay           200  снимок 2026-11-20T00:00:00, монет 22
+bithumb_surging_status              200  сегодняшние сигналы: 22
+bithumb_warning_history             200  с 03.07.2023 (s204); в ответе 5 записей
+coinbase_asset_stats                200  снимок; signals {"tradable_market_cap_rank": 1, "percent_holding": {"rank": 1, "value": 0.58300954, "updated_at": "2026-11-19 11:36:36.910000000"}, "trading_activity": {"value": 0.987706, "updated_at": "2023-09-06 06
+coinbase_price_page                 200  Cloudflare: проверка браузера
+binance_margin_debt_daily           200  58 точек, 2026-09-21 00:00 … 2026-11-19 00:00
+binance_margin_debt_hourly          200  48 точек, 2026-11-17 22:00 … 2026-11-19 21:00
+binance_web_lsr                     200  30 точек, 2026-10-21 00:00 … 2026-11-19 00:00
+binance_square_hot                  200  снимок, хэштегов 10
+binance_web_page                    202  AWS WAF: challenge
+okx_loan_ratio_old                  200  Illegal time range
+okx_loan_ratio_180d                 200  37 точек, 2026-05-25 16:00 … 2026-06-30 16:00
+okx_top_trader_sentiment            200  25 точек, 2026-10-26 16:00 … 2026-11-19 16:00
+okx_c2c_usdt_premium                200  120 точек, 2026-07-23 16:00 … 2026-11-19 16:00
+bybit_api                           403  CloudFront: доступ из страны закрыт
+bitget_capital_flows                200  96 точек, 2026-11-18 23:00 … 2026-11-19 22:45
+htx_elite_ratio                     200  30 точек, 2026-10-21 16:00 … 2026-11-19 16:00
+gate_liq_orders_old                 200  0 записей за час 400 сут назад
+gate_web                            404  не JSON (11111 байт): '<!DOCTYPE html>\n<html lang="en">\n\n<head>\n  <meta charset="UTF-8" />\n  <meta http-equiv="X-UA-Compati'
+mexc_web                            404  не JSON (268840 байт): '<!DOCTYPE html><html id="__next_error__"><head><meta charSet="utf-8"/><meta name="viewport" content='
+hl_hlp_positions                    200  155276 строк, 2023-06-13T00:00:00 … 2026-04-03T00:00:00
+hl_asxn_proxy                       403  {"error": "VERIFICATION_REQUIRED", "message": "Verification required. Please complete the challenge."}
+hl_leaderboard                      200  снимок, счетов 48023
