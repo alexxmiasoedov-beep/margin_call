@@ -1,21 +1,5 @@
 Coin Metrics Community: активов с AdrActCnt (1d) 492 | с AdrNewCnt (1d) 230
 ликвидных перпов (за все периоды) 663 | с рядом активных адресов 70
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=audio_eth&metrics=
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=audio_eth&metrics=
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=audio_eth&metrics=
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=audio_eth&metrics=
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=axs_eth&metrics=Ad
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=axs_eth&metrics=Ad
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=axs_eth&metrics=Ad
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=axs_eth&metrics=Ad
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=band_eth&metrics=A
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=band_eth&metrics=A
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=band_eth&metrics=A
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=band_eth&metrics=A
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=chz_eth&metrics=Ad
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=chz_eth&metrics=Ad
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=chz_eth&metrics=Ad
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=chz_eth&metrics=Ad
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=ftm_eth&metrics=Ad
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=ftm_eth&metrics=Ad
-  сбой HTTPError https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=ftm_eth&metrics=Ad
+2020–2022: ликвидных альтов с капитализацией CMC и активными адресами на срез — медиана 41 (мин 26, макс 43); доля от ликвидных 36%; лог(кап./адреса) p5/p50/p95 9.8 / 13.6 / 19.1
+2022–2024: ликвидных альтов с капитализацией CMC и активными адресами на срез — медиана 39 (мин 27, макс 43); доля от ликвидных 20%; лог(кап./адреса) p5/p50/p95 9.1 / 13.9 / 19.0
+2024–2026: ликвидных альтов с капитализацией CMC и активными адресами на срез — медиана 28 (мин 19, макс 35); доля от ликвидных 10%; лог(кап./адреса) p5/p50/p95 9.1 / 13.6 / 16.5

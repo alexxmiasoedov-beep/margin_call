@@ -58,8 +58,21 @@ def baskets(X, feat, sgn, cond):
     return out
 
 
-def stats(B, J, per, mons):
+def stats(B, J, per, mons, X=None):
     weeks = sorted(B)
+    # ex-ante характеристики корзины (по прошлым данным): бета к индексу альтов, остаточный риск за неделю, фандинг 7 сут
+    be, sig, fu = [], [], []
+    if X is not None:
+        Xi = X.set_index(["d0", "s"])
+        for w in weeks:
+            if len(B[w]) < N:
+                continue
+            z = Xi.loc[[(w, s) for s in B[w]]]
+            be.append(z.beta28.mean())
+            iv = z.ivol28.dropna()
+            if len(iv):
+                sig.append(np.sqrt((iv ** 2).mean() / len(iv)) * np.sqrt(7))
+            fu.append(z.f7.mean())
     names = [len(B[w]) for w in weeks]
     full = sum(1 for n in names if n >= N)
     turn = []
@@ -85,7 +98,10 @@ def stats(B, J, per, mons):
                         ov_prev[j] += 1; hit_prev = True
             any_now += hit_now; any_prev += hit_prev
     n = max(len(allc), 1)
+    sw = np.nanmedian(sig) if sig else np.nan
     return dict(per=per, weeks=len(weeks), full=full / max(len(weeks), 1), per_month=len(allc) / mons,
+                beta=np.nanmedian(be) if be else np.nan, sig_w=sw, f7=np.nanmedian(fu) if fu else np.nan,
+                mde=3 * sw / np.sqrt(max(full, 1)),
                 turnover=np.mean(turn) if turn else np.nan, coins=len(vc), top3=top3,
                 top_coins=", ".join(f"{k}:{v}" for k, v in vc.head(4).items()),
                 any_now=any_now / n, any_prev=any_prev / n,
@@ -102,17 +118,18 @@ def main():
         print(f"\n=== {per}: срезов {X.d0.nunique()}, месяцев {mons:.1f}; входов журналов: "
               + ", ".join(f"{j} {int((J.j == j).sum())}" for j in JN if (J.j == j).any()), flush=True)
         print(f"  {'корзина':30s} {'сделок/мес':>10s} {'полных нед.':>11s} {'замен':>6s} {'монет':>6s} {'топ-3':>6s} "
-              f"{'журнал в неделю':>15s} {'журнал до среза':>15s}  частые монеты")
+              f"{'журнал в неделю':>15s} {'журнал до среза':>15s} {'бета':>5s} {'σ нед.':>6s} {'f7':>7s} {'MDE':>6s}  частые монеты")
         for name, f, sgn, cond in SIG:
             if f not in X.columns or X[f].notna().sum() == 0:
                 continue
             B = baskets(X, f, sgn, cond)
             allB[(per, name)] = B
-            st = stats(B, J, per, mons)
+            st = stats(B, J, per, mons, X)
             st["name"] = name
             rows.append(st)
             print(f"  {name:30s} {st['per_month']:10.1f} {st['full']:11.0%} {st['turnover']:6.0%} {st['coins']:6d} "
-                  f"{st['top3']:6.0%} {st['any_now']:15.0%} {st['any_prev']:15.0%}  {st['top_coins']}")
+                  f"{st['top3']:6.0%} {st['any_now']:15.0%} {st['any_prev']:15.0%} {st['beta']:5.2f} {st['sig_w']:6.1%} "
+                  f"{st['f7']:+7.3%} {st['mde']:6.2%}  {st['top_coins']}")
         # пересечение корзин между собой: среднее число общих монет на срез (из 5)
         names = [n for n, *_ in SIG if (per, n) in allB]
         key = ["Корея: доля", "Корея: доля сверх нормы", "Корея: аном. оборот", "Binance: аном. оборот (ст.)",

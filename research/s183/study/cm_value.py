@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 
 import numpy as np
@@ -26,6 +27,10 @@ def get(url, tries=4):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=90) as r:
                 return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500 and e.code != 429:      # нет доступа без ключа или нет ряда — без повтора
+                return None
+            time.sleep(10 * (k + 1))
         except Exception as e:  # сеть: пауза и повтор
             print("  сбой", type(e).__name__, url[:90], flush=True)
             time.sleep(10 * (k + 1))
