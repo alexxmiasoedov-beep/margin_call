@@ -1,0 +1,28 @@
+injective      INJ   unbonding_time 1814400s валидаторов 49 (сбоев 0) записей 803 в очереди 1,898,273 бондинг 56,895,055
+sei            SEI   unbonding_time 1814400s валидаторов 40 (сбоев 0) записей 924 в очереди 39,466,895 бондинг 4,088,014,448
+dydx           DYDX  unbonding_time 1814400s валидаторов 23 (сбоев 0) записей 278 в очереди 1,694,307 бондинг 313,399,305
+osmosis        OSMO  unbonding_time 1209600s валидаторов 31 (сбоев 0) записей 1445 в очереди 6,091,140 бондинг 155,310,963
+akash          AKT   unbonding_time 1814400s валидаторов 80 (сбоев 0) записей 2794 в очереди 8,533,052 бондинг 81,487,111
+axelar         AXL   unbonding_time 604800s валидаторов 41 (сбоев 0) записей 125 в очереди 5,100,783 бондинг 262,457,195
+dymension      DYM   unbonding_time 1814400s валидаторов 67 (сбоев 0) записей 324 в очереди 1,438,218 бондинг 104,957,189
+saga           SAGA  unbonding_time 1814400s валидаторов 16 (сбоев 0) записей 177 в очереди 2,077,428 бондинг 64,277,995
+bandchain      BAND  unbonding_time 1814400s валидаторов 51 (сбоев 12) записей 16 в очереди 67,898 бондинг 91,116,681
+terra2         LUNA  unbonding_time 1814400s валидаторов 102 (сбоев 0) записей 429 в очереди 3,927,364 бондинг 316,477,414
+terra          LUNC  unbonding_time 1814400s валидаторов 91 (сбоев 0) записей 816 в очереди 13,563,853,516 бондинг 902,628,778,541
+fetchhub       FET   unbonding_time 1814400s валидаторов 72 (сбоев 0) записей 162 в очереди 8,671,420 бондинг 639,610,469
+mantrachain    OM    unbonding_time 691200s валидаторов 40 (сбоев 0) записей 38 в очереди 42,190,157,538,707,824,640 бондинг 2,188,321,286,781,769,089,024
+zetachain      ZETA  unbonding_time 1814400s валидаторов 42 (сбоев 0) записей 171 в очереди 48,599,304 бондинг 347,876,084
+  сбой: https://initia-api.polkachu.com/cosmos/staking/v1beta1/validators?status=BOND_STATUS_BONDED&pagination.limit=500 HTTP 500
+  сбой: https://rest.cosmos.directory/initia/cosmos/staking/v1beta1/validators?status=BOND_STATUS_BONDED&pagination.limit=500 HTTP 502
+  сбой: https://initia-api.polkachu.com/cosmos/staking/v1beta1/validators?status=BOND_STATUS_UNBONDING&pagination.limit=500 HTTP 500
+  сбой: https://rest.cosmos.directory/initia/cosmos/staking/v1beta1/validators?status=BOND_STATUS_UNBONDING&pagination.limit=500 HTTP 502
+initia         INIT  unbonding_time 1814400s валидаторов 0 (сбоев 0) записей 0 в очереди 0 бондинг 0
+babylon        BABY  unbonding_time 1814400s валидаторов 67 (сбоев 0) записей 12 в очереди 16,728 бондинг 2,926,258,224
+  сбой: https://rest.cosmos.directory/secretnetwork/cosmos/staking/v1beta1/params HTTP 502
+  сбой: https://rest.cosmos.directory/secretnetwork/cosmos/base/tendermint/v1beta1/blocks/latest HTTP 502
+  сбой: https://rest.cosmos.directory/secretnetwork/cosmos/staking/v1beta1/validators?status=BOND_STATUS_BONDED&pagination.limit HTTP 502
+  сбой: https://rest.cosmos.directory/secretnetwork/cosmos/staking/v1beta1/validators?status=BOND_STATUS_UNBONDING&pagination.li HTTP 502
+secretnetwork  SCRT  unbonding_time None валидаторов 0 (сбоев 0) записей 0 в очереди 0 бондинг 0
+cosmoshub      ATOM  unbonding_time 1814400s валидаторов 188 (сбоев 0) записей 14007 в очереди 9,392,304 бондинг 345,011,141
+celestia       TIA   unbonding_time 1213200s валидаторов 98 (сбоев 0) записей 3949 в очереди 34,318,256 бондинг 470,130,797
+kava           KAVA  unbonding_time 1814400s валидаторов 49 (сбоев 0) записей 372 в очереди 1,746,598 бондинг 127,724,476

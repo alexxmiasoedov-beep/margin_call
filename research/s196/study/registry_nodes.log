@@ -100,3 +100,95 @@ dymension       DYM   узлов 30, ответили  9; самые глубо�
   сбой: https://rpc.saga.bronbro.io:443/status URLError(SSLCertVerificationError(1, "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, cer
   сбой: https://saga-rpc.chainroot.io/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
   сбой: https://saga.rpc.kjnodes.com/status URLError(SSLError(1, '[SSL: TLSV1_UNRECOGNIZED_NAME] tlsv1 unrecognized name (_ssl.c:1032)'))
+  сбой: https://rpc.saga.goldenratiostaking.net/status HTTP 502
+saga            SAGA  узлов 11, ответили  6; самые глубокие:
+     https://rpc-saga.keplr.app                                   earliest   14108711 2026-10-17T17:33:21 latest 14608711 tx_index on
+     https://saga-rpc.publicnode.com:443                          earliest   14108711 2026-10-17T17:33:21 latest 14608711 tx_index on
+     https://rpc.saga.nodestake.org                               earliest   14590711 2026-11-18T12:36:22 latest 14608711 tx_index on
+  сбой: https://rpc-band-01.stakeflow.io/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://band.rpc.m.stavr.tech:443/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://rpc.band.roomit.xyz/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://band-rpc.noders.services/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://rpc.band.bronbro.io/status URLError(SSLCertVerificationError(1, "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, cer
+bandchain       BAND  узлов 12, ответили  6; самые глубокие:
+     https://band.ibs.team:443/rpc                                earliest   74144587 2026-09-24T03:51:57 latest 78419536 tx_index on
+     http://rpc.laozi1.bandchain.org:80                           earliest   78119535 2026-11-15T21:47:59 latest 78419535 tx_index on
+     https://public.stakewolle.com/cosmos/bandchain/rpc           earliest   78319535 2026-11-18T10:41:59 latest 78419535 tx_index on
+  сбой: https://rpc-terra-01.stakeflow.io/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://terra-m-rpc.onnode.org/status HTTP 530
+  сбой: https://terra-rpc.cosmosrescue.dev:8443/status URLError(ConnectionResetError(104, 'Connection reset by peer'))
+  сбой: https://terra2.tdrsys.com:2053/status URLError(ConnectionResetError(104, 'Connection reset by peer'))
+terra2          LUNA  узлов 10, ответили  6; самые глубокие:
+     https://terra-rpc.publicnode.com:443                         earliest   22711258 2026-09-06T06:14:04 latest 23823976 tx_index on
+     https://terra-phoenix-rpc.highstakes.ch                      earliest   23723977 2026-11-13T00:39:03 latest 23823977 tx_index on
+     https://rpc.lavenderfive.com:443/terra2                      earliest          0 1970-01-01T00:00:00 latest 23823976 tx_index on
+  сбой: https://api-lunc-rpc.binodes.com/status URLError(ConnectionResetError(104, 'Connection reset by peer'))
+terra           LUNC  узлов  4, ответили  3; самые глубокие:
+     https://terraclassic-rpc-server-01.stakely.io                earliest   28108544 2026-04-10T06:58:53 latest 31359865 tx_index on
+     https://terra-classic-rpc.publicnode.com:443                 earliest   30522054 2026-09-23T02:29:05 latest 31359865 tx_index on
+     https://rpc.terra-classic.hexxagon.io/                       earliest   30946972 2026-10-22T06:32:31 latest 31359865 tx_index on
+  сбой: https://fetch-rpc.antrixy.org/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://fetch-rpc.w3coins.io/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://fetch.rpc.nodeshub.online:443/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://rpc-fetch.architectnodes.com/status JSONDecodeError('Expecting value: line 1 column 1 (char 0)')
+fetchhub        FET   узлов 16, ответили 11; самые глубокие:
+     https://rpc-fetchhub.fetch.ai:443                            earliest    5300201 2022-04-05T16:00:00 latest 30209115 tx_index on
+     https://public.stakewolle.com/cosmos/fetchhub/rpc            earliest    5300201 2022-04-05T16:00:00 latest 30209115 tx_index on
+     https://rpc.fetchhub-4.fetch.aviaone.com                     earliest   27592001 2026-05-30T00:36:55 latest 30209115 tx_index on
+mantrachain     OM    узлов  4, ответили  4; самые глубокие:
+     https://mantra-mainnet-rpc.itrocket.net:443                  earliest   17181927 2026-08-10T16:12:29 latest 19801296 tx_index on
+     https://rpc.mantrachain.io                                   earliest   19501296 2026-11-08T10:27:31 latest 19801296 tx_index on
+     https://mantra.rpc.m.stavr.tech                              earliest   19796501 2026-11-19T13:02:02 latest 19801296 tx_index on
+  сбой: https://rpc.lavenderfive.com:443/zetachain/status HTTP 503
+  сбой: https://zetachain-rpc.noders.services/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://zetachain-mainnet-tendermint.reliableninjas.com/status HTTP 521
+  сбой: https://zetachain.rpc.nodeshub.online:443/status HTTP 530
+  сбой: https://zeta.rpc.m.stavr.tech:443/status HTTP 502
+  сбой: https://zetachain-mainnet-archive.allthatnode.com:26657/status URLError(ConnectionResetError(104, 'Connection reset by peer'))
+zetachain       ZETA  узлов 10, ответили  3; самые глубокие:
+     https://zetachain-rpc.polkachu.com:443                       earliest   18966001 2026-09-21T11:47:47 latest 20297590 tx_index on
+     https://zetachain.blockpi.network/rpc/v1/public              earliest   19918001 2026-11-02T17:30:58 latest 20297590 tx_index on
+     https://rpc.zetachain.nodestake.org                          earliest   19918001 2026-11-02T17:30:58 latest 20297590 tx_index off
+  сбой: https://rpc.initia.xyz/status HTTP 502
+initia          INIT  узлов  3, ответили  1; самые глубокие:
+     https://initia-rpc.polkachu.com:443                          earliest          0 1970-01-01T00:00:00 latest 23680323 tx_index on
+  сбой: https://babylon.nodes.guru/rpc/status HTTP 521
+babylon         BABY  узлов  5, ответили  3; самые глубокие:
+     https://babylon-rpc.polkachu.com:443                         earliest    2556426 2026-01-29T19:48:50 latest 5108971 tx_index on
+     https://babylon-rpc.publicnode.com:443                       earliest    4893674 2026-10-26T22:13:18 latest 5108971 tx_index on
+     https://rpc.babylon.validatus.com                            earliest    4942212 2026-11-01T06:58:11 latest 5108971 tx_index on
+  сбой: https://rpc-secret.01node.com/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://rpc.mainnet.secretsaturn.net/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://scrt.public-rpc.com/status URLError(ConnectionResetError(104, 'Connection reset by peer'))
+  сбой: https://1rpc.io/scrt-rpc/status HTTP 429
+secretnetwork   SCRT  узлов  6, ответили  2; самые глубокие:
+     https://public.stakewolle.com/cosmos/secretnetwork/rpc       earliest    7496286 2026-11-13T04:01:42 latest 7596286 tx_index on
+     https://rpc.lavenderfive.com:443/secretnetwork               earliest   22922636 2025-12-13T14:56:27 latest 28167857 tx_index on
+story нет chain.json
+  сбой: https://mainnet-iris-rpc.konsortech.xyz/status HTTP 502
+irisnet         IRIS  узлов  1, ответили  0; самые глубокие:
+  сбой: https://rpc.evmos.silentvalidator.com/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://rpc.evmos.testnet.run/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://evmos-rpc.polkachu.com/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://rpc.lavenderfive.com:443/evmos/status HTTP 503
+  сбой: https://evmos-rpc.validatrium.club/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://evmos.rpc.stakin-nodes.com/status HTTP 503
+  сбой: https://rpc-evmos.architectnodes.com/status JSONDecodeError('Expecting value: line 1 column 1 (char 0)')
+  сбой: https://tendermint.bd.evmos.org:26657/status URLError(ConnectionResetError(104, 'Connection reset by peer'))
+  сбой: https://evmos-rpc.w3coins.io/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://evmos-rpc.antrixy.org/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://rpc-evmos-01.stakeflow.io/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://evmos.rpc.liveraven.net/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://rpc-evmos.validavia.me/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://evmos-mainnet.rpc.stakevillage.net:443/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://rpc.evmos.bronbro.io:443/status URLError(SSLCertVerificationError(1, "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatch, cer
+  сбой: https://rpc.evmos.citizenweb3.com:443/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+  сбой: https://evmos-rpc.theamsolutions.info/status URLError(ConnectionResetError(104, 'Connection reset by peer'))
+evmos           EVMOS узлов 19, ответили  0; самые глубокие:
+  сбой: https://cronos-rpc.polkachu.com:443/status URLError(OSError('Tunnel connection failed: 502 Bad Gateway'))
+cronos          CRO   узлов  4, ответили  1; самые глубокие:
+     https://cronos-rpc.publicnode.com:443                        earliest   92196799 2026-09-06T12:00:05 latest 106828830 tx_index on
+cryptoorgchain  CRO   узлов  5, ответили  4; самые глубокие:
+     https://rpc.mainnet.crypto.org/                              earliest          1 2021-03-25T01:00:00 latest 32906067 tx_index on
+     https://cro-chain-rpc.publicnode.com:443                     earliest   32406067 2026-10-21T08:59:27 latest 32906067 tx_index on
+     https://rpc-cryptoorgchain.ecostake.com                      earliest          0 1970-01-01T00:00:00 latest 32906067 tx_index on
