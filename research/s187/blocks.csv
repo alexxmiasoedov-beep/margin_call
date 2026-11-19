@@ -1,0 +1,141 @@
+kind,rank,name,author,boosts,access,pine,blocks,signals,risks,uuid
+indicator,1,Smart Money Concepts (SMC) [LuxAlgo],LuxAlgo,182657,открытый,5,VOLA VOL STRUCT TIME,alert×16,SEC_LA PIVOT OFFSET LASTBAR RT,CnB3fSph
+indicator,2,Squeeze Momentum Indicator [LazyBear],LazyBear,118375,открытый,1,MA VOLA,,,nqQ1DT5a
+indicator,3,SuperTrend,KivancOzbilgic,85966,открытый,4,MA VOLA,alert×3 plotshape buy/sell,,r6dAP7yi
+indicator,4,MacD Custom Indicator-Multiple Time Frame+All Available Options!,ChrisMoody,82984,открытый,1,MA,,SEC,OQx7vju0
+indicator,5,Support and Resistance Levels with Breaks [LuxAlgo],LuxAlgo,68285,открытый,4,MA VOL STRUCT,alert×2 plotshape buy/sell,PIVOT OFFSET,JDFoWQbL
+indicator,6,CM_Williams_Vix_Fix  Finds Market Bottoms,ChrisMoody,66308,открытый,1,MA VOLA,,,og7JPrRA
+indicator,7,Market Structure Break & Order Block by EmreKb,EmreKb,65489,открытый,5,STRUCT,alert×1 alert(),OFFSET,DkE7UniD
+indicator,8,UT Bot Alerts,QuantNomad,62609,открытый,4,MA VOLA,alert×2 plotshape buy/sell,,n8ss8BID
+indicator,9,Indicator: WaveTrend Oscillator [WT],LazyBear,61666,открытый,1,MA OSC,,,2KE8wTuF
+indicator,10,ICT Killzones + Pivots [TFO],tradeforopp,60835,открытый,6,VOLA STRUCT TIME,alert(),LASTBAR,nW5oGfdO
+indicator,11,Trendlines with Breaks [LuxAlgo],LuxAlgo,54455,открытый,5,MA VOLA STRUCT,alert×2,PIVOT OFFSET,IYL88A1N
+indicator,12,Support Resistance Channels,LonesomeTheBlue,48917,открытый,6,MA STRUCT,alert×2,PIVOT OFFSET,Ej53t8Wv
+indicator,13,Swing high low support & resistance,Patternsmart,46465,защищённый,,,,,RQnLfaNE
+indicator,14,Support and Resistance (High Volume Boxes) [ChartPrime],ChartPrime,46327,открытый,5,VOLA VOL STRUCT,,PIVOT OFFSET,Uz2AJ0i4
+indicator,15,ADX and DI,BeikabuOyaji,45610,открытый,4,MA,,,VTPMMOrx
+indicator,16,LuxAlgo® - Signals & Overlays™,LuxAlgo,45103,защищённый,,,,,fYHlrAoz
+indicator,17,Sessions [LuxAlgo],LuxAlgo,44778,открытый,6,VOL ML TIME,,LASTBAR VISIBLE,bkb6vZDz
+indicator,18,Liquidity Swings [LuxAlgo],LuxAlgo,42440,открытый,5,VOL STRUCT,,PIVOT,1S2VOnJP
+indicator,19,Order Block Finder (Experimental),wugamlo,41602,открытый,4,STRUCT,alert×2 plotshape buy/sell,OFFSET,R8g2YHdg
+indicator,20,Order Block Detector [LuxAlgo],LuxAlgo,41562,открытый,5,VOL STRUCT,alert×4,PIVOT OFFSET LASTBAR,KvGhxGxY
+indicator,21,FVG (Nephew_Sam_),nephew_sam_,38258,защищённый,,,,,G8b8t2er
+indicator,22,Machine Learning: Lorentzian Classification,jdehorty,37719,открытый,6,MA VOLA ML,alert×8 plotshape buy/sell,OFFSET LASTBAR REPAINT_OPT,WhBzgfDu
+indicator,23,TMA Overlay,ArtyFXC,37317,открытый,4,MA TIME PAT,alert×2 plotshape buy/sell,,zX3fvduH
+indicator,24,Ultimate Moving Average-Multi-TimeFrame-7 MA Types,ChrisMoody,36714,открытый,1,MA,,SEC,OQs2lVvr
+indicator,25,Nadaraya-Watson Envelope [LuxAlgo],LuxAlgo,35708,открытый,5,MA ML,plotshape buy/sell,LASTBAR REPAINT_OPT,Iko0E2kL
+indicator,26,Candlestick Patterns Identified (updated 3/11/15),repo32,35112,открытый,6,PAT,alert×15 plotshape buy/sell,,vcsWo8mh
+indicator,27,Fibonacci Bollinger Bands,Rashad,33076,открытый,1,MA VOLA,,,qIKR3tbN
+indicator,28,Smart Money Breakout Channels [AlgoAlpha],AlgoAlpha,33017,открытый,6,MA VOLA VOL,alert×3 plotshape buy/sell,OFFSET LASTBAR,Hvk5WzPi
+indicator,29,Breakout Probability (Expo),Zeiierman,32889,открытый,5,,alert(),LASTBAR,Qt7fqntR
+indicator,30,LuxAlgo® - Price Action Concepts™,LuxAlgo,32616,защищённый,,,,,ZGl2xWym
+indicator,31,ICT Concepts [LuxAlgo],LuxAlgo,31967,открытый,5,MA VOLA VOL STRUCT TIME,,PIVOT OFFSET LASTBAR VISIBLE,ib4uqBJx
+indicator,32,Machine Learning Adaptive SuperTrend [AlgoAlpha],AlgoAlpha,31482,открытый,5,VOLA ML,alert×6 plotshape buy/sell,LASTBAR RT,CLk71Qgy
+indicator,33,Buyside & Sellside Liquidity [LuxAlgo],LuxAlgo,31425,открытый,5,VOLA STRUCT,alert(),PIVOT OFFSET LASTBAR VISIBLE,Qk4vBbfL
+indicator,34,Market Structure BOS/CHOCH/MSB/FVG/OB/BB (Nephew_Sam_),nephew_sam_,31176,защищённый,,,,,PmIP7HAZ
+indicator,35,Order Blocks & Breaker Blocks [LuxAlgo],LuxAlgo,30919,открытый,5,STRUCT,,OFFSET LASTBAR,piIbWMpY
+indicator,36,SuperTrend AI (Clustering) [LuxAlgo],LuxAlgo,30908,открытый,5,MA VOLA ML,,OFFSET LASTBAR,wP7WWjLL
+indicator,37,Divergence for Many Indicators v4,LonesomeTheBlue,30767,открытый,4,MA OSC VOL STRUCT,alert×6,PIVOT OFFSET,n8AGnIZd
+indicator,38,Chandelier Exit [everget],everget,30388,открытый,6,VOLA,alert×3 plotshape buy/sell,RT,AqXxNS7j
+indicator,39,CM Sling Shot System,ChrisMoody,30009,открытый,1,MA VOLA,plotshape buy/sell,,GE7tSQK1
+indicator,40,AlphaTrend,KivancOzbilgic,29973,открытый,5,MA OSC VOLA VOL,alert×10 plotshape buy/sell,,o50NYLAZ
+indicator,41,Pivot Point Supertrend,LonesomeTheBlue,29804,открытый,4,VOLA STRUCT,alert×3 plotshape buy/sell,PIVOT OFFSET,L0AIiLvH
+indicator,42,EMA 20/50/100/200,drsweets,29547,открытый,1,MA,,,48ZWvclR
+indicator,43,Support Resistance - Dynamic v2,LonesomeTheBlue,29265,открытый,5,STRUCT,alert×3,PIVOT OFFSET,va09eWAp
+indicator,44,Trend Lines v2,LonesomeTheBlue,29263,открытый,4,STRUCT,,PIVOT OFFSET,eXUYLaGv
+indicator,45,Super OrderBlock / FVG / BoS Tools by makuchaku & eFe,makuchaku,29166,открытый,5,MA VOL STRUCT PAT,plotshape buy/sell,PIVOT OFFSET,aZACDmTC
+indicator,46,Madrid Moving Average Ribbon,Madrid,28383,открытый,4,MA,,,1JKqmEKy
+indicator,47,CM_Price-Action-Bars-Price Patterns That Work!,ChrisMoody,28146,открытый,1,PAT,,,GHnJs0X8
+indicator,48,Pro Scalper,profitprotrading,27979,по приглашению,,,,,BEhT6Syv
+indicator,49,Breakout Finder,LonesomeTheBlue,27841,открытый,4,STRUCT,alert×3,PIVOT OFFSET,EvkXjgyw
+indicator,50,Volume-based Support & Resistance Zones,tommyf1001,27477,открытый,5,MA VOL STRUCT TIME,alert(),SEC OFFSET LASTBAR,S2ClgBm5
+indicator,51,ICT Killzones Toolkit [LuxAlgo],LuxAlgo,27399,открытый,5,VOLA STRUCT TIME,,PIVOT OFFSET,9kY5NlHJ
+indicator,52,RSI Candles,glaz,27366,открытый,1,MA,,,RADlhsKE
+indicator,53,Volume Flow Indicator [LazyBear],LazyBear,27345,открытый,1,MA VOLA VOL,,,MhlDpfdS
+indicator,54,HTF Power of Three°,toodegrees,27076,защищённый,,,,,mFWSBQhC
+indicator,55,Fair Value Gap [LuxAlgo],LuxAlgo,27043,открытый,5,STRUCT,alert×4,SEC LASTBAR,jWY4Uiez
+indicator,56,Volume Profile / Fixed Range,LonesomeTheBlue,27007,открытый,5,VOL,,OFFSET LASTBAR,kIY0znXs
+indicator,57,Supply and Demand Visible Range [LuxAlgo],LuxAlgo,26933,открытый,5,VOL,,VISIBLE,UpWXXsbC
+indicator,58,Order Blocks | Flux Charts,fluxchart,26875,открытый,5,VOLA VOL STRUCT TIME,,SEC OFFSET LASTBAR RT,bLdpFVuq
+indicator,59,Price Action Smart Money Concepts [BigBeluga],BigBeluga,26735,открытый,5,VOLA VOL STRUCT TIME,,PIVOT OFFSET LASTBAR RT,jvNJYfbL
+indicator,60,DIY Custom Strategy Builder  [ZP] - v1,zpayab,26706,открытый,6,MA OSC VOLA VOL STRUCT ML TIME,alert×3 plotshape buy/sell alert(),SEC_LA PIVOT OFFSET LASTBAR,Oun5v3Zq
+indicator,61,Smart Money Concept [TradingFinder] Major OB + FVG + Liquidity,TradingFinder,26170,открытый,5,VOLA STRUCT,,PIVOT OFFSET,7Q5CbHhr
+indicator,62,FVG Order Blocks [BigBeluga],BigBeluga,26008,открытый,5,VOLA STRUCT,,OFFSET LASTBAR RT,xy4EFLtD
+indicator,63,Volume Profile,kv4coins,26001,открытый,6,VOL,,OFFSET LASTBAR VISIBLE,r3VrWAO4
+indicator,64,VuManChu Cipher B + Divergences,vumanchu,25015,открытый,4,MA OSC VOL,alert×9,OFFSET,Msm4SjwI
+indicator,65,CM RSI-2 Strategy Lower Indicator,ChrisMoody,24692,открытый,1,MA,,,xOm7jSPf
+indicator,66,CM_Pivot Points_M-W-D-4H-1H_Filtered,ChrisMoody,24625,открытый,1,MA TIME,,SEC,kqKEuQpn
+indicator,67,Pivot Points High Low & Missed Reversal Levels [LuxAlgo],LuxAlgo,24374,открытый,5,STRUCT,,PIVOT LASTBAR,OxJJqZiN
+indicator,68,Market sessions and Volume profile - By Leviathan,LeviathanCapital,24350,открытый,5,MA VOLA VOL TIME,,SEC OFFSET LASTBAR,tV3rCaJ9
+indicator,69,Liquidity Sweeps [LuxAlgo],LuxAlgo,24323,открытый,5,STRUCT,,PIVOT,JRqryeJ5
+indicator,70,Bjorgum Key Levels,Bjorgum,24243,открытый,5,MA OSC VOLA STRUCT PAT,alert×8 plotshape buy/sell alert(),PIVOT OFFSET LASTBAR RT REPAINT_OPT,CapG3ivf
+indicator,71,WaveTrend with Crosses [LazyBear],lonestar108,23801,открытый,1,MA OSC,,,jFQn4jYZ
+indicator,72,Auto Chart Patterns [Trendoscope®],Trendoscope,23456,открытый,6,STRUCT,alert(),RT REPAINT_OPT,WZ8B1FIW
+indicator,73,Support and Resistance Power Channel [ChartPrime],ChartPrime,23298,открытый,5,VOLA STRUCT,,OFFSET LASTBAR,6WDeQiyp
+indicator,74,CM Stochastic Multi-TimeFrame,ChrisMoody,23102,открытый,1,MA OSC,,SEC,Wylw98ue
+indicator,75,Price Action - Support & Resistance by DGT,dgtrd,23074,открытый,6,MA VOLA VOL STRUCT,alert(),OFFSET LASTBAR VISIBLE,Z1byay68
+indicator,76,Hull Suite,InSilico,22883,открытый,4,MA STRUCT,alert×2,SEC,hg92pFwS
+indicator,77,Optimized Trend Tracker,KivancOzbilgic,22740,открытый,4,MA STRUCT,alert×9 plotshape buy/sell,,zVhoDQME
+indicator,78,"Volume Profile, Pivot Anchored by DGT",dgtrd,22709,открытый,6,MA VOL STRUCT,alert(),PIVOT OFFSET LASTBAR,utCRHZeP
+indicator,79,CM_Ultimate RSI Multi Time Frame,ChrisMoody,22547,открытый,1,MA,,SEC,mBKF9wUj
+indicator,80,Smart Money Concept (Expo),Zeiierman,22300,защищённый,,,,,pbeoiKh5
+indicator,81,Scalping PullBack Tool R1 by JustUncleL,JustUncleL,22137,открытый,4,MA,alert×2,OFFSET,n1co3drh
+indicator,82,Opening Range with Breakouts & Targets [LuxAlgo],LuxAlgo,21458,открытый,6,MA TIME,,OFFSET,fCqLTp6r
+indicator,83,Volume Profile Free Ultra SLI (100 Levels Value Area VWAP) - RRB,RagingRocketBull,21129,открытый,4,VOLA VOL,,,W5N54CeR
+indicator,84,TonyUX EMA Scalper - Buy / Sell,tux,21105,открытый,1,MA,plotshape buy/sell,,egfSfN1y
+indicator,85,Support and Resistance Signals MTF [LuxAlgo],LuxAlgo,21037,открытый,5,MA VOLA VOL STRUCT TIME,alert(),PIVOT,iOrhpIqc
+indicator,86,"Moving Average Cross Alert, Multi-Timeframe (MTF) (by ChartArt)",ChartArt,20939,открытый,1,MA,plotshape buy/sell,SEC,bcWGvngm
+indicator,87,Swing Highs/Lows & Candle Patterns [LuxAlgo],LuxAlgo,20827,открытый,5,STRUCT PAT,,PIVOT,yxEJ4Dxw
+indicator,88,MACD 4C,vkno422,20684,открытый,1,MA OSC,,,4IYKX938
+indicator,89,"ICT SM Trades (liquidity find & grab, MSS, FVG, killzones)",majky,20671,защищённый,,,,,ZtoavozZ
+indicator,90,Trendline Breakouts With Targets [ChartPrime],ChartPrime,20445,открытый,5,VOLA STRUCT,plotshape buy/sell,PIVOT VISIBLE,hb6J9iHI
+indicator,91,Volume Profile and Volume Indicator by DGT,dgtrd,20336,открытый,6,MA VOL STRUCT ML,alert(),OFFSET LASTBAR VISIBLE,Qwj6TO5I
+indicator,92,Turtle Trade Channels Indicator TUTCI,KivancOzbilgic,20313,открытый,4,,plotshape buy/sell,,pB5nv16J
+indicator,93,ZigZag++,DevLucem,20300,открытый,5,STRUCT,alert×7 alert(),REPAINT_OPT,lj8djt1n
+indicator,94,ICT HTF Candles (fadi),fadizeidan,20270,защищённый,,,,,CfqnRBHd
+indicator,95,Liquidity Pools [LuxAlgo],LuxAlgo,20257,открытый,5,VOL STRUCT,,OFFSET,yXJBwibN
+indicator,96,RSI Divergence,Shizaru,20218,открытый,1,MA,,,fH6e5TuN
+indicator,97,Supply & Demand / Orderblocks - Multi TimeFrame (@JP7FX),jp7fx,20105,защищённый,,,,,ILps3wnk
+indicator,98,FluidTrades - SMC Lite ,Pmgjiv,19890,открытый,5,VOLA STRUCT,,PIVOT OFFSET,YdtBEh4F
+indicator,99,Profit Maximizer PMax,KivancOzbilgic,19759,открытый,4,MA VOLA STRUCT,alert×6 plotshape buy/sell,,sU9molfV
+indicator,100,Self-Aware Trend System [WillyAlgoTrader],WillyAlgoTrader,19590,открытый,6,MA OSC VOLA VOL STRUCT TIME,alert×23 label buy/sell alert(),PIVOT OFFSET LASTBAR RT,sXFWVpmg
+strategy,1,"Bollinger + RSI, Double Strategy (by ChartArt) v1.1",ChartArt,49517,открытый,2,MA OSC VOLA,strategy.entry,,uCV8I4xA
+strategy,2,MACD + SMA 200 Strategy (by ChartArt),ChartArt,32131,открытый,2,MA,strategy.entry,,yMCa3XZD
+strategy,3,SuperTrend STRATEGY,KivancOzbilgic,25825,открытый,4,MA VOLA,plotshape buy/sell strategy.entry,,P5Gu6F8k
+strategy,4,MACD Bull Crossover and RSI Oversold 5 Candles Ago-Long Strategy,Trebor_Namor,18261,защищённый,,,,,iifAsfrq
+strategy,5,PMax Explorer STRATEGY & SCREENER,KivancOzbilgic,17346,открытый,4,MA VOLA STRUCT,alert×6 plotshape buy/sell strategy.entry,,nHGK4Qtp
+strategy,6,3Commas Bot,Bjorgum,15347,открытый,5,MA VOLA VOL STRUCT TIME,strategy.entry,RT,MvlwAzSg
+strategy,7,Hull Suite Strategy,DashTrader,15206,открытый,4,MA STRUCT,strategy.entry,,Q9OQye4C
+strategy,8,Buy&Sell Strategy depends on AO+Stoch+RSI+ATR by SerdarYILMAZ,SerdarYILMAZ,14568,открытый,4,MA OSC VOLA,strategy.entry,,RpYoQCVJ
+strategy,9,BUY and SELL -  Backtest single EMA cross By che_trader,Che_Trader,12888,открытый,4,MA TIME,plotshape buy/sell strategy.entry,,j9rq1wQq
+strategy,10,Ultimate Strategy Template,Daveatt,12723,открытый,4,VOLA TIME,strategy.entry alert(),,2lGyzYkC
+strategy,11,"Golden Cross, SMA 200 Moving Average Strategy (by ChartArt)",ChartArt,11693,открытый,2,MA,alert×2 strategy.entry,,6ZReHYKn
+strategy,12,Flawless Victory Strategy - 15min BTC Machine Learning Strategy,Trebor_Namor,11105,открытый,4,MA VOLA VOL,strategy.entry,,i3Uc79fF
+strategy,13,RSI Divergence Indicator strategy,eemani123,10617,открытый,4,OSC VOLA STRUCT,strategy.entry,PIVOT OFFSET,qSLcZSyw
+strategy,14,Ichimoku + Daily-Candle_X + HULL-MA_X + MacD,SeaSide420,10555,открытый,4,MA VOLA,strategy.entry,SEC OFFSET,RJBjyl2W
+strategy,15,"Buy and Sell Signals using EMA, Stochastic and Pivots",mmsrect,10441,защищённый,,,,,zWX2G809
+strategy,16,Open Close Cross Strategy R5 revised by JustUncleL,JustUncleL,9296,открытый,3,MA VOL,strategy.entry,SEC_LA RT REPAINT_OPT,vObmEraY
+strategy,17,Bjorgum Double Tap,Bjorgum,9200,открытый,5,VOLA STRUCT TIME,strategy.entry alert(),RT,rLkjr2sQ
+strategy,18,UT Bot Strategy,QuantNomad,9167,открытый,4,MA VOLA,plotshape buy/sell strategy.entry,,VKMgZdYr
+strategy,19,Fractal Breakout Strategy (by ChartArt),ChartArt,8972,открытый,2,,strategy.entry,OFFSET REPAINT_OPT,EjLwVtgp
+strategy,20,"Bollinger + RSI, Double Strategy Long-Only (by ChartArt) v1.2",ChartArt,8963,открытый,3,MA OSC VOLA,strategy.entry,,HDSdFMa3
+strategy,21,Twin Optimized Trend Tracker Strategy TOTT,KivancOzbilgic,8834,открытый,5,MA STRUCT,plotshape buy/sell strategy.entry,,eENf7NpJ
+strategy,22,ANN Strategy v2,sirolf2009,8275,открытый,2,VOL,strategy.entry,SEC,oY725jQw
+strategy,23,"MACD + Stochastic, Double Strategy (by ChartArt)",ChartArt,8052,открытый,2,MA OSC VOL,strategy.entry,,G5ro3y87
+strategy,24,EMA Slope + EMA Cross Strategy (by ChartArt),ChartArt,7843,открытый,3,MA,alert×2 strategy.entry,,XLGBqrZq
+strategy,25,LongBuyLongSell 90% profit Excellent Win Rate Strategy indicator,MarxBabu,7813,по приглашению,,,,,0zX3PYZi
+strategy,26,TradingView Alerts to MT4 MT5 + dynamic variables NON-REPAINTING,Peter_O,7724,открытый,5,MA OSC STRUCT,strategy.entry alert(),PIVOT LASTBAR,9MJO3AgE
+strategy,27,MACD ReLoaded STRATEGY,KivancOzbilgic,7679,открытый,5,MA VOL,strategy.entry,,VO6DY8s1
+strategy,28,Super Scalper - 5 Min 15 Min,VinayKumarKV,7427,открытый,5,MA OSC VOLA,plotshape buy/sell strategy.entry,,4ORGCiTh
+strategy,29,Moon Phases Strategy [LuxAlgo],LuxAlgo,7293,открытый,4,,strategy.entry,,yvDyq0pv
+strategy,30,AlphaTrend Strategy,KivancOzbilgic,7199,открытый,5,MA OSC VOLA VOL,plotshape buy/sell strategy.entry,,3wdQu7P3
+strategy,31,Agressive Scalper Strategy,serkany88,7077,защищённый,,,,,ISb50FOM
+strategy,32,"Stochastic + RSI, Double Strategy (by ChartArt)",ChartArt,7069,открытый,2,MA OSC,strategy.entry,,IGJPEi7L
+strategy,33,Stop loss and Take Profit in $$ example,adolgov,6901,открытый,4,MA,strategy.entry,,IHVPG6TS
+strategy,34,Optimized Trend Tracker STRATEGY & SCREENER,KivancOzbilgic,6878,открытый,4,MA STRUCT,alert×9 plotshape buy/sell strategy.entry,,HPbRZvsV
+strategy,35,"Bollinger + RSI, Double Strategy (by ChartArt)",ChartArt,6560,открытый,2,MA OSC VOLA,strategy.entry,,zopumZ8a
+strategy,36,Backtest Adapter,jdehorty,6554,открытый,5,TIME,,,Pu38F2pB
+strategy,37,20 years old Turtles strategy still work!!,tmr0,6549,открытый,2,,strategy.entry,,Q1O23zJP
+strategy,38,UT Bot Strategy with Backtesting Range [QuantNomad],QuantNomad,6502,открытый,4,MA VOLA,plotshape buy/sell strategy.entry,,RHagaXIp
+strategy,39,Daily Close Comparison Strategy (by ChartArt via sirolf2009),ChartArt,6443,открытый,2,VOL,strategy.entry,SEC,XK8XbDhT
+strategy,40,Open Close Cross Strategy NoRepaint Version by JustUncleL,JustUncleL,6065,открытый,4,MA,strategy.entry,RT REPAINT_OPT,9wda3yUw
