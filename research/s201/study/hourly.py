@@ -78,9 +78,10 @@ for k, g in R.groupby("k"):
 dd = W.resample("D").last().diff()
 mxh = W.diff().resample("D").max()
 o4 = (dd / circ.reindex(columns=W.columns).reindex(dd.index)) >= 0.005
-conc = (mxh / dd).where(o4 & (dd > 0)).stack()
-print(f"  дни O4 (+0,5% за сутки): доля прироста за самый крупный час — медиана {conc.median():.2f}, "
-      f"≥ 0,8 у {(conc >= 0.8).mean()*100:.0f}% (ступенька), ≤ 0,3 у {(conc <= 0.3).mean()*100:.0f}% (постепенно)")
+conc = (mxh / dd).where(o4 & (dd > 0)).stack().dropna().astype(float)
+print(f"  дни O4 (+0,5% за сутки): доля суточного прироста за самый крупный час — квартили "
+      f"{[round(x, 2) for x in conc.quantile([.25, .5, .75]).tolist()]}; ≥ 0,8 у {float((conc >= 0.8).mean())*100:.0f}% "
+      f"(ступенька одним часом), ≤ 0,3 у {float((conc <= 0.3).mean())*100:.0f}% (постепенный набор); дней {len(conc)}")
 R.to_pickle(f"{D}/binance_hourly_events.pkl")
 
 # ---------- B ----------

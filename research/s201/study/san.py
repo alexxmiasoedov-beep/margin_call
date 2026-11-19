@@ -50,8 +50,13 @@ def gql(query, tag, meta=None, force=False, dry=False):
     meta = meta or {}
     key = hashlib.sha1(query.encode()).hexdigest()
     path = f"{CACHE}/{key}.json"
+    qpath = f"{CACHE}/{key}.graphql"                 # текст запроса: какие монеты, метрика, окно — для журнала
     if os.path.exists(path) and not force:
+        if not os.path.exists(qpath):
+            open(qpath, "w").write(query)
         return json.load(open(path))
+    if os.environ.get("SAN_CACHE_ONLY"):
+        raise Budget("SAN_CACHE_ONLY: запроса нет в кэше, вызов не делается")
     n, rem = stats()
     if n >= BUDGET:
         raise Budget(f"бюджет этапа исчерпан: {n} вызовов")
@@ -82,6 +87,7 @@ def gql(query, tag, meta=None, force=False, dry=False):
            "bytes": len(body), "sec": sec, "err": err, "key": key}
     with open(LOG, "a") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    open(qpath, "w").write(query)
     if status == 200:
         json.dump(js, open(path, "w"))
     print(f"[san] {tag} {meta.get('metric', '')} slugs={meta.get('n_slugs', '')} {meta.get('interval', '')} "

@@ -1,72 +1,76 @@
-Журнал вызовов Santiment GraphQL этапа s201 (без ключа). Поля: время UTC | метка | метрика | монет | интервал | окно | статус | остаток мес/час/мин | размер ответа | ошибка
-2026-11-19T19:01:35Z | access_restrictions | * |  |  | … | 200 | 813/499/99 | 312579 Б | 
-2026-11-19T19:02:33Z | blockchains | getAvailableBlockchains |  |  | … | 200 | 1000/500/100 | 3311 Б | 
-2026-11-19T19:02:35Z | all_projects | allProjects |  |  | … | 200 | 914/499/99 | 205563 Б | 
-2026-11-19T19:04:17Z | map_price | price_usd | 220 | 1d | 2025-11-20…2026-10-18 | 200 | 800/499/99 | 3229591 Б | 
-2026-11-19T19:04:24Z | map_price | price_usd | 220 | 1d | 2025-11-20…2026-10-18 | 200 | 952/499/99 | 3114939 Б | 
-2026-11-19T19:04:29Z | map_price | price_usd | 191 | 1d | 2025-11-20…2026-10-18 | 200 | 845/499/99 | 2736741 Б | 
-2026-11-19T19:05:39Z | coverage | availableMetrics | 548 |  | … | 200 | 757/500/100 | 194 Б | Cannot query ["availableMetrics"] on a query that returns more than 1 project.
-2026-11-19T19:05:54Z | meta | exchange_inflow |  |  | … | 200 | 757/500/100 | 11191 Б | 
-2026-11-19T19:05:55Z | meta | labelled_historical_balance |  |  | … | 200 | 757/500/100 | 10860 Б | 
-2026-11-19T19:05:55Z | meta | social_volume_total |  |  | … | 200 | 990/500/100 | 33178 Б | 
-2026-11-19T19:05:56Z | meta | social_dominance_total |  |  | … | 200 | 813/499/100 | 33178 Б | 
-2026-11-19T19:05:56Z | meta | sentiment_weighted_total |  |  | … | 200 | 990/500/100 | 33178 Б | 
-2026-11-19T19:05:57Z | meta | age_consumed |  |  | … | 200 | 812/498/99 | 15564 Б | 
-2026-11-19T19:05:57Z | meta | dormant_circulation_365d |  |  | … | 200 | 968/499/99 | 12971 Б | 
-2026-11-19T19:05:57Z | meta | mvrv_usd |  |  | … | 200 | 951/498/99 | 13073 Б | 
-2026-11-19T19:05:58Z | meta | whale_transaction_count_100k_usd_to_inf |  |  | … | 200 | 811/497/98 | 15639 Б | 
-2026-11-19T19:05:58Z | meta | active_deposits |  |  | … | 200 | 843/497/98 | 11060 Б | 
-2026-11-19T19:05:58Z | meta | network_growth |  |  | … | 200 | 989/499/99 | 13513 Б | 
-2026-11-19T19:05:59Z | meta | daily_active_addresses |  |  | … | 200 | 989/499/99 | 13540 Б | 
-2026-11-19T19:05:59Z | meta | amount_in_top_holders |  |  | … | 200 | 988/498/98 | 10904 Б | 
-2026-11-19T19:05:59Z | meta | historical_balance_centralized_exchanges |  |  | … | 200 | 989/499/99 | 10846 Б | 
-2026-11-19T19:06:50Z | probe_hourly | social_volume_total | 3 | 1h | 2026-10-10…2026-10-12 | 200 | 883/500/100 | 11787 Б | 
-2026-11-19T19:06:51Z | probe_label | labelled_historical_balance | 3 | 1d | 2026-10-01…2026-10-06 | 200 | 1000/500/100 | 947 Б | 
-2026-11-19T19:07:41Z | daily | social_volume_total | 280 | 1d | 2025-11-20…2026-10-19 | 200 | 950/497/99 | 6638422 Б | 
-2026-11-19T19:07:51Z | daily | social_volume_total | 267 | 1d | 2025-11-20…2026-10-19 | 200 | 756/499/99 | 6114842 Б | 
-2026-11-19T19:08:38Z | daily | social_dominance_total | 280 | 1d | 2025-11-20…2026-10-19 | 200 | 755/498/99 | 7335662 Б | 
-2026-11-19T19:08:48Z | daily | social_dominance_total | 267 | 1d | 2025-11-20…2026-10-19 | 200 | 868/498/98 | 6781012 Б | 
-2026-11-19T19:08:58Z | daily | sentiment_weighted_total | 280 | 1d | 2025-11-20…2026-10-19 | 200 | 867/497/97 | 7009004 Б | 
-2026-11-19T19:09:10Z | daily | sentiment_weighted_total | 267 | 1d | 2025-11-20…2026-10-19 | 200 | 949/496/99 | 6468082 Б | 
-2026-11-19T19:09:11Z | daily | trending_words_rank | 280 | 1d | 2025-11-20…2026-10-19 | 200 | 866/483/83 | 417792 Б | 
-2026-11-19T19:09:12Z | daily | trending_words_rank | 267 | 1d | 2025-11-20…2026-10-19 | 200 | 865/482/82 | 455534 Б | 
-2026-11-19T19:09:22Z | daily | social_volume_telegram | 280 | 1d | 2025-11-20…2026-10-19 | 200 | 999/499/99 | 6612081 Б | 
-2026-11-19T19:09:32Z | daily | social_volume_telegram | 267 | 1d | 2025-11-20…2026-10-19 | 200 | 812/498/99 | 6089751 Б | 
-2026-11-19T19:09:43Z | daily | social_volume_twitter | 280 | 1d | 2025-11-20…2026-10-19 | 200 | 866/496/96 | 6532895 Б | 
-2026-11-19T19:09:52Z | daily | social_volume_twitter | 267 | 1d | 2025-11-20…2026-10-19 | 200 | 809/495/96 | 6072572 Б | 
-2026-11-19T19:10:01Z | daily | social_volume_reddit | 280 | 1d | 2025-11-20…2026-10-19 | 200 | 948/495/99 | 6529972 Б | 
-2026-11-19T19:10:10Z | daily | social_volume_reddit | 267 | 1d | 2025-11-20…2026-10-19 | 200 | 913/498/99 | 6068032 Б | 
-2026-11-19T19:10:21Z | daily | social_volume_4chan | 280 | 1d | 2025-11-20…2026-10-19 | 200 | 799/498/99 | 6518502 Б | 
-2026-11-19T19:10:28Z | daily | social_volume_4chan | 267 | 1d | 2025-11-20…2026-10-19 | 200 | 946/493/98 | 6058529 Б | 
-2026-11-19T19:10:47Z | daily | age_consumed | 317 | 1d | 2025-11-20…2026-10-19 | 200 | 968/499/100 | 8569824 Б | 
-2026-11-19T19:10:56Z | daily | whale_transaction_count_100k_usd_to_inf | 317 | 1d | 2025-11-20…2026-10-19 | 200 | 986/496/97 | 7398632 Б | 
-2026-11-19T19:11:05Z | daily | whale_transaction_count_1m_usd_to_inf | 317 | 1d | 2025-11-20…2026-10-19 | 200 | 985/495/96 | 7384567 Б | 
-2026-11-19T19:11:09Z | daily | dormant_circulation_365d | 246 | 1d | 2025-11-20…2026-10-19 | 200 | 927/458/59 | 6557738 Б | 
-2026-11-19T19:11:13Z | daily | dormant_circulation_90d | 246 | 1d | 2025-11-20…2026-10-19 | 200 | 984/494/98 | 6750862 Б | 
-2026-11-19T19:11:17Z | daily | mvrv_usd_30d | 258 | 1d | 2025-11-20…2026-10-19 | 200 | 984/494/95 | 6846755 Б | 
-2026-11-19T19:11:21Z | daily | mvrv_usd_365d | 258 | 1d | 2025-11-20…2026-10-19 | 200 | 983/493/94 | 6848287 Б | 
-2026-11-19T19:11:28Z | daily | exchange_inflow | 210 | 1d | 2025-11-20…2026-10-19 | 200 | 797/496/98 | 5728995 Б | 
-2026-11-19T19:11:35Z | daily | exchange_outflow | 210 | 1d | 2025-11-20…2026-10-19 | 200 | 864/481/99 | 5720789 Б | 
-2026-11-19T19:11:38Z | daily | active_deposits | 207 | 1d | 2025-11-20…2026-10-19 | 200 | 945/492/97 | 4815351 Б | 
-2026-11-19T19:11:41Z | daily | deposit_transactions | 207 | 1d | 2025-11-20…2026-10-19 | 200 | 998/500/100 | 4834903 Б | 
-2026-11-19T19:11:46Z | daily | network_growth | 271 | 1d | 2025-11-20…2026-10-19 | 200 | 808/494/99 | 6373881 Б | 
-2026-11-19T19:11:50Z | daily | daily_active_addresses | 273 | 1d | 2025-11-20…2026-10-19 | 200 | 754/497/99 | 6493413 Б | 
-2026-11-19T19:11:54Z | daily | mean_dollar_invested_age | 258 | 1d | 2025-11-20…2026-10-19 | 200 | 753/496/98 | 6901356 Б | 
-2026-11-19T19:12:05Z | daily | labelled_historical_balance | 209 | 1d | 2025-11-20…2026-10-19 | 200 | 863/480/99 | 4501626 Б | 
-2026-11-19T19:12:12Z | daily | labelled_historical_balance | 209 | 1d | 2025-11-20…2026-10-19 | 200 | 842/496/99 | 5448598 Б | 
-2026-11-19T19:12:21Z | daily | marketcap_usd | 280 | 1d | 2025-11-20…2026-10-19 | 200 | 926/457/99 | 5440149 Б | 
-2026-11-19T19:12:28Z | daily | marketcap_usd | 268 | 1d | 2025-11-20…2026-10-19 | 200 | 840/494/97 | 5172832 Б | 
-2026-11-19T19:20:23Z | probe_trending | getTrendingWords |  | 1h | 2026-10-01…2026-10-02 | 200 | 753/496/99 | 12032 Б | 
-2026-11-19T19:20:55Z | trending | getTrendingWords |  | 1h | 2025-11-20…2026-01-19 | 200 | 839/493/99 | 1316326 Б | 
-2026-11-19T19:21:06Z | trending | getTrendingWords |  | 1h | 2026-01-19…2026-03-20 | 200 | 752/495/98 | 1323955 Б | 
-2026-11-19T19:21:16Z | trending | getTrendingWords |  | 1h | 2026-03-20…2026-05-19 | 200 | 807/493/99 | 1342316 Б | 
-2026-11-19T19:21:26Z | trending | getTrendingWords |  | 1h | 2026-05-19…2026-07-18 | 200 | 999/499/100 | 1330309 Б | 
-2026-11-19T19:21:35Z | trending | getTrendingWords |  | 1h | 2026-07-18…2026-09-16 | 200 | 866/496/98 | 1319313 Б | 
-2026-11-19T19:21:40Z | trending | getTrendingWords |  | 1h | 2026-09-16…2026-10-20 | 200 | 983/493/99 | 748271 Б | 
-2026-11-19T19:21:49Z | 1h | labelled_historical_balance | 30 | 1h | 2025-11-20…2026-10-19 | 200 | 864/494/96 | 6064468 Б | 
-2026-11-19T19:21:53Z | 1h | labelled_historical_balance | 30 | 1h | 2025-11-20…2026-10-19 | 200 | 752/495/98 | 6480564 Б | 
-2026-11-19T19:21:57Z | 1h | labelled_historical_balance | 30 | 1h | 2025-11-20…2026-10-19 | 200 | 944/491/98 | 6438321 Б | 
-2026-11-19T19:22:00Z | 1h | labelled_historical_balance | 30 | 1h | 2025-11-20…2026-10-19 | 200 | 895/480/82 | 4501061 Б | 
-2026-11-19T19:22:05Z | 1h | labelled_historical_balance | 30 | 1h | 2025-11-20…2026-10-19 | 200 | 862/479/99 | 6026909 Б | 
-2026-11-19T19:22:09Z | 1h | labelled_historical_balance | 30 | 1h | 2025-11-20…2026-10-19 | 200 | 750/493/98 | 6765104 Б | 
-2026-11-19T19:22:13Z | 1h | labelled_historical_balance | 29 | 1h | 2025-11-20…2026-10-19 | 200 | 894/479/81 | 6237827 Б | 
+Журнал вызовов Santiment GraphQL этапа s201 (без ключа).
+Поля: время UTC | метка | метрика | монет (первые 5) | интервал | окно | статус | остаток мес/час/мин | ответ | ошибка.
+Полные списки монет и тексты запросов: /home/user/mc_data/s201/calls_slugs.tsv и cache/<ключ>.graphql.
+2026-11-19T19:01:35Z | access_restrictions | * |  () |  | … | 200 | 813/499/99 | 312579 Б | 
+2026-11-19T19:02:33Z | blockchains | getAvailableBlockchains |  () |  | … | 200 | 1000/500/100 | 3311 Б | 
+2026-11-19T19:02:35Z | all_projects | allProjects |  () |  | … | 200 | 914/499/99 | 205563 Б | 
+2026-11-19T19:04:17Z | map_price | price_usd | 220 (0x, 1inch, a-frax, a-gmx, a-joe…) | 1d | 2025-11-20…2026-10-18 | 200 | 800/499/99 | 3229591 Б | 
+2026-11-19T19:04:24Z | map_price | price_usd | 220 (decentraland, deepbook-protocol, deepcloud-ai, definitive, degen-base…) | 1d | 2025-11-20…2026-10-18 | 200 | 952/499/99 | 3114939 Б | 
+2026-11-19T19:04:29Z | map_price | price_usd | 191 (p-ipmb, p-matic-network, p-quickswap-new, p-uniswap, p-usd-coin…) | 1d | 2025-11-20…2026-10-18 | 200 | 845/499/99 | 2736741 Б | 
+2026-11-19T19:05:39Z | coverage | availableMetrics |  () |  | … | 200 | 757/500/100 | 194 Б | Cannot query ["availableMetrics"] on a query that returns more than 1 project.
+2026-11-19T19:05:54Z | meta | exchange_inflow |  () |  | … | 200 | 757/500/100 | 11191 Б | 
+2026-11-19T19:05:55Z | meta | labelled_historical_balance |  () |  | … | 200 | 757/500/100 | 10860 Б | 
+2026-11-19T19:05:55Z | meta | social_volume_total |  () |  | … | 200 | 990/500/100 | 33178 Б | 
+2026-11-19T19:05:56Z | meta | social_dominance_total |  () |  | … | 200 | 813/499/100 | 33178 Б | 
+2026-11-19T19:05:56Z | meta | sentiment_weighted_total |  () |  | … | 200 | 990/500/100 | 33178 Б | 
+2026-11-19T19:05:57Z | meta | age_consumed |  () |  | … | 200 | 812/498/99 | 15564 Б | 
+2026-11-19T19:05:57Z | meta | dormant_circulation_365d |  () |  | … | 200 | 968/499/99 | 12971 Б | 
+2026-11-19T19:05:57Z | meta | mvrv_usd |  () |  | … | 200 | 951/498/99 | 13073 Б | 
+2026-11-19T19:05:58Z | meta | whale_transaction_count_100k_usd_to_inf |  () |  | … | 200 | 811/497/98 | 15639 Б | 
+2026-11-19T19:05:58Z | meta | active_deposits |  () |  | … | 200 | 843/497/98 | 11060 Б | 
+2026-11-19T19:05:58Z | meta | network_growth |  () |  | … | 200 | 989/499/99 | 13513 Б | 
+2026-11-19T19:05:59Z | meta | daily_active_addresses |  () |  | … | 200 | 989/499/99 | 13540 Б | 
+2026-11-19T19:05:59Z | meta | amount_in_top_holders |  () |  | … | 200 | 988/498/98 | 10904 Б | 
+2026-11-19T19:05:59Z | meta | historical_balance_centralized_exchanges |  () |  | … | 200 | 989/499/99 | 10846 Б | 
+2026-11-19T19:06:50Z | probe_hourly | social_volume_total | 3 (chainlink, pepe, solana) | 1h | 2026-10-10…2026-10-12 | 200 | 883/500/100 | 11787 Б | 
+2026-11-19T19:06:51Z | probe_label | labelled_historical_balance | 3 (chainlink, uniswap, pepe) | 1d | 2026-10-01…2026-10-06 | 200 | 1000/500/100 | 947 Б | 
+2026-11-19T19:07:41Z | daily | social_volume_total | 280 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 950/497/99 | 6638422 Б | 
+2026-11-19T19:07:51Z | daily | social_volume_total | 267 (iotex, irys, jasmy, jelly-my-jelly, jito…) | 1d | 2025-11-20…2026-10-19 | 200 | 756/499/99 | 6114842 Б | 
+2026-11-19T19:08:38Z | daily | social_dominance_total | 280 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 755/498/99 | 7335662 Б | 
+2026-11-19T19:08:48Z | daily | social_dominance_total | 267 (iotex, irys, jasmy, jelly-my-jelly, jito…) | 1d | 2025-11-20…2026-10-19 | 200 | 868/498/98 | 6781012 Б | 
+2026-11-19T19:08:58Z | daily | sentiment_weighted_total | 280 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 867/497/97 | 7009004 Б | 
+2026-11-19T19:09:10Z | daily | sentiment_weighted_total | 267 (iotex, irys, jasmy, jelly-my-jelly, jito…) | 1d | 2025-11-20…2026-10-19 | 200 | 949/496/99 | 6468082 Б | 
+2026-11-19T19:09:11Z | daily | trending_words_rank | 280 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 866/483/83 | 417792 Б | 
+2026-11-19T19:09:12Z | daily | trending_words_rank | 267 (iotex, irys, jasmy, jelly-my-jelly, jito…) | 1d | 2025-11-20…2026-10-19 | 200 | 865/482/82 | 455534 Б | 
+2026-11-19T19:09:22Z | daily | social_volume_telegram | 280 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 999/499/99 | 6612081 Б | 
+2026-11-19T19:09:32Z | daily | social_volume_telegram | 267 (iotex, irys, jasmy, jelly-my-jelly, jito…) | 1d | 2025-11-20…2026-10-19 | 200 | 812/498/99 | 6089751 Б | 
+2026-11-19T19:09:43Z | daily | social_volume_twitter | 280 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 866/496/96 | 6532895 Б | 
+2026-11-19T19:09:52Z | daily | social_volume_twitter | 267 (iotex, irys, jasmy, jelly-my-jelly, jito…) | 1d | 2025-11-20…2026-10-19 | 200 | 809/495/96 | 6072572 Б | 
+2026-11-19T19:10:01Z | daily | social_volume_reddit | 280 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 948/495/99 | 6529972 Б | 
+2026-11-19T19:10:10Z | daily | social_volume_reddit | 267 (iotex, irys, jasmy, jelly-my-jelly, jito…) | 1d | 2025-11-20…2026-10-19 | 200 | 913/498/99 | 6068032 Б | 
+2026-11-19T19:10:21Z | daily | social_volume_4chan | 280 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 799/498/99 | 6518502 Б | 
+2026-11-19T19:10:28Z | daily | social_volume_4chan | 267 (iotex, irys, jasmy, jelly-my-jelly, jito…) | 1d | 2025-11-20…2026-10-19 | 200 | 946/493/98 | 6058529 Б | 
+2026-11-19T19:10:47Z | daily | age_consumed | 317 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 968/499/100 | 8569824 Б | 
+2026-11-19T19:10:56Z | daily | whale_transaction_count_100k_usd_to_inf | 317 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 986/496/97 | 7398632 Б | 
+2026-11-19T19:11:05Z | daily | whale_transaction_count_1m_usd_to_inf | 317 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 985/495/96 | 7384567 Б | 
+2026-11-19T19:11:09Z | daily | dormant_circulation_365d | 246 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 927/458/59 | 6557738 Б | 
+2026-11-19T19:11:13Z | daily | dormant_circulation_90d | 246 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 984/494/98 | 6750862 Б | 
+2026-11-19T19:11:17Z | daily | mvrv_usd_30d | 258 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 984/494/95 | 6846755 Б | 
+2026-11-19T19:11:21Z | daily | mvrv_usd_365d | 258 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 983/493/94 | 6848287 Б | 
+2026-11-19T19:11:28Z | daily | exchange_inflow | 210 (0x, 1inch, aave, aavegotchi-ghst-token, across-protocol…) | 1d | 2025-11-20…2026-10-19 | 200 | 797/496/98 | 5728995 Б | 
+2026-11-19T19:11:35Z | daily | exchange_outflow | 210 (0x, 1inch, aave, aavegotchi-ghst-token, across-protocol…) | 1d | 2025-11-20…2026-10-19 | 200 | 864/481/99 | 5720789 Б | 
+2026-11-19T19:11:38Z | daily | active_deposits | 207 (0x, 1inch, aave, aavegotchi-ghst-token, across-protocol…) | 1d | 2025-11-20…2026-10-19 | 200 | 945/492/97 | 4815351 Б | 
+2026-11-19T19:11:41Z | daily | deposit_transactions | 207 (0x, 1inch, aave, aavegotchi-ghst-token, across-protocol…) | 1d | 2025-11-20…2026-10-19 | 200 | 998/500/100 | 4834903 Б | 
+2026-11-19T19:11:46Z | daily | network_growth | 271 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 808/494/99 | 6373881 Б | 
+2026-11-19T19:11:50Z | daily | daily_active_addresses | 273 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 754/497/99 | 6493413 Б | 
+2026-11-19T19:11:54Z | daily | mean_dollar_invested_age | 258 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 753/496/98 | 6901356 Б | 
+2026-11-19T19:12:05Z | daily | labelled_historical_balance | 209 (0x, 1inch, aave, aavegotchi-ghst-token, across-protocol…) | 1d | 2025-11-20…2026-10-19 | 200 | 863/480/99 | 4501626 Б | 
+2026-11-19T19:12:12Z | daily | labelled_historical_balance | 209 (0x, 1inch, aave, aavegotchi-ghst-token, across-protocol…) | 1d | 2025-11-20…2026-10-19 | 200 | 842/496/99 | 5448598 Б | 
+2026-11-19T19:12:21Z | daily | marketcap_usd | 280 (0x, 1inch, a-gmx, a-joe, a-maplestory-universe…) | 1d | 2025-11-20…2026-10-19 | 200 | 926/457/99 | 5440149 Б | 
+2026-11-19T19:12:28Z | daily | marketcap_usd | 268 (iota, iotex, irys, jasmy, jelly-my-jelly…) | 1d | 2025-11-20…2026-10-19 | 200 | 840/494/97 | 5172832 Б | 
+2026-11-19T19:20:23Z | probe_trending | getTrendingWords |  () | 1h | 2026-10-01…2026-10-02 | 200 | 753/496/99 | 12032 Б | 
+2026-11-19T19:20:55Z | trending | getTrendingWords |  () | 1h | 2025-11-20…2026-01-19 | 200 | 839/493/99 | 1316326 Б | 
+2026-11-19T19:21:06Z | trending | getTrendingWords |  () | 1h | 2026-01-19…2026-03-20 | 200 | 752/495/98 | 1323955 Б | 
+2026-11-19T19:21:16Z | trending | getTrendingWords |  () | 1h | 2026-03-20…2026-05-19 | 200 | 807/493/99 | 1342316 Б | 
+2026-11-19T19:21:26Z | trending | getTrendingWords |  () | 1h | 2026-05-19…2026-07-18 | 200 | 999/499/100 | 1330309 Б | 
+2026-11-19T19:21:35Z | trending | getTrendingWords |  () | 1h | 2026-07-18…2026-09-16 | 200 | 866/496/98 | 1319313 Б | 
+2026-11-19T19:21:40Z | trending | getTrendingWords |  () | 1h | 2026-09-16…2026-10-20 | 200 | 983/493/99 | 748271 Б | 
+2026-11-19T19:21:49Z | 1h | labelled_historical_balance | 30 (0x, 1inch, aave, aavegotchi-ghst-token, across-protocol…) | 1h | 2025-11-20…2026-10-19 | 200 | 864/494/96 | 6064468 Б | 
+2026-11-19T19:21:53Z | 1h | labelled_historical_balance | 30 (biconomy, big-time, bio, bitcoin, bitcoin-cash…) | 1h | 2025-11-20…2026-10-19 | 200 | 752/495/98 | 6480564 Б | 
+2026-11-19T19:21:57Z | 1h | labelled_historical_balance | 30 (dydx, edgex, eigenlayer, enjin-coin, epic-chain…) | 1h | 2025-11-20…2026-10-19 | 200 | 944/491/98 | 6438321 Б | 
+2026-11-19T19:22:00Z | 1h | labelled_historical_balance | 30 (infinex, infinit, injective-protocol, instadapp, irys…) | 1h | 2025-11-20…2026-10-19 | 200 | 895/480/82 | 4501061 Б | 
+2026-11-19T19:22:05Z | 1h | labelled_historical_balance | 30 (morpho, movement, myneighboralice, myshell, naoris-protocol…) | 1h | 2025-11-20…2026-10-19 | 200 | 862/479/99 | 6026909 Б | 
+2026-11-19T19:22:09Z | 1h | labelled_historical_balance | 30 (reserve-rights, resolv, river, rlc, rocket-pool…) | 1h | 2025-11-20…2026-10-19 | 200 | 750/493/98 | 6765104 Б | 
+2026-11-19T19:22:13Z | 1h | labelled_historical_balance | 29 (tellor, terrausd, tether-gold, the-graph, the-sandbox…) | 1h | 2025-11-20…2026-10-19 | 200 | 894/479/81 | 6237827 Б | 
+
+Итого вызовов: 71; с ошибкой: 1; наименьший остаток за месяц: 750
