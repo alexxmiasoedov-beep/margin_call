@@ -1,0 +1,23 @@
+логов PoolConfigurator: 3619
+из них известных событий по активам: 2032
+  сеть gateway.tenderly.co HTTPError HTTP Error 429: Too Many Requests
+период 2023-01-27 – 2026-11-18, месяцев 45.7
+
+Событий за весь период (в месяц):
+  BorrowCapChanged                     ETH/BTC 77 (1.69), альт 53 (1.16), прочее 25 (0.55), стейбл 185 (4.05)
+  CollateralConfigurationChanged       ETH/BTC 65 (1.42), альт 36 (0.79), прочее 31 (0.68), стейбл 43 (0.94)
+  DebtCeilingChanged                   ETH/BTC 10 (0.22), альт 46 (1.01), прочее 22 (0.48), стейбл 16 (0.35)
+  ReserveBorrowing                     ETH/BTC 24 (0.53), альт 23 (0.50), прочее 22 (0.48), стейбл 18 (0.39)
+  ReserveFactorChanged                 ETH/BTC 23 (0.50), альт 23 (0.50), прочее 22 (0.48), стейбл 28 (0.61)
+  ReserveInitialized                   ETH/BTC 15 (0.33), альт 14 (0.31), прочее 22 (0.48), стейбл 17 (0.37)
+  ReserveInterestRateDataChanged       ETH/BTC 73 (1.60), альт 37 (0.81), прочее 24 (0.53), стейбл 284 (6.21)
+  ReserveInterestRateStrategyChanged   ETH/BTC 24 (0.53), альт 29 (0.63), прочее 0 (0.00), стейбл 71 (1.55)
+  ReservePaused                        ETH/BTC 6 (0.13), альт 0 (0.00), прочее 0 (0.00), стейбл 2 (0.04)
+  SiloedBorrowingChanged               ETH/BTC 10 (0.22), альт 11 (0.24), прочее 20 (0.44), стейбл 12 (0.26)
+  SupplyCapChanged                     ETH/BTC 186 (4.07), альт 71 (1.55), прочее 142 (3.11), стейбл 170 (3.72)
+
+Альты в Aave v3 Ethereum: 1INCH, AAVE, BAL, CRV, ENS, FXS, KNC, LDO, LINK, MKR, RPL, SNX, STG, UNI
+Потолок займа альтов: повышений 25, понижений 28, в месяц 1.16
+
+Дней-входов займа альта в ≥ 90% потолка (Aave v3 Ethereum): 49 за 46 мес. (1.07 в мес.)
+  LINK 2026-11-19, CRV 2024-07-03, CRV 2024-11-08, CRV 2025-05-24, CRV 2025-10-20, MKR 2024-12-04, MKR 2025-01-11, MKR 2025-02-19, SNX 2024-04-29, SNX 2025-05-21, BAL 2024-06-27, BAL 2024-09-15, BAL 2025-01-18, BAL 2025-04-09, BAL 2025-10-20, UNI 2025-05-06, UNI 2025-05-09, UNI 2025-05-11, UNI 2025-06-11, UNI 2025-09-25, UNI 2025-10-01, UNI 2025-10-13, UNI 2025-10-20, LDO 2024-12-28, LDO 2025-06-12, LDO 2025-10-12, ENS 2024-02-24, ENS 2024-11-26, ENS 2025-10-20, 1INCH 2024-01-11

@@ -1,0 +1,10 @@
+/pools: 15234 пулов; /lendBorrow: 2510 пулов, поля: pool, apyBaseBorrow, apyRewardBorrow, totalSupplyUsd, totalBorrowUsd, debtCeilingUsd, ltv, borrowable, mintedCoin, rewardTokens, underlyingTokens, borrowFactor
+кредитных пулов с займом (borrowable): 1471, проектов: 70
+проектов вне пулов общего типа (символ = залог или неясно): amply-finance, arcadia-v2, asymmetry-usdaf, avalon-finance, colend-protocol, compound-v3, crvusd, current, curvance, curve-llamalend, dorkfi, exactly, extra-finance-xlend, felix-cdp, fira, fluid-lending, frankencoin, fraxlend, gearbox, granite, hyperliquid-earn, inverse-finance-firm, kava-mint, linx-app, liquidium, liquity-v1, liquity-v2, lista-cdp, monolith-market, more-markets, morpho-blue, permapod, resupply, rnt-lend, rujira-money-market, sky-lending, surge-credit, tender-finance, uwu-lend, xoxno-lending
+пулов с монетой-перпом (не стейбл, не BTC/ETH) и займом ≥ 1 млн $: 26 (монет 13); из них «родных» для сети: 21; займ всего 521 млн $, не родных 8 млн $
+   не родные: LINK(aave-v3, Ethereum) 2.4, JUP(jupiter-lend, Solana) 2.2, GRAM(evaa-protocol, TON) 1.2, XRP(kinetic, Flare) 1.1, JST(justlend-v1, Tron) 1.0
+пулов с монетой-перпом (не стейбл, не BTC/ETH) и займом ≥ 0.25 млн $: 36 (монет 19); из них «родных» для сети: 26; займ всего 527 млн $, не родных 11 млн $
+   не родные: LINK(aave-v3, Ethereum) 2.4, JUP(jupiter-lend, Solana) 2.2, GRAM(evaa-protocol, TON) 1.2, XRP(kinetic, Flare) 1.1, JST(justlend-v1, Tron) 1.0, XRP(moonwell-lending, Base) 0.8, SUN(justlend-v1, Tron) 0.6, VIRTUAL(moonwell-lending, Base) 0.6, AERO(moonwell-lending, Base) 0.5, SOL(hyperlend-pooled, Hyperliquid L1) 0.4
+
+глубина /chart (дней истории у пулов с займом): медиана 318, максимум 1639 (с 2022-05-25); проектов в списке нет: aave-v2 (снят), radiant (снят); compound-v2 — без займа
+пример по проектам (макс. дней): save 1639, venus-core-pool 1595, justlend-v1 1594, aave-v3 1562, benqi-lending 1560, tectonic 1558, compound-v3 1498, liquity-v1 1481, sky-lending 1480, uwu-lend 1479, kava-mint 1474, flux-finance 1354
