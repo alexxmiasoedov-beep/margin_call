@@ -25,20 +25,22 @@ G1 = {"atom", "tia", "kava", "dot", "ksm", "egld", "rose", "xtz", "apt"}
 SL = 0.50
 MAXN = 8 * 96                       # не дольше 8 сут (в 15-мин свечах)
 
-# вариант → (отбор строк, выход: "T1" — T + 24 ч, "T0" — в T)
+# вариант → (отбор строк, выход: "T1" — T + 24 ч, "T0" — в T; момент, когда событие стало видно:
+#   "x01" — сумма держателя за сутки дошла до 0,1%, "x05" — до 0,5%, "vis" — последняя часть за сутки)
 VARIANTS = {
-    "main": (lambda E: (E.kind == "exit") & (E.f >= 0.001), "T1"),
-    "big": (lambda E: (E.kind == "exit") & (E.f >= 0.005), "T1"),
-    "mid": (lambda E: (E.kind == "exit") & (E.f >= 0.001) & (E.f < 0.005), "T1"),
-    "turn": (lambda E: (E.kind == "exit") & (E.turn >= 0.25), "T1"),
-    "g1": (lambda E: (E.kind == "exit") & (E.f >= 0.001) & E.src.isin(G1), "T1"),
-    "g2": (lambda E: (E.kind == "exit") & (E.f >= 0.001) & ~E.src.isin(G1), "T1"),
-    "norelock": (lambda E: (E.kind == "exit") & (E.f >= 0.001) & ~E.relocker.fillna(False).astype(bool), "T1"),
-    "nounlock": (lambda E: (E.kind == "exit") & (E.f >= 0.001) & ~E.unlock3, "T1"),
-    "exact": (lambda E: (E.kind == "exit") & (E.f >= 0.001) & E.T_exact.astype(bool), "T1"),
-    "atT": (lambda E: (E.kind == "exit") & (E.f >= 0.001), "T0"),
-    "ctl": (lambda E: (E.kind == "ctl") & (E.f >= 0.001), "T1"),
+    "main": (lambda E: (E.kind == "exit") & (E.fu >= 0.001), "T1", "x01"),
+    "big": (lambda E: (E.kind == "exit") & (E.fu >= 0.005), "T1", "x05"),
+    "mid": (lambda E: (E.kind == "exit") & (E.fu >= 0.001) & (E.fu < 0.005), "T1", "x01"),
+    "turn": (lambda E: (E.kind == "exit") & (E.tu >= 0.25), "T1", "vis"),
+    "g1": (lambda E: (E.kind == "exit") & (E.fu >= 0.001) & E.src.isin(G1), "T1", "x01"),
+    "g2": (lambda E: (E.kind == "exit") & (E.fu >= 0.001) & ~E.src.isin(G1), "T1", "x01"),
+    "norelock": (lambda E: (E.kind == "exit") & (E.fu >= 0.001) & ~E.relocker.fillna(False).astype(bool), "T1", "x01"),
+    "nounlock": (lambda E: (E.kind == "exit") & (E.fu >= 0.001) & ~E.unlock3, "T1", "x01"),
+    "exact": (lambda E: (E.kind == "exit") & (E.fu >= 0.001) & E.T_exact.astype(bool), "T1", "x01"),
+    "atT": (lambda E: (E.kind == "exit") & (E.fu >= 0.001), "T0", "x01"),
+    "ctl": (lambda E: (E.kind == "ctl") & (E.fu >= 0.001), "T1", "vis"),
 }
+VE = {"vecrv", "vefxs", "vependle", "veyfi"}
 NAMES = {
     "main": "основной: Г1 ∪ Г2, ≥ 0,1%",
     "big": "≥ 0,5% обращения",
@@ -67,17 +69,19 @@ def unlocks(per):
 
 
 def load(per):
-    import common182 as C  # noqa: E402
+    """Строки выходов: доля и размер к обороту — у ve на T − 7 сут (f_dec, turn_dec: t_vis у ve — время, когда конец
+    блокировки был назначен, часто годы назад), у остальных — на t_vis. Снимок TIA 25.10.2024 (special) выбран из-за
+    разлока — не берётся."""
     E = pd.read_pickle(EV).copy()
-    for c in ("relocker", "turn", "T_exact"):
-        if c not in E:
-            E[c] = np.nan if c == "turn" else False
-    E["t_vis"] = E.t_vis.astype(np.int64)
-    E["T"] = np.where(E["T"].notna(), E["T"], E.t_vis + 7 * DAY).astype(np.int64)   # у контроля нет T: срок 8 сут
-    E["entry"] = (np.ceil(np.maximum(E.t_vis + 900, E["T"] - 7 * DAY) / 3600) * 3600).astype(np.int64)
+    E = E[~E.special.fillna(False).astype(bool)].copy()
+    ve = (E.kind == "exit") & E.src.isin(VE)
+    E["fu"] = np.where(ve, E.f_dec, E.f)
+    E["tu"] = np.where(ve, E.turn_dec, E.turn)
+    E["T"] = np.where(E["T"].notna(), E["T"], E.t_vis + 7 * DAY).astype(np.int64)   # у контроля срок 8 сут
+    for c in ("x01", "x05"):
+        E["b_" + c] = np.where(E["t_" + c].notna(), E["t_" + c], E.t_vis)
+    E["b_vis"] = E.t_vis
     E["perp"] = E.sym.astype(str) + "USDT"
-    t0, t1 = C.ts(C.PER[per][0]), C.ts(C.PER[per][1])
-    E = E[(E.entry >= t0) & (E.entry < t1)].copy()
     U = unlocks(per)
 
     def near(s, T):
@@ -88,6 +92,12 @@ def load(per):
         return any(abs(a[k] - T) <= 3 * DAY for k in (j - 1, j) if 0 <= k < len(a))
     E["unlock3"] = [near(s, T) for s, T in zip(E.perp, E["T"])]
     return E
+
+
+def entry_at(E, base):
+    """Закрытие часа ≥ max(момент события + 15 мин, T − 7 сут)."""
+    e = np.maximum(E["b_" + base].values + 900, E["T"].values - 7 * DAY)
+    return (np.ceil(e / 3600) * 3600).astype(np.int64)
 
 
 def book(FB, s, g, endcol):
@@ -133,10 +143,14 @@ def book(FB, s, g, endcol):
 
 def run(per):
     import fastbt as FB  # noqa: E402
+    import common182 as C  # noqa: E402
+    t0, t1 = C.ts(C.PER[per][0]), C.ts(C.PER[per][1])
     E = load(per)
     rows = []
-    for v, (sel, endcol) in VARIANTS.items():
-        Z = E[sel(E)]
+    for v, (sel, endcol, base) in VARIANTS.items():
+        Z = E[sel(E)].copy()
+        Z["entry"] = entry_at(Z, base)
+        Z = Z[(Z.entry >= t0) & (Z.entry < t1)]
         for s, g in Z.groupby("perp"):
             if s not in FB.K:
                 continue

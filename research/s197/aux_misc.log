@@ -1,0 +1,70 @@
+tezos запросов 28729
+{
+"grt_11600000": {
+"epochLength": 6646,
+"lastLengthUpdateEpoch": 0,
+"lastLengthUpdateBlock": 11446768,
+"currentEpoch": 23
+},
+"grt_13000000": {
+"epochLength": 6646,
+"lastLengthUpdateEpoch": 0,
+"lastLengthUpdateBlock": 11446768,
+"currentEpoch": 233
+},
+"grt_15000000": {
+"epochLength": 6646,
+"lastLengthUpdateEpoch": 0,
+"lastLengthUpdateBlock": 11446768,
+"currentEpoch": 534
+},
+"grt_17000000": {
+"epochLength": 7200,
+"lastLengthUpdateEpoch": 776,
+"lastLengthUpdateBlock": 16604064,
+"currentEpoch": 830
+},
+"grt_19000000": {
+"epochLength": 7200,
+"lastLengthUpdateEpoch": 776,
+"lastLengthUpdateBlock": 16604064,
+"currentEpoch": 1108
+},
+"grt_20500000": {
+"epochLength": 7200,
+"lastLengthUpdateEpoch": 776,
+"lastLengthUpdateBlock": 16604064,
+"currentEpoch": 1317
+},
+"lpt_11000000": {
+"roundLength": 5760,
+"lastRoundLengthUpdateRound": 960,
+"lastRoundLengthUpdateStartBlock": 5529600,
+"currentRound": 1909
+},
+"lpt_12000000": {
+"roundLength": 5760,
+"lastRoundLengthUpdateRound": 960,
+"lastRoundLengthUpdateStartBlock": 5529600,
+"currentRound": 2083
+},
+"lpt_13000000": {
+"roundLength": 5760,
+"lastRoundLengthUpdateRound": 960,
+"lastRoundLengthUpdateStartBlock": 5529600,
+"currentRound": 2256
+},
+"lpt_14000000": {
+"roundLength": 5760,
+"lastRoundLengthUpdateRound": 960,
+"lastRoundLengthUpdateStartBlock": 5529600,
+"currentRound": 2430
+},
+"lpt_14200000": {
+"roundLength": 5760,
+"lastRoundLengthUpdateRound": 960,
+"lastRoundLengthUpdateStartBlock": 5529600,
+"currentRound": 2465
+}
+}
+TIA unbonding_time 1814400s → 1213200s на высоте 8662013 2025-11-24T12:33:23

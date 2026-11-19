@@ -181,7 +181,11 @@ def src_aptos():
         return t0 + (t1 - t0) * (v - v0) / max(1, v1 - v0)
     c = Circ("APT")
     agg = collections.defaultdict(float)
+    seen = set()
     for v, amt, dl, pool in d["rows"]:
+        if (v, dl, pool, round(amt, 8)) in seen:      # одно действие бывает и v1-, и v2-событием
+            continue
+        seen.add((v, dl, pool, round(amt, 8)))
         agg[(dl, int(vtime(v) // DAY))] += amt
     E = [(k[1] * DAY, val / c.at(k[1] * DAY)) for k, val in agg.items() if c.at(k[1] * DAY)]
     return rates_cont(E, ts("2023-02-01"), max(e[0] for e in E), "APT", "APT unlock")
@@ -217,7 +221,7 @@ SRC = [
         "rose_reclaim.json", "ROSE",
         (lambda ex: (lambda x: ex[x[4]][0] if x[4] in ex and ex[x[4]][0] else x[3]))(json.load(open(f"{OUT}/rose_exact.json"))))}),
     ("XTZ unstake (TzKT)", "≈5", lambda: {"XTZ": src_tezos()}),
-    ("APT unlock (GraphQL, до 06.2025)", "≤14", lambda: {"APT": src_aptos()}),
+    ("APT unlock (GraphQL)", "≤14", lambda: {"APT": src_aptos()}),
     ("AVAX конец ставки (Glacier)", "14–365", lambda: {"AVAX": src_avax()}),
     ("stkAAVE Cooldown", "20", lambda: {"AAVE": src_simple_evm("stkaave", "AAVE", "aave")}),
     ("API3 ScheduledUnstake", "7", lambda: {"API3": src_simple_evm("api3", "API3", "api3")}),

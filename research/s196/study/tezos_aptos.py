@@ -41,18 +41,28 @@ def gql(q):
 
 
 def aptos(min_octa=10_000 * 10 ** 8, step=100_000_000):
+    """UnlockStakeEvent (события v1) и UnlockStake (модульные события v2, с ~2025 г.) — оба имени типа."""
     p = f"{OUT}/aptos_unlock.json"
     out = json.load(open(p)) if os.path.exists(p) else {"rows": [], "done": 0, "vt": {}}
-    head = gql("{ processor_status(where:{processor:{_eq:\"delegated_staking_activities_processor\"}}) "
+    if not out.get("v2_done"):
+        _aptos_pass(out, "0x1::delegation_pool::UnlockStake", min_octa, step, key="done_v2")
+        out["v2_done"] = True
+        json.dump(out, open(p, "w"))
+    return _aptos_pass(out, "0x1::delegation_pool::UnlockStakeEvent", min_octa, step, key="done")
+
+
+def _aptos_pass(out, etype, min_octa, step, key):
+    p = f"{OUT}/aptos_unlock.json"
+    head = gql("{ processor_status(where:{processor:{_eq:\"stake_processor\"}}) "
                "{ last_success_version } }")
     try:
         last = int(head["data"]["processor_status"][0]["last_success_version"])
     except Exception:
         last = 8_100_000_000
-    v = out["done"]
+    v = out.get(key, 0)
     while v < last:
         w = min(v + step, last)
-        q = ('{ delegated_staking_activities(limit:1000, where:{event_type:{_eq:"0x1::delegation_pool::UnlockStakeEvent"}, '
+        q = ('{ delegated_staking_activities(limit:1000, where:{event_type:{_eq:"' + etype + '"}, '
              f'amount:{{_gte:"{min_octa}"}}, transaction_version:{{_gte:"{v}", _lt:"{w}"}}}}, order_by:{{transaction_version:asc}})'
              ' { amount delegator_address pool_address transaction_version } }')
         d = gql(q)
@@ -69,7 +79,7 @@ def aptos(min_octa=10_000 * 10 ** 8, step=100_000_000):
         out["rows"] += [[int(r["transaction_version"]), int(r["amount"]) / 1e8, r["delegator_address"], r["pool_address"]]
                         for r in rows]
         v = w
-        out["done"] = v
+        out[key] = v
         if v // step % 10 == 0:
             print("aptos версия", v, "событий", len(out["rows"]), flush=True)
             json.dump(out, open(p, "w"))

@@ -63,12 +63,16 @@ def aptos():
         return t0 + (t1 - t0) * (v - v0) / max(1, v1 - v0)
     c = Circ("APT")
     agg = collections.defaultdict(float)
+    seen = set()
     for v, amt, dl, pool in d["rows"]:
+        if (v, dl, pool, round(amt, 8)) in seen:      # одно действие бывает и v1-, и v2-событием
+            continue
+        seen.add((v, dl, pool, round(amt, 8)))
         t = vtime(v)
         agg[(dl, int(t // DAY))] += amt
     ev = [(k[1] * DAY, v / c.at(k[1] * DAY), k[0]) for k, v in agg.items() if c.at(k[1] * DAY)]
     tmax = max(e[0] for e in ev)
-    print(f"\nAptos: UnlockStakeEvent ≥ 10 тыс. APT: {len(d['rows'])}, первое {fmt_t(min(e[0] for e in ev))}, "
+    print(f"\nAptos: UnlockStake(Event) ≥ 10 тыс. APT (v1 и v2, без повторов): {len(seen)}, первое {fmt_t(min(e[0] for e in ev))}, "
           f"последнее {fmt_t(tmax)}")
     summarize([(t, f) for t, f, _ in ev], months_cov(vtime(0) if False else 1675209600, tmax), "APT делегатор-сутки")
     print("  крупнейшие:", "; ".join(f"{fmt_t(t)} {100 * f:.2f}% ({s[:10]}…)" for t, f, s in sorted(ev, key=lambda x: -x[1])[:8]))
