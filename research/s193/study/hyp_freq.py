@@ -63,6 +63,8 @@ def main():
     Es["Q_frac"] = Es.vtot / Es.qv_prev
     Es["I_sqrt"] = Es.sig_prev * np.sqrt(Es.Q_frac)                      # Y = 1
     Es["sh_life"] = Es.sh_side
+    # двусторонние эпизоды (рисование объёма) из гипотез исключаются
+    Es = Es[~Es.twoside].copy()
     # давление до обнаружения (описание): сдвиг цены от первой части до части в момент обнаружения в сторону
     # алгоритма против прогноза √ по объёму к моменту обнаружения
     Es["a_pre"] = Es.side * (Es.p_det / Es.p_first - 1)
@@ -89,7 +91,9 @@ def main():
         for side, name in ((-1, "продажи"), (1, "покупки")):
             y = Es[(Es.per == per) & Es.E3 & (Es.side == side)]
             for lvl, yy in (("E3", y), ("E10", y[y.E10])):
-                print(f"  {per} {name} {lvl}: в месяц {len(yy) / n * USIZE[per] * 30.4:6.1f}; ещё идут к входу "
+                ucd = yy.groupby(["s", "d"]).ngroups
+                print(f"  {per} {name} {lvl}: в месяц {len(yy) / n * USIZE[per] * 30.4:6.1f} (одна на монету в сутки "
+                      f"{ucd / n * USIZE[per] * 30.4:6.1f}); ещё идут к входу "
                       f"{yy.running.mean():.0%}; остаток после входа мин (медиана / p75) {yy.rem.clip(lower=0).median():.0f} / "
                       f"{yy.rem.clip(lower=0).quantile(.75):.0f}; давление √: медиана {yy.I_sqrt.median():.2%}, p90 "
                       f"{yy.I_sqrt.quantile(.9):.2%}; оборот эпизода к суточному медиана {yy.Q_frac.median():.2%}")
@@ -100,7 +104,9 @@ def main():
         for side, name in ((-1, "продажи"), (1, "покупки")):
             for thr in (0.0005, 0.001):
                 y = Es[(Es.per == per) & Es.E3 & (Es.side == side) & (Es.v_det / Es.qv_prev >= thr)]
-                cells.append(f"{name} ≥ {thr:.2%}: {len(y) / n * USIZE[per] * 30.4:5.1f} в мес (√ медиана {y.I_sqrt.median():.2%})")
+                ucd = y.groupby(["s", "d"]).ngroups
+                cells.append(f"{name} ≥ {thr:.2%}: {len(y) / n * USIZE[per] * 30.4:5.1f} в мес (монето-суток "
+                             f"{ucd / n * USIZE[per] * 30.4:5.1f}; √ медиана {y.I_sqrt.median():.2%})")
         print(f"  {per}: " + "; ".join(cells))
     print("\n== Г2 с порогом давления в момент конца: I = σ·√(оборот эпизода / суточный) ≥ 0,3% / 0,5% ==")
     for per in PERS:
@@ -127,7 +133,9 @@ def main():
             y = Es[(Es.per == per) & (Es.side == side) & (Es.vchild >= 100) & (Es.sh_life >= 0.03) & (Es.dur >= 60)
                    & (Es.Q_frac >= 0.0005)]
             edge = y.edge.mean() if len(y) else np.nan
-            print(f"  {per} {name}: в месяц {len(y) / n * USIZE[per] * 30.4:6.1f}; длительность медиана {y.dur.median():.0f} мин;"
+            ucd = y[y.edge == 0].groupby(["s", "d"]).ngroups
+            print(f"  {per} {name}: в месяц {len(y) / n * USIZE[per] * 30.4:6.1f} (конец виден, одна на монету в сутки "
+                  f"{ucd / n * USIZE[per] * 30.4:6.1f}); длительность медиана {y.dur.median():.0f} мин;"
                   f" оборот к суточному медиана {y.Q_frac.median():.2%}; давление √ медиана {y.I_sqrt.median():.2%};"
                   f" у края суток (конец не виден) {edge:.0%}")
     # Г3: ритм

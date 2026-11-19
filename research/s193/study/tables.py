@@ -15,13 +15,18 @@ BENF = np.log10(1 + 1 / np.arange(1, 10))
 def main():
     J = pd.read_pickle(f"{D}/jobs.pkl")
     import os
-    if os.path.exists(f"{D}/jobs_journal.pkl"):
-        J = pd.concat([J, pd.read_pickle(f"{D}/jobs_journal.pkl")], ignore_index=True)
+    for extra in ("jobs_journal.pkl", "jobs_spot.pkl"):
+        if os.path.exists(f"{D}/{extra}"):
+            J = pd.concat([J, pd.read_pickle(f"{D}/{extra}")], ignore_index=True)
     tag = {(m, s, int(d)): (p, t) for m, s, d, p, t in zip(J.mkt, J.s, J.d, J.per, J.tags)}
     days, runs, d2, lev, inj, bad = [], [], [], [], [], []
     for f in sorted(glob.glob(f"{D}/parts/*.pkl.gz")):
-        with gzip.open(f, "rb") as g:
-            R = pickle.load(g)
+        try:
+            with gzip.open(f, "rb") as g:
+                R = pickle.load(g)
+        except (EOFError, OSError, pickle.UnpicklingError):
+            print("часть не прочитана (пишется?):", f)
+            continue
         for r in R:
             key = r["key"]
             per, tags = tag.get(key, (None, ""))

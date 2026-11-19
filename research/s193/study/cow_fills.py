@@ -99,12 +99,26 @@ def fills(row):
 
 
 def block_ts(blocks):
+    """Точное время блоков пакетными запросами (по 50 в одном HTTP-вызове), с повтором на другом узле."""
     out = {}
-    for b in sorted(set(blocks)):
-        r = rpc("eth_getBlockByNumber", [hex(b), False])
-        if r:
-            out[b] = int(r["timestamp"], 16)
-        time.sleep(0.15)
+    bl = sorted(set(blocks))
+    for i in range(0, len(bl), 50):
+        chunk = bl[i:i + 50]
+        body = json.dumps([{"jsonrpc": "2.0", "id": b, "method": "eth_getBlockByNumber", "params": [hex(b), False]}
+                           for b in chunk]).encode()
+        for k in range(6):
+            try:
+                req = urllib.request.Request(RPC[k % 2], data=body, headers=UA)
+                r = json.load(urllib.request.urlopen(req, timeout=60))
+                for x in r:
+                    if x.get("result"):
+                        out[int(x["id"])] = int(x["result"]["timestamp"], 16)
+                if all(b in out for b in chunk):
+                    break
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(3 + 4 * k)
+        time.sleep(0.3)
     return out
 
 
@@ -123,6 +137,7 @@ def main():
         res.append(dict(r._asdict(), fills=[(b, ts.get(b), a) for b, a, _ in f]))
         if k % 10 == 0:
             print(k, r.sym, r.n, r.sec, f"{r.tot_usd:,.0f} $", "исполнений", len(f), flush=True)
+            pd.to_pickle(res, f"{OUT}/cow_fills.partial.pkl")
     pd.to_pickle(res, f"{OUT}/cow_fills.pkl")
     nf = [len(x["fills"]) for x in res]
     print(f"ордеров с исполнениями: {len(res)}, исполнений всего {sum(nf)}, медиана на ордер {np.median(nf):.0f}")

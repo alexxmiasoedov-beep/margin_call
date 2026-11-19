@@ -77,6 +77,7 @@ def main():
     det = runs[runs.det_t.notna()].copy()
     print(f"\nобнаруженных прогонов (до слияния): {len(det)}")
     E = merge_runs(det)
+    E = E.reset_index(drop=True)
     E["dur"] = (E.t1 - E.t0) / 60000
     E["lag"] = (E.det_t - E.t0) / 60000
     E["v_det"] = E.sh_det * 0          # заполняется ниже
@@ -86,6 +87,23 @@ def main():
     E["E10"] = (E.vchild >= 100) & (E.sh_det >= 0.10)
     E["big"] = E.v_det >= 5e4
     E["srs"] = E.tags.str.contains("srs")
+    # двусторонние: в те же сутки у монеты эпизод другой стороны, пересекающийся по времени, сумма части ±30%
+    # (рисование объёма / маркетмейкер; D1n встречную сторону не проверяет)
+    two = np.zeros(len(E), bool)
+    for _, g in E.groupby(["mkt", "s", "d"]):
+        if g.side.nunique() < 2:
+            continue
+        a = g.to_dict("records")
+        idx = g.index.values
+        for i in range(len(a)):
+            for j in range(len(a)):
+                if a[i]["side"] == a[j]["side"]:
+                    continue
+                ov = min(a[i]["t1"], a[j]["t1"]) - max(a[i]["t0"], a[j]["t0"])
+                if ov > 0 and abs(np.log(a[i]["vchild"] / a[j]["vchild"])) <= np.log(1.3):
+                    two[idx[i]] = True          # индекс E — RangeIndex (позиция)
+                    break
+    E["twoside"] = two
     E["hstart"] = ((E.t0 // 1000) % DAY) // 3600
     pd.to_pickle(E, f"{D}/episodes.pkl")
     print(f"эпизодов после слияния: {len(E)}; слито прогонов на эпизод: среднее {E.nmerged.mean():.2f}; "
@@ -95,7 +113,9 @@ def main():
     nd = srs.groupby("per").size()
     Es = E[E.srs & (E.mkt == "um")]
     print("\n== Частота эпизодов, фьючерсы, SRS (на монето-сутки; в месяц на вселенную ликвидных альтов) ==")
-    for lvl in ("all", "E1", "E3", "E10", "big"):
+    Es = Es.assign(E3o=Es.E3 & ~Es.twoside, E10o=Es.E10 & ~Es.twoside)
+    print("  двусторонних среди E3: " + " / ".join(f"{Es[(Es.per == p) & Es.E3].twoside.mean():.0%}" for p in PERS))
+    for lvl in ("all", "E1", "E3", "E3o", "E10", "E10o", "big"):
         cells = []
         for per in PERS:
             x = Es[Es.per == per] if lvl == "all" else Es[(Es.per == per) & Es[lvl]]
