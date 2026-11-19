@@ -41,13 +41,15 @@ SIG = [
     ("лонги счетов", "lsr_acc", +1, None),
     ("аутсайдеры 2–4 нед.", "r28s", -1, None),
 ]
-JN = ["🔝", "👀", "⏰", "🛒", "🇰🇷", "🔑⁺", "🐋"]
+JN = ["🔝", "👀", "⏰", "🛒", "🇰🇷", "🇰🇷🆕", "🔑⁺", "🐋"]
 
 
 def baskets(X, feat, sgn, cond):
     out = {}
     for d0, g in X.groupby("d0"):
         g = g[g[feat].notna() & np.isfinite(g[feat])]
+        if not len(g):
+            continue                                   # признака на срезе нет (OI до 12.2021) — неделя не в счёт
         if cond is not None:
             g = g[cond(g)]
         if not len(g):
@@ -99,7 +101,8 @@ def stats(B, J, per, mons, X=None):
             any_now += hit_now; any_prev += hit_prev
     n = max(len(allc), 1)
     sw = np.nanmedian(sig) if sig else np.nan
-    return dict(per=per, weeks=len(weeks), full=full / max(len(weeks), 1), per_month=len(allc) / mons,
+    wk = len(weeks)                                   # все срезы, где признак есть (пустая корзина — ноль сделок)
+    return dict(per=per, weeks=wk, full=full / max(wk, 1), per_month=len(allc) / max(wk * 7 / 30.4, 1e-9),
                 beta=np.nanmedian(be) if be else np.nan, sig_w=sw, f7=np.nanmedian(fu) if fu else np.nan,
                 mde=3 * sw / np.sqrt(max(full, 1)),
                 turnover=np.mean(turn) if turn else np.nan, coins=len(vc), top3=top3,

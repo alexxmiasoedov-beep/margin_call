@@ -17,7 +17,7 @@ F = ["r7", "r28", "r28s", "max28", "vol28", "ivol28", "beta28", "dbeta28", "skew
      "amihud28", "tsize7", "tbi7", "f7", "df", "sshare7", "prem7", "bmom28", "kshare7", "kabn", "kabto", "kprem7",
      "lmcap", "turn7", "oi_g7", "oi_qv", "oi_mc", "lsr_acc", "cgo60", "dhi90", "lprice", "age"]
 CAND = ["kshare7", "kabn", "kabto", "ksabto", "sabto", "abto", "oi_g7", "oi_qv", "oi_mc", "turn7", "sshare7", "cgo60",
-        "max28", "beta28", "dbeta28", "ivol28", "df", "bmom28", "prem7", "lsr_acc"]
+        "max28", "beta28", "dbeta28", "ivol28", "df", "bmom28", "prem7", "lsr_acc", "f7"]
 CTRL = ["lqv", "vol28", "r28", "r7", "max28", "beta28", "f7", "age"]
 
 

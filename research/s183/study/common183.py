@@ -210,7 +210,7 @@ def cmc_snapshots():
 def journals(per):
     """Входы журналов за период — только монета и время входа (для пересечений; доходы не читаются).
     🔝 s65, 👀 s83, ⏰ s88 (open9), 🛒 s49/s118 (доля спота ≥ 26%), 🔑⁺ s142, 🐋 s167lv (правило бота B, спокойный
-    рынок ±5%), 🇰🇷 s118 (2020–2024)."""
+    рынок ±5%), 🇰🇷 s118 (2020–2024) и s20 (2024–2026), 🇰🇷🆕 s20 (2024–2026)."""
     rows = []
 
     def add(j, df, cond=None):
@@ -227,6 +227,11 @@ def journals(per):
         x = pd.read_pickle(p)
         return x[[c for c in cols if c in x.columns]]
     if per == "2024–2026":
+        k20 = rp(f"{D}/s20/trades.pkl", ["s", "te", "journal"])          # 🇰🇷 и 🇰🇷🆕 бэктеста (s20)
+        if k20 is not None:
+            k20 = k20.rename(columns={"te": "t"})
+            add("🇰🇷", k20, lambda x: x.journal == "🇰🇷")
+            add("🇰🇷🆕", k20, lambda x: x.journal == "🇰🇷🆕")
         add("🔝", rp(f"{D}/s65/trades.pkl", ["s", "t"]))
         add("👀", rp(f"{D}/s83/trades.pkl", ["s", "t"]))
         add("⏰", rp(f"{D}/s88/trades.pkl", ["s", "t", "open9"]), lambda x: x.open9.astype(bool))
