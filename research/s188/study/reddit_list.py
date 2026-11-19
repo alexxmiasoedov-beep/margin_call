@@ -16,6 +16,7 @@ UA = {"User-Agent": "research-script/1.0"}
 API = "https://arctic-shift.photon-reddit.com/api/posts/search"
 SUBS = sys.argv[1].split(",") if len(sys.argv) > 1 else ["algotrading", "BitcoinMarkets"]
 A0 = int(sys.argv[2]) if len(sys.argv) > 2 else 1577836800      # 01.01.2020
+SUF = sys.argv[3] if len(sys.argv) > 3 else ""                   # суффикс файла для параллельной выгрузки поздних лет
 FIELDS = "id,created_utc,title,score,num_comments,link_flair_text,author,subreddit"
 WIN = 15 * 86400
 stat = {"req": 0, "n": 0, "fail": 0}
@@ -60,7 +61,7 @@ def window(sub, a, b, fo):
 
 
 for sub in SUBS:
-    fn = f"{OUT}/list_{sub}.jsonl"
+    fn = f"{OUT}/list_{sub}{SUF}.jsonl"
     last = A0
     if os.path.exists(fn):
         for ln in open(fn):
