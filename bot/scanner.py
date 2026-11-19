@@ -3026,6 +3026,389 @@ def insider_unlock_rule(state):
     return msgs
 
 
+WD_RPC = ("https://gateway.tenderly.co/public/mainnet", "https://rpc.mevblocker.io", "https://ethereum-rpc.publicnode.com",
+          "https://eth.llamarpc.com")                              # 🐋: публичные узлы Ethereum без ключа, по очереди
+WD_LABELS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cex_labels.tsv")   # метки адресов бирж (research/s160)
+WD_TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"     # событие Transfer у ERC-20
+WD_CUST = re.compile(r"prime|anchorage|falconx|bitcoin suisse|copper|bitgo|fireblocks|cumberland|galaxy|wintermute|amber|"
+                     r"matrixport|ceffu|hex trust|komainu|cobo|paxos|custody", re.I)   # кастоди, прайм-брокеры, ММ — не завод
+WD_CMC = ("https://api.coinmarketcap.com/data-api/v3/cryptocurrency/listing?start={}&limit=5000&sortBy=market_cap"
+          "&sortType=desc&convert=USD&cryptoType=all&tagType=all&audited=false")
+WD_CG = "https://api.coingecko.com/api/v3/coins/list?include_platform=true"
+WD_MIN, WD_GAP_H, WD_CALM, WD_PX = 0.005, 48, 0.05, (0.8, 1.25)  # завод ≥ 0,5% монет в обращении; первый у монеты за 48 ч;
+                                                                 # фьючерс за сутки до входа ±5%; цена фьючерса к цене CMC
+WD_EVERY, WD_LIST_EVERY, WD_CONF = 120, 86400, 3   # блоки — раз в 2 мин; список токенов — раз в сутки; 3 блока на перестройку
+WD_STEP, WD_BACK, WD_LATE = 300, 1200, 1800        # запрос — до 300 блоков (1 ч); догоняем не больше 1200 блоков (4 ч);
+                                                    # вход — не позже 30 мин после закрытия свечи входа
+WD_DEC_BATCH, WD_RPC_S = 20, 30                    # знаков после запятой — до 20 токенов за проход; на один вызов узлов — до 30 с
+WD_ZERO = "0x" + "0" * 40
+_wd_lab = {"mtime": None, "cex": {}, "bin": []}
+_wd_tmp = {}                                        # список токенов собирается за несколько проходов: CMC, CoinGecko, цены
+
+
+def _wd_labels():
+    """Метки адресов бирж из cex_labels.tsv: {"cex": {адрес: (биржа, название)}, "bin": адреса Binance без кастоди}.
+    None — файла нет (после неудачной быстрой перемотки приходят только четыре файла бота)."""
+    try:
+        mt = os.path.getmtime(WD_LABELS)
+    except OSError:
+        return None
+    if _wd_lab["mtime"] != mt:
+        cex = {}
+        try:
+            with open(WD_LABELS, encoding="utf-8") as f:
+                for ln in f:
+                    p = ln.rstrip("\n").split("\t")
+                    if len(p) >= 2 and p[0].startswith("0x") and len(p[0]) == 42:
+                        cex[p[0].lower()] = (p[1], p[2] if len(p) > 2 else "")
+        except OSError:
+            return None
+        _wd_lab.update(mtime=mt, cex=cex, bin=sorted(a for a, (ex, nm) in cex.items()
+                                                    if ex == "Binance" and not WD_CUST.search(f"{ex} {nm}")))
+    return _wd_lab if _wd_lab["bin"] else None
+
+
+def _wd_rpc(method, params, timeout=20):
+    """JSON-RPC Ethereum: узлы WD_RPC по очереди, пока не ответит один (не дольше WD_RPC_S на вызов).
+    (результат, None) или (None, ошибка): «rpc: …» — хотя бы один узел ответил ошибкой (например, откат вызова), иначе
+    «net: …» — ни один не ответил."""
+    rpc_err = net_err = None; t0 = time.time()
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    for url in WD_RPC:
+        if time.time() - t0 > WD_RPC_S:
+            break
+        host = urllib.parse.urlsplit(url).hostname
+        try:
+            j = json.loads(http(url, data=body, timeout=timeout, ctype="application/json"))
+        except Exception as e:
+            net_err = net_err or f"net: {host}: {e!r}"[:160]
+            continue
+        if isinstance(j, dict) and j.get("result") is not None:
+            return j["result"], None
+        rpc_err = rpc_err or f"rpc: {host}: {str(j.get('error') if isinstance(j, dict) else j)}"[:160]
+    return None, rpc_err or net_err or "net: узлы не опрошены"
+
+
+def _wd_base(fs):
+    """Монета и множитель фьючерса: 1000PEPE → (PEPE, 1000), 1MBABYDOGE → (BABYDOGE, 1 000 000)."""
+    m = re.match(r"^(1000000|100000|10000|1000|1M)(.+)$", fs)
+    if m and not m.group(2)[0].isdigit():
+        return m.group(2), 1e6 if m.group(1) in ("1M", "1000000") else float(m.group(1))
+    return fs, 1.0
+
+
+def _wd_map(cmc, cg, px):
+    """Токены Ethereum у фьючерсов Binance (как набор research/s160): монета CMC с тем же тикером, у которой цена сходится
+    с ценой фьючерса (0,8–1,25), а из таких — с наибольшей капитализацией; контракт ERC-20 — основная платформа CMC, если это
+    Ethereum, иначе монета CoinGecko с тем же id (slug CMC) или единственная с тем же названием. Стейблкоины и металлы — нет.
+    px — {фьючерс: цена}. → {адрес: [фьючерс, монета, монет в обращении по CMC, id CMC]}"""
+    by, gid, gname = {}, {}, {}
+    for c in cmc:
+        if isinstance(c, dict):
+            by.setdefault(str(c.get("symbol") or "").upper(), []).append(c)
+    for c in cg:
+        try:
+            e = str((c.get("platforms") or {}).get("ethereum") or "").lower()
+        except AttributeError:
+            continue
+        if e.startswith("0x") and len(e) == 42:
+            gid[c.get("id")] = e
+            gname.setdefault(str(c.get("name") or "").lower(), set()).add(e)
+    out = {}
+    for fs, p in px.items():
+        coin, mult = _wd_base(fs)
+        if coin in BL_SKIP or fs in BL_SKIP or p <= 0:
+            continue
+        best = None
+        for c in by.get(coin, []):
+            try:
+                q = (c.get("quotes") or [{}])[0] or {}
+                cp, mc = float(q.get("price") or 0), float(q.get("marketCap") or 0)
+            except (TypeError, ValueError, IndexError, AttributeError):
+                continue
+            if cp > 0 and WD_PX[0] <= p / (cp * mult) <= WD_PX[1] and (best is None or mc > best[1]):
+                best = (c, mc)
+        if not best:
+            continue
+        c = best[0]; pl = c.get("platform") if isinstance(c.get("platform"), dict) else {}
+        e = str(pl.get("token_address") or "").lower() if pl.get("slug") == "ethereum" else ""
+        if not (e.startswith("0x") and len(e) == 42):
+            e = gid.get(c.get("slug"), "")
+        if not e:
+            n = gname.get(str(c.get("name") or "").lower(), set())
+            e = next(iter(n)) if len(n) == 1 else ""
+        try:
+            circ = float(c.get("circulatingSupply") or 0)
+        except (TypeError, ValueError):
+            circ = 0.0
+        if e and circ > 0:
+            out[e] = [fs, coin, circ, int(c.get("id") or 0)]
+    return out
+
+
+def _wd_refresh(w, now):
+    """Раз в сутки — список токенов (_wd_map), по одному запросу за проход: CMC (одна-две страницы по 5000 монет), CoinGecko
+    (монеты с адресами контрактов), цены фьючерсов Binance. Сбой — повтор через 10 мин, строка в журнал не чаще раза в 6 ч."""
+    t = _wd_tmp
+    if not t and (now - w.get("tok_t", 0) < WD_LIST_EVERY or now < w.get("tok_next", 0)):
+        return
+
+    def fail(why):
+        _wd_tmp.clear(); w["tok_next"] = now + 600
+        if now - w.get("tok_err", 0) >= 6 * 3600:
+            w["tok_err"] = now
+            log("ЗАВОДЫ", f"список токенов не обновлён: {why}; повтор через 10 мин")
+
+    def cmc_rows(start):
+        """Страница списка CMC — только нужные поля (между проходами список держится в памяти)."""
+        j = http_json(WD_CMC.format(start), 60)
+        d = j.get("data") if isinstance(j, dict) else None
+        rows = d.get("cryptoCurrencyList") if isinstance(d, dict) else None
+        if not isinstance(rows, list):
+            return None
+        out = []
+        for c in rows:
+            if not isinstance(c, dict):
+                continue
+            qs = [q for q in c.get("quotes") or [] if isinstance(q, dict)]
+            q = next((q for q in qs if q.get("name") == "USD"), qs[0] if qs else {})
+            out.append({"id": c.get("id"), "symbol": c.get("symbol"), "name": c.get("name"), "slug": c.get("slug"),
+                        "circulatingSupply": c.get("circulatingSupply"),
+                        "quotes": [{"price": q.get("price"), "marketCap": q.get("marketCap")}],
+                        "platform": c.get("platform") if isinstance(c.get("platform"), dict) else None})
+        return out
+
+    if "cmc" not in t:
+        rows = cmc_rows(1)
+        if not rows:
+            return fail("CoinMarketCap не отдал список монет")
+        t.update(cmc=rows, more=len(rows) >= 5000)
+        return
+    if t.get("more"):
+        rows = cmc_rows(5001)
+        if rows is None:
+            return fail("CoinMarketCap не отдал вторую страницу списка монет")
+        t["cmc"] += rows; t["more"] = False
+        return
+    if "cg" not in t:
+        j = http_json(WD_CG, 60)
+        if not isinstance(j, list) or not j:
+            return fail("CoinGecko не отдал список монет с адресами контрактов")
+        t["cg"] = [{"id": c.get("id"), "name": c.get("name"), "platforms": {"ethereum": c["platforms"]["ethereum"]}}
+                   for c in j if isinstance(c, dict) and isinstance(c.get("platforms"), dict)
+                   and c["platforms"].get("ethereum")]               # нужны только монеты с адресом в Ethereum
+        return
+    trader.contract("BTC")
+    j = http_json("https://fapi.binance.com/fapi/v1/ticker/price", 20)
+    if not isinstance(j, list) or not trader._contracts:
+        return fail("Binance не отдал цены фьючерсов или список контрактов")
+    px = {}
+    for x in j:
+        s = str(x.get("symbol") or "") if isinstance(x, dict) else ""
+        try:
+            if s in trader._contracts and s.endswith("USDT"):
+                px[s[:-4]] = float(x["price"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    tok = _wd_map(t["cmc"], t["cg"], px)
+    _wd_tmp.clear()
+    if not tok:
+        return fail("ни одного токена Ethereum с фьючерсом Binance")
+    old = set(w.get("tok") or {})
+    new = sorted(tok[a][0] for a in tok if a not in old)
+    w.update(tok=tok, tok_t=now)
+    log("ЗАВОДЫ", f"список токенов Ethereum с фьючерсом Binance обновлён: {len(tok)}"
+        + (f"; новые: {', '.join(new[:30])}" if old and new else ""))
+
+
+def _wd_decimals(w):
+    """Знаки после запятой у токенов (eth_call decimals(), не меняются): до WD_DEC_BATCH новых за проход.
+    Токен без decimals() (узел ответил ошибкой или пустым ответом) — −1, такие не смотрим."""
+    dec = w.setdefault("dec", {})
+    for a in [a for a in w.get("tok") or {} if a not in dec][:WD_DEC_BATCH]:
+        r, err = _wd_rpc("eth_call", [{"to": a, "data": "0x313ce567"}, "latest"], 15)
+        try:
+            d = int(r, 16) if isinstance(r, str) and len(r) > 2 else None
+        except ValueError:
+            d = None
+        if d is not None and 0 <= d <= 36:
+            dec[a] = d
+        elif r is not None or (err or "").startswith("rpc:"):
+            dec[a] = -1
+        else:
+            _wd_err(w, time.time(), f"узлы Ethereum не ответили на decimals() ({err})")
+            break                                            # узлы не ответили — после паузы
+
+
+def _wd_err(w, now, why):
+    """Сбой узлов Ethereum: строка в журнал не чаще раза в час; пауза до следующей попытки растёт 2 → 4 → … → 30 мин,
+    чтобы при обрыве сети проходы бота не удлинялись каждые 2 мин."""
+    w["rpc_wait"] = min(1800, max(WD_EVERY, w.get("rpc_wait", WD_EVERY // 2) * 2))
+    w["rpc_next"] = now + w["rpc_wait"]
+    if now - w.get("err", 0) >= 3600:
+        w["err"] = now
+        log("ЗАВОДЫ", why + f" — повтор через {w['rpc_wait'] // 60} мин")
+
+
+def _wd_block_time(x, cache):
+    """Время блока перевода: поле blockTimestamp в логе (Tenderly), иначе eth_getBlockByNumber (кэш на проход)."""
+    try:
+        if x.get("blockTimestamp"):
+            return int(x["blockTimestamp"], 16)
+        b = int(x["blockNumber"], 16)
+    except (KeyError, TypeError, ValueError):
+        return None
+    if b not in cache:
+        r, _ = _wd_rpc("eth_getBlockByNumber", [hex(b), False], 15)
+        try:
+            cache[b] = int(r["timestamp"], 16)
+        except (KeyError, TypeError, ValueError):
+            cache[b] = None
+    return cache[b]
+
+
+def _wd_event(w, lab, tok, dec, x, cache):
+    """Перевод токена на адрес Binance → событие, если: отправитель не биржа и не чеканка, сумма ≥ 0,5% монет в обращении
+    и у монеты не было события 48 ч. Событие ждёт входа в w["pend"]."""
+    try:
+        a = str(x["address"]).lower()
+        frm, to = ("0x" + str(x["topics"][i])[-40:].lower() for i in (1, 2))
+        data = str(x.get("data") or "0x")
+        amt = int(data, 16) if data not in ("0x", "") else 0
+    except (KeyError, IndexError, TypeError, ValueError):
+        return
+    t, d = tok.get(a), dec.get(a, -1)
+    if not t or d < 0 or to not in lab["cex"] or frm in lab["cex"] or frm == WD_ZERO:
+        return                                               # перекладка с биржи, чеканка
+    n = amt / 10 ** d; share = n / t[2]
+    if share < WD_MIN:
+        return
+    fs, coin = t[0], t[1]
+    ts = _wd_block_time(x, cache)
+    if not ts:
+        return log("ЗАВОДЫ", f"{fs}: перевод {share * 100:.2f}% монет в обращении, но узлы не отдали время блока — пропуск")
+    tx = str(x.get("transactionHash") or "")
+    what = (f"{fs}: {f'{n:,.0f}'.replace(',', ' ')} {coin} ({share * 100:.2f}% монет в обращении) на "
+            f"{lab['cex'][to][1] or 'Binance'} с {frm[:10]}…, tx {tx[:12]}…, блок "
+            f"{datetime.fromtimestamp(ts, timezone.utc):%d.%m %H:%M} UTC")
+    last = w.setdefault("last", {})
+    if ts - last.get(fs, 0) < WD_GAP_H * 3600:
+        return log("ЗАВОДЫ", what + f" — событие монеты было {(ts - last[fs]) / 3600:.0f} ч назад, без сделки")
+    last[fs] = ts
+    te = int(-(-(ts + 900) // 900) * 900)                   # закрытие первой 15-мин свечи не раньше чем через 15 мин
+    w.setdefault("pend", {})[fs] = {"t": ts, "te": te, "share": round(share * 100, 3), "what": what}
+    log("ЗАВОДЫ", what + f" — событие; вход в {datetime.fromtimestamp(te, timezone.utc):%H:%M} UTC, если фьючерс за сутки "
+                         f"сдвинулся не больше чем на ±{WD_CALM * 100:g}%")
+
+
+def _wd_poll(w, lab, tok, now):
+    """Новые блоки Ethereum (с отставанием WD_CONF): переводы токенов из списка на адреса Binance, кусками до WD_STEP блоков,
+    не больше 25 с за проход; догоняем не больше WD_BACK блоков."""
+    head, err = _wd_rpc("eth_blockNumber", [], 10)
+    try:
+        head = int(head, 16) - WD_CONF
+    except (TypeError, ValueError):
+        return _wd_err(w, now, f"узлы Ethereum не отдали номер блока ({err})")
+    frm = int(w.get("block") or head - 10) + 1
+    if head - frm + 1 > WD_BACK:
+        log("ЗАВОДЫ", f"пропущено {head - frm + 1 - WD_BACK} блоков (бот не работал или узлы не отвечали) — смотрю последние "
+                      f"{WD_BACK}")
+        frm = head - WD_BACK + 1
+    dec = w.get("dec") or {}
+    addrs = sorted(a for a in tok if dec.get(a, -1) >= 0)
+    if not addrs:
+        return
+    topic_to = ["0x" + "0" * 24 + a[2:] for a in lab["bin"]]
+    cache, t0 = {}, time.time()
+    while frm <= head and time.time() - t0 < 25:
+        to = min(head, frm + WD_STEP - 1)
+        logs, err = _wd_rpc("eth_getLogs", [{"fromBlock": hex(frm), "toBlock": hex(to), "address": addrs,
+                                             "topics": [WD_TRANSFER, None, topic_to]}], 20)
+        if not isinstance(logs, list):
+            return _wd_err(w, now, f"узлы Ethereum не отдали переводы блоков {frm}–{to} ({err})")
+        try:
+            logs.sort(key=lambda x: (int(x["blockNumber"], 16), int(x["logIndex"], 16)))
+        except (KeyError, TypeError, ValueError):
+            pass
+        for x in logs:
+            if isinstance(x, dict) and not x.get("removed"):
+                _wd_event(w, lab, tok, dec, x, cache)
+        w["block"] = to; frm = to + 1
+    w.pop("rpc_wait", None); w.pop("rpc_next", None)        # узлы ответили — паузы нет
+
+
+def _wd_enter(state, w, now):
+    """Вход по событиям w["pend"]: в момент закрытия свечи входа (опоздание — до WD_LATE). Фьючерс за 24 ч до входа
+    (закрытие свечи входа к закрытию свечи сутками раньше) ±5% и торгуется больше суток → виртуальный шорт 🐋."""
+    msgs, pend = [], w.setdefault("pend", {})
+    for fs, p in sorted(pend.items(), key=lambda kv: kv[1]["te"]):
+        if now < p["te"]:
+            continue
+        if now > p["te"] + WD_LATE:
+            del pend[fs]
+            log("ЗАВОДЫ", p["what"] + f" — вход опоздал больше чем на {WD_LATE // 60} мин (бот не работал или Binance не отдал "
+                                      "свечи), сделки нет")
+            continue
+        k = _closed_15m(fs, p["te"], 100)
+        if not k or len(k) < 97 or int(k[-97][0]) // 1000 + 900 != p["te"] - 86400:
+            continue                                         # Binance не отдал свечи — повтор в следующем проходе
+        c, c0 = float(k[-1][4]), float(k[-97][4])
+        r24 = c / c0 - 1 if c0 > 0 else 0.0
+        if abs(r24) > WD_CALM:
+            del pend[fs]
+            log("ЗАВОДЫ", p["what"] + f" — фьючерс за сутки {r24 * 100:+.1f}%, рынок не спокойный, сделки нет")
+            continue
+        on = (trader.contract(fs) or {}).get("onboard") or 0
+        if on and p["te"] - on < 86400:
+            del pend[fs]
+            log("ЗАВОДЫ", p["what"] + f" — фьючерс запущен {(p['te'] - on) / 3600:.0f} ч назад, моложе суток, сделки нет")
+            continue
+        note = f"завод на Binance: {p['what']}; фьючерс за сутки {r24 * 100:+.1f}%; выход через 24 ч"
+        was = _virt_is_open(state, "virtual_WD", fs)
+        m = trader.virt_open(state, "virtual_WD", fs, "WD", note)
+        opened = not was and _virt_is_open(state, "virtual_WD", fs)
+        if m or was:
+            del pend[fs]
+            log("ЗАВОДЫ", fs, note + (" → шорт 🐋" if opened else " — сделка не открыта (уже есть или мало виртуального баланса)"))
+            if m:
+                msgs.append(m)
+        # иначе Binance не отдал цену — повтор в следующем проходе, до WD_LATE
+    return msgs
+
+
+def whale_deposit_rule(state):
+    """Заводы на Binance (журнал 🐋, research/s160 и s167/ВЫВОДЫ.md: пограничный кандидат, по «да» владельца 19.11.2026 —
+    для живой проверки). Раз в 2 мин — новые блоки Ethereum (eth_getLogs через публичные узлы без ключа): переводы токенов
+    ERC-20 с фьючерсом Binance на адреса Binance из cex_labels.tsv (кастоди и маркетмейкеры не считаются); отправитель —
+    не адрес биржи и не чеканка. Перевод ≥ 0,5% монет в обращении (CoinMarketCap) — событие, если у монеты не было события
+    48 ч (_wd_event). Вход — на закрытии первой 15-мин свечи, закрывшейся не раньше чем через 15 мин после блока (опоздание —
+    до 30 мин), если фьючерс за 24 ч до входа сдвинулся не больше чем на ±5% и торгуется больше суток → виртуальный шорт на
+    24 ч без тейка, стоп +25%, плечо ×1 (_wd_enter). Список токенов — раз в сутки (_wd_refresh). Нет файла меток — правило
+    молчит. Строки журнала службы — «ЗАВОДЫ». Сообщения для чата."""
+    now = time.time(); w = state.setdefault("wd", {})
+    lab = _wd_labels()
+    if not lab:
+        if now - w.get("nolab", 0) >= 86400:
+            w["nolab"] = now
+            log("ЗАВОДЫ", f"нет файла меток бирж {os.path.basename(WD_LABELS)} — правило 🐋 молчит (обновление пришло не полностью?)")
+        return []
+    _wd_refresh(w, now)
+    tok = w.get("tok") or {}
+    if not tok:
+        return []
+    rpc_ok = now >= w.get("rpc_next", 0)                     # после сбоя узлов — пауза (_wd_err)
+    if rpc_ok:
+        _wd_decimals(w)
+    msgs = _wd_enter(state, w, now)
+    if rpc_ok and now - w.get("poll_t", 0) >= WD_EVERY:
+        w["poll_t"] = now
+        _wd_poll(w, lab, tok, now)
+    last = w.setdefault("last", {})
+    for k in [k for k, ts in last.items() if ts < now - 3 * 86400]:
+        del last[k]
+    return msgs
+
+
 MR_URL = "https://www.binance.com/bapi/margin/v1/public/margin/vip/spec/list-all"
 MR_DIR = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "margin_rates")
 
@@ -3609,6 +3992,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила разлоков инсайдерам:", repr(e))
+    try:
+        for msg in whale_deposit_rule(state):
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка правила заводов на Binance:", repr(e))
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
