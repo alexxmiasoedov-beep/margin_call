@@ -1,0 +1,89 @@
+заголовков 7192, с 2017-07-02 по 2026-10-22, разделы {49: 4463, 48: 2286, 161: 443}
+
+Объявлений в месяц:
+  тип                                             2020–2022  2022–2024  2024–2026
+  фандинг: интервал начислений                         0.13       0.71       1.38
+  фандинг: потолок/пол ставки                          0.13       1.00       0.08
+  фандинг: прочее (формула, металлы, акции)            0.08       0.04       0.32
+  плечо и ступени маржи перпов                         8.67      11.41       6.60
+  защита цены, ценовой коридор, LPP                    0.04       0.00       0.36
+  шаг цены (tick size)                                 1.38       1.54       2.87
+  минимальный размер заявки                            0.04       0.25       0.04
+  лимит позиции, открытых заявок                       0.04       0.08       0.00
+  займ: монету добавили в займ (Loans, borrowable)       1.42       0.33       0.00
+  маржа: монету сняли с займа (Delist … Borrowable)       0.00       0.42       0.00
+  маржа: добавление пар и монет                        2.13       5.00       5.91
+  маржа: лимиты займа                                  0.00       0.04       0.00
+  ввод и вывод: приостановка, обслуживание сети        5.25       0.17       0.00
+  приостановка торгов                                  0.00       0.04       0.00
+  метки Monitoring / Seed                              0.00       1.17       2.51
+  делистинг перпов                                     0.58       1.25       1.46
+
+Монето-события в объявлениях о фандинге (тикеры из заголовков, «Multiple» — без списка):
+  фандинг: интервал начислений       2020–2022: объявлений 3, тикеров в заголовках 0 (0.00 в мес.), объявлений «Multiple/Selected» 0
+  фандинг: интервал начислений       2022–2024: объявлений 17, тикеров в заголовках 17 (0.71 в мес.), объявлений «Multiple/Selected» 0
+  фандинг: интервал начислений       2024–2026: объявлений 34, тикеров в заголовках 29 (1.17 в мес.), объявлений «Multiple/Selected» 5
+  фандинг: потолок/пол ставки        2020–2022: объявлений 3, тикеров в заголовках 0 (0.00 в мес.), объявлений «Multiple/Selected» 0
+  фандинг: потолок/пол ставки        2022–2024: объявлений 24, тикеров в заголовках 23 (0.96 в мес.), объявлений «Multiple/Selected» 3
+  фандинг: потолок/пол ставки        2024–2026: объявлений 2, тикеров в заголовках 2 (0.08 в мес.), объявлений «Multiple/Selected» 0
+
+фандинг: потолок/пол ставки — все заголовки (29):
+  2021-11-11 Updates on Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of OMG USDⓈ-M Perpetual Contract (2021-11-11)
+  2022-05-29 Updates on Leverage, Margin Tiers and Capped Funding Rate Multiplier for BEL USDⓈ-M Perpetual Contract (2022-05-29)
+  2022-09-17 Updates on Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of PHBBUSD Perpetual Contract (2022-09-17)
+  2022-10-03 Updates on Leverage, Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M LIT Perpetual Contracts (2022-10-03)
+  2022-11-09 Updates on Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of SOLUSDT, SOLBUSD and SOLUSD Perpetual Futures Contracts (2022-11-09
+  2022-11-10 Updates on Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of FTTUSDT and FTTBUSD Perpetual Futures Contracts (2022-11-10)
+  2022-12-04 Updates on Leverage, Margin Tiers, Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of USDⓈ-M BNXUSDT Perpetual Contracts (2022-12
+  2022-12-21 Updates on Margin Tiers, Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of USDⓈ-M HNTUSDT Perpetual Contracts (2022-12-21)
+  2023-04-03 Updates on Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M SXPUSDT Perpetual Contract (2023-04-03)
+  2023-06-07 Binance Futures Will Update the Leverage, Margin Tiers, Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of USDⓈ-M MTLUSDT Perpetu
+  2023-07-05 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M STORJUSDT Perpetual Contract
+  2023-08-06 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M YGGUSDT and API3USDT Perpetual Contracts (2023-08-
+  2023-08-07 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M LPTUSDT and API3USDT Perpetual Contracts (2023-08-
+  2023-08-28 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M AMBUSDT Perpetual Contract
+  2023-08-31 Updates on Leverage, Margin Tiers, Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of USDⓈ-M CYBERUSDT Perpetual Contract (2023-0
+  2023-09-02 Updates on Leverage, Margin Tiers, Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of USDⓈ-M CYBERUSDT Perpetual Contract (2023-0
+  2023-09-02 Updates on Leverage, Margin Tiers, Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of USDⓈ-M NMRUSDT Perpetual Contract (2023-09-
+  2023-09-05 Updates on Leverage, Margin Tiers, Funding Rate Settlement Frequency and Capped Funding Rate Multiplier of USDⓈ-M FLMUSDT Perpetual Contract (2023-09-
+  2023-09-08 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M UNFIUSDT and TRBUSDT Perpetual Contracts
+  2023-09-10 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M PERPUSDT Perpetual Contract
+  2023-09-16 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M TRBUSDT Perpetual Contract
+  2023-09-16 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M HIFIUSDT Perpetual Contract
+  2023-09-21 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate Multiplier of USDⓈ-M IMXUSDT Perpetual Contract
+  2023-10-01 Updates on Capped Funding Rate of USDⓈ-M OGNUSDT Perpetual Contract (2023-10-01)
+  2023-10-17 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate of Multiple USDⓈ-M Perpetual Contracts (2023-10-18)
+  2023-10-25 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate of Multiple USDⓈ-M Perpetual Contracts (2023-10-30)
+  2023-11-03 Binance Futures Will Update the Leverage, Margin Tiers and Capped Funding Rate of Multiple USDⓈ-M Perpetual Contracts (2023-11-06)
+  2025-04-29 Updates on the Capped Funding Rate of USDⓈ-M ALPACAUSDT Perpetual Contract (2025-04-29)
+  2026-07-10 Updates on the Capped Funding Rate of USDⓈ-M SKHYNIXUSDT Perpetual Contract (2026-07-10)
+
+защита цены, ценовой коридор, LPP — все заголовки (10):
+  2020-11-03 Binance Futures Launches Price Protection Function
+  2025-04-01 Updates on Order Price Cap/Floor Ratio for Multiple USDⓈ-M Perpetual Futures Contracts (2025-04-02)
+  2026-06-15 Binance Futures Will Apply Last Price Protected Mechanism on USDⓈ-Margined HUSDT Perpetual Contract (2026-06-15)
+  2026-06-18 Binance Futures Will End Last Price Protected Period on USDⓈ-Margined HUSDT Perpetual Contract (2026-06-18)
+  2026-07-02 Binance Futures Will Apply Last Price Protected Mechanism on USDⓈ-Margined GUAUSDT Perpetual Contract (2026-07-02)
+  2026-07-10 Binance Futures Will End Last Price Protected Period on USDⓈ-Margined GUAUSDT Perpetual Contract (2026-07-10)
+  2026-08-14 Binance Futures Will Apply Last Price Protected Mechanism on USDⓈ-Margined ONEUSDT Perpetual Contract (2026-08-14)
+  2026-08-27 Binance Futures Will Apply Last Price Protected Mechanism on USDⓈ-Margined TACUSDT Perpetual Contract (2026-08-27)
+  2026-09-07 Binance Futures Will End Last Price Protected Period on USDⓈ-Margined TACUSDT Perpetual Contract (2026-09-07)
+  2026-09-17 Binance Futures Will End Last Price Protected Period on USDⓈ-Margined ONEUSDT Perpetual Contract (2026-09-17)
+
+маржа: монету сняли с займа (Delist … Borrowable) — все заголовки (10):
+  2022-12-15 Binance Margin Will Delist CHESS, CVP and More Tokens as Borrowable Assets From Cross Margin
+  2022-12-22 Binance Margin Will Delist FET, FORTH, KEY, MBOX, WIN as Borrowable Assets From Cross Margin and AION, BTS From Isolated Margin
+  2022-12-29 Binance Margin Will Delist ATA, DEXE, HIGH, STPT & WAN as Borrowable Assets From Cross Margin
+  2023-01-05 Binance Margin Will Delist AGLD, DATA, ERN, FIO & TROY as Borrowable Assets From Cross Margin and KEY From Isolated Margin
+  2023-01-13 Binance Margin Will Delist FLM, KMD as Borrowable Assets From Cross Margin and COCOS, CREAM, SCRT From Isolated Margin
+  2023-01-19 Binance Margin Will Delist NEXO, POLS, QUICK as Borrowable Assets From Cross Margin and ALCX, NEXO, POLS, TOMO Trading Pairs From Isolated Margin
+  2023-01-27 Binance Margin Will Delist JST, SNM, SUN as Borrowable Assets From Cross Margin
+  2023-02-22 Binance Margin Will Delist LOOM, STRAX as Borrowable Assets From Cross Margin and OG From Isolated Margin
+  2023-03-27 Binance Margin Will Delist NEBL as a Borrowable Asset From Cross Margin and DCR, NEBL, XVG From Isolated Margin
+  2023-06-16 Binance Flexible Loan Has Delisted PEPE as a Borrowable Asset
+
+маржа: лимиты займа — все заголовки (4):
+  2019-07-12 Binance Increases Maximum USDT Borrowing Limit for Binance Margin Accounts
+  2019-09-05 Binance Increases Margin Asset Borrowing Limits and VIP Structure
+  2020-09-17 Binance Futures Increases the Maximum Borrowing Limit of BTC Cross Collateral to 100,000 USDT
+  2023-06-26 Binance Increases Isolated Margin Borrowing Limits for VIP 1-9 Users
