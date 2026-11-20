@@ -3,6 +3,7 @@ s172/bombe.py). t — по кластерам-неделям. Пороги — �
 отсев на B (среднее > 0 и выше всех наблюдений B) → итог на C. Контроль — исходы, перемешанные внутри месяца.
 Запуск из /home/user/mc_data: python3 <repo>/research/s216/bombe.py <исход: s4|s24|s48|s168|l4|l24|l48|l168> [shuffle <seed>]"""
 import datetime
+import os
 import sys
 import time
 
@@ -14,6 +15,8 @@ TA = datetime.datetime(2025, 10, 1, tzinfo=UTC).timestamp(); TB = datetime.datet
 MINN, TOPN, TOP2 = 150, 2000, 300
 OUTC = {"s4", "s24", "s48", "s168", "l4", "l24", "l48", "l168"}
 WEEK = 7 * 86400
+PFX = os.environ.get("PFX", "s216")               # s218 и далее — тот же перебор на своём файле признаков
+SPARSE = os.environ.get("SPARSE") == "1"           # условия для редких признаков (s218, уточнение до перебора)
 
 
 def zclust(N, S, axis=0):
@@ -32,7 +35,7 @@ def week_mat(T, sel):
 
 
 def run(col, shuf=False, seed=0, verbose=True):
-    D = pd.read_pickle("s216_feat.pkl").sort_values(["T", "s"]).reset_index(drop=True)
+    D = pd.read_pickle(f"{PFX}_feat.pkl").sort_values(["T", "s"]).reset_index(drop=True)
     D = D[D[col].notna()].reset_index(drop=True)
     T = D["T"].to_numpy(np.int64)
     seg = np.where(T < TA, 0, np.where(T < TB, 1, 2))
@@ -49,6 +52,18 @@ def run(col, shuf=False, seed=0, verbose=True):
         x = D[f].to_numpy(np.float64)
         xa = x[A & np.isfinite(x)]
         if len(xa) < 300 or np.unique(xa).size < 2:
+            continue
+        u, cnt = np.unique(xa, return_counts=True)
+        if SPARSE and cnt.max() >= 0.8 * len(xa):                # редкий признак (s218): «событие есть» и квинтили событий
+            mode = u[cnt.argmax()]; ev = xa[xa != mode]; up = mode <= ev.min() if len(ev) else True
+            cand = [((x != mode) & np.isfinite(x), f"{f} ≠ {mode:.4g}")]
+            if len(ev) >= 300:
+                for q in sorted(set(np.round(np.quantile(ev, [0.2, 0.4, 0.6, 0.8]), 10))):
+                    m = ((x >= q) if up else (x <= q)) & (x != mode) & np.isfinite(x)
+                    cand.append((m, f"{f} {'≥' if up else '≤'} {q:.4g}"))
+            for m, nm in cand:
+                if m[A].sum() >= MINN and m[A].mean() < 0.95 and not any((m == c).all() for c in conds[-8:]):
+                    conds.append(m); names.append(nm)
             continue
         for q in sorted(set(np.round(np.quantile(xa, [0.2, 0.4, 0.6, 0.8]), 10))):
             lo = (x <= q) & np.isfinite(x); hi = (x >= q) & np.isfinite(x)
@@ -105,7 +120,7 @@ def run(col, shuf=False, seed=0, verbose=True):
     passB = (R.m_B > 0) & (R.m_B > base[1]) & (R.n_B >= 30)
     R["passB"] = passB
     R.attrs["base"] = base
-    out = f"s216_bombe_{col}{'_shuf' + str(seed) if shuf else ''}.pkl"
+    out = f"{PFX}_bombe_{col}{'_shuf' + str(seed) if shuf else ''}.pkl"
     R.to_pickle(out)
     P = R[passB]
     if verbose:

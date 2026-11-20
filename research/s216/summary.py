@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 
+PFX = os.environ.get("PFX", "s216")
 OUTS = ("s4", "s24", "s48", "s168", "l4", "l24", "l48", "l168")
 NAME = {"s4": "шорт 4 ч", "s24": "шорт 24 ч", "s48": "шорт 48 ч", "s168": "шорт 7 сут",
         "l4": "лонг 4 ч", "l24": "лонг 24 ч", "l48": "лонг 48 ч", "l168": "лонг 7 сут"}
@@ -14,13 +15,13 @@ def main():
     pd.set_option("display.width", 250); pd.set_option("display.max_colwidth", 120)
     rows, bests = [], []
     for o in OUTS:
-        p = f"s216_bombe_{o}.pkl"
+        p = f"{PFX}_bombe_{o}.pkl"
         if not os.path.exists(p):
             continue
         R = pd.read_pickle(p); base = R.attrs["base"]; P = R[R.passB]
         sh = []
         for k in range(3):
-            q = f"s216_bombe_{o}_shuf{k}.pkl"
+            q = f"{PFX}_bombe_{o}_shuf{k}.pkl"
             if os.path.exists(q):
                 S = pd.read_pickle(q); SP = S[S.passB]
                 sh.append((len(SP), SP.m_C.mean() if len(SP) else np.nan))

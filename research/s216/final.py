@@ -16,6 +16,7 @@ from features import OUTS  # noqa: E402
 
 DAY, WEEK = 86400, 7 * 86400
 MID = pd.Timestamp("2025-12-20", tz="UTC").timestamp()
+PFX = os.environ.get("PFX", "s216")
 
 
 def mask(D, rule):
@@ -41,7 +42,7 @@ def ct(x, t):
 def simulate(col, rule, D=None):
     import fastbt as FB  # noqa: E402
     side, sl, hold = OUTS[col]
-    D = pd.read_pickle("s216_feat.pkl") if D is None else D
+    D = pd.read_pickle(f"{PFX}_feat.pkl") if D is None else D
     D = D[D[col].notna()].sort_values(["T", "s"])
     X = D[mask(D, rule)]
     rows = []
