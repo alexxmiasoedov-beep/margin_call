@@ -3042,6 +3042,8 @@ WD_STEP, WD_BACK, WD_LATE = 300, 1200, 1800        # запрос — до 300 �
                                                     # вход — не позже 30 мин после закрытия свечи входа
 WD_DEC_BATCH, WD_RPC_S = 20, 30                    # знаков после запятой — до 20 токенов за проход; на один вызов узлов — до 30 с
 WD_ZERO = "0x" + "0" * 40
+WDV_LAM, WDV_K = 0.05, 700                          # 🐋ᵛ: завод ≥ 5% среднесуточного оборота фьючерса за 7 сут (research/s213);
+                                                    # 15-мин свечей в запросе входа — 7 сут + запас на опоздание (вес 5)
 _wd_lab = {"mtime": None, "cex": {}, "bin": []}
 _wd_tmp = {}                                        # список токенов собирается за несколько проходов: CMC, CoinGecko, цены
 
@@ -3296,7 +3298,7 @@ def _wd_event(w, lab, tok, dec, x, cache):
         return log("ЗАВОДЫ", what + f" — событие монеты было {(ts - last[fs]) / 3600:.0f} ч назад, без сделки")
     last[fs] = ts
     te = int(-(-(ts + 900) // 900) * 900)                   # закрытие первой 15-мин свечи не раньше чем через 15 мин
-    w.setdefault("pend", {})[fs] = {"t": ts, "te": te, "share": round(share * 100, 3), "what": what}
+    w.setdefault("pend", {})[fs] = {"t": ts, "te": te, "share": round(share * 100, 3), "n": n, "what": what}   # n — монет (🐋ᵛ)
     log("ЗАВОДЫ", what + f" — событие; вход в {datetime.fromtimestamp(te, timezone.utc):%H:%M} UTC, если фьючерс за сутки "
                          f"сдвинулся не больше чем на ±{WD_CALM * 100:g}%")
 
@@ -3337,9 +3339,34 @@ def _wd_poll(w, lab, tok, now):
     w.pop("rpc_wait", None); w.pop("rpc_next", None)        # узлы ответили — паузы нет
 
 
+def _wd_usd(x):
+    return f"{x / 1e6:.2f} млн $" if x >= 1e6 else f"{x / 1e3:.0f} тыс. $"
+
+
+def _wdv_lambda(k, n, fs):
+    """λ двойника 🐋ᵛ (research/s213): стоимость завода по цене входа (закрытие свечи входа с поправкой на множитель
+    фьючерса) / средний суточный оборот фьючерса за 7 сут до свечи входа (сумма оборота 672 15-мин свечей перед ней / 7).
+    k — закрытые 15-мин свечи, последняя — свеча входа; n — монет в заводе. → (λ, завод в $, оборот в $ за сутки) или None:
+    нет суммы завода, свечей меньше чем на 7 сут (фьючерс моложе — в бэктесте такие события не считались), нет оборота."""
+    try:
+        n = float(n or 0)
+        if n <= 0 or not k:
+            return None
+        lo = int(k[-1][0]) // 1000 - 7 * 86400              # начало окна: открытие свечи входа − 7 сут
+        if int(k[0][0]) // 1000 > lo:
+            return None
+        vbar = sum(float(x[7]) for x in k[:-1] if int(x[0]) // 1000 >= lo) / 7.0
+        usd = n * float(k[-1][4]) / _wd_base(fs)[1]
+    except (IndexError, TypeError, ValueError):
+        return None
+    return (usd / vbar, usd, vbar) if vbar > 0 and usd > 0 else None
+
+
 def _wd_enter(state, w, now):
     """Вход по событиям w["pend"]: в момент закрытия свечи входа (опоздание — до WD_LATE). Фьючерс за 24 ч до входа
-    (закрытие свечи входа к закрытию свечи сутками раньше) ±5% и торгуется больше суток → виртуальный шорт 🐋."""
+    (закрытие свечи входа к закрытию свечи сутками раньше) ±5% и торгуется больше суток → виртуальный шорт 🐋. Двойник 🐋ᵛ
+    входит в ту же сделку, если завод ≥ 5% среднесуточного оборота фьючерса за 7 сут (_wdv_lambda); совместный вход — одной
+    строкой к сообщению 🐋."""
     msgs, pend = [], w.setdefault("pend", {})
     for fs, p in sorted(pend.items(), key=lambda kv: kv[1]["te"]):
         if now < p["te"]:
@@ -3349,7 +3376,7 @@ def _wd_enter(state, w, now):
             log("ЗАВОДЫ", p["what"] + f" — вход опоздал больше чем на {WD_LATE // 60} мин (бот не работал или Binance не отдал "
                                       "свечи), сделки нет")
             continue
-        k = _closed_15m(fs, p["te"], 100)
+        k = _closed_15m(fs, p["te"], WDV_K)                  # 7 сут свечей — для 🐋ᵛ, последние сутки — для 🐋
         if not k or len(k) < 97 or int(k[-97][0]) // 1000 + 900 != p["te"] - 86400:
             continue                                         # Binance не отдал свечи — повтор в следующем проходе
         c, c0 = float(k[-1][4]), float(k[-97][4])
@@ -3364,15 +3391,26 @@ def _wd_enter(state, w, now):
             log("ЗАВОДЫ", p["what"] + f" — фьючерс запущен {(p['te'] - on) / 3600:.0f} ч назад, моложе суток, сделки нет")
             continue
         note = f"завод на Binance: {p['what']}; фьючерс за сутки {r24 * 100:+.1f}%; выход через 24 ч"
-        was = _virt_is_open(state, "virtual_WD", fs)
+        lam = _wdv_lambda(k, p.get("n"), fs)
+        big = lam is not None and lam[0] >= WDV_LAM
+        vnote = (f"завод {_wd_usd(lam[1])} — {lam[0] * 100:.1f}% среднесуточного оборота фьючерса за 7 сут ({_wd_usd(lam[2])})"
+                 if lam else "оборот фьючерса за 7 сут не посчитан (фьючерс моложе 7 сут или нет суммы завода)")
+        was = _virt_is_open(state, "virtual_WD", fs), _virt_is_open(state, "virtual_WDV", fs)
         m = trader.virt_open(state, "virtual_WD", fs, "WD", note)
-        opened = not was and _virt_is_open(state, "virtual_WD", fs)
-        if m or was:
-            del pend[fs]
-            log("ЗАВОДЫ", fs, note + (" → шорт 🐋" if opened else " — сделка не открыта (уже есть или мало виртуального баланса)"))
-            if m:
-                msgs.append(m)
-        # иначе Binance не отдал цену — повтор в следующем проходе, до WD_LATE
+        if not (m or was[0]):
+            continue                                         # Binance не отдал цену — повтор в следующем проходе, до WD_LATE
+        mv = trader.virt_open(state, "virtual_WDV", fs, "WD", f"{note}; {vnote}", price=c) if big else None
+        opened = not was[0] and _virt_is_open(state, "virtual_WD", fs)
+        opened_v = not was[1] and _virt_is_open(state, "virtual_WDV", fs)
+        del pend[fs]
+        log("ЗАВОДЫ", fs, note + (" → шорт 🐋" if opened else " — сделка не открыта (уже есть или мало виртуального баланса)")
+            + f"; {vnote}" + (" → шорт 🐋ᵛ" if opened_v else " — 🐋ᵛ не открыта (уже есть или мало виртуального баланса)" if big
+                              else f" — 🐋ᵛ без входа (порог {WDV_LAM * 100:g}%)"))
+        if opened and (opened_v or not big):                 # обычно журналы решают вместе — одной строкой
+            msgs.append(m + (f"\n🐋ᵛ тот же шорт: {vnote}" if opened_v
+                             else f"\n🐋ᵛ без входа: {vnote}" + (f" — меньше {WDV_LAM * 100:g}%" if lam else "")))
+        else:
+            msgs.extend(x for x in (m, mv) if x)
     return msgs
 
 
@@ -3383,8 +3421,9 @@ def whale_deposit_rule(state):
     не адрес биржи и не чеканка. Перевод ≥ 0,5% монет в обращении (CoinMarketCap) — событие, если у монеты не было события
     48 ч (_wd_event). Вход — на закрытии первой 15-мин свечи, закрывшейся не раньше чем через 15 мин после блока (опоздание —
     до 30 мин), если фьючерс за 24 ч до входа сдвинулся не больше чем на ±5% и торгуется больше суток → виртуальный шорт на
-    24 ч без тейка, стоп +25%, плечо ×1 (_wd_enter). Список токенов — раз в сутки (_wd_refresh). Нет файла меток — правило
-    молчит. Строки журнала службы — «ЗАВОДЫ». Сообщения для чата."""
+    24 ч без тейка, стоп +25%, плечо ×1 (_wd_enter). Двойник 🐋ᵛ (research/s213, по «да» владельца 20.11.2026) — те же
+    входы, только если завод по цене входа ≥ 5% среднесуточного оборота фьючерса за 7 сут до входа. Список токенов — раз
+    в сутки (_wd_refresh). Нет файла меток — правило молчит. Строки журнала службы — «ЗАВОДЫ». Сообщения для чата."""
     now = time.time(); w = state.setdefault("wd", {})
     lab = _wd_labels()
     if not lab:
