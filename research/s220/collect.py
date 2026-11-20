@@ -21,7 +21,9 @@
 import json
 import os
 import sys
+import threading
 import time
+import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
@@ -30,23 +32,35 @@ UA = {"User-Agent": "research-script/1.0", "Content-Type": "application/json"}
 PAYER = "5JPAWfhLNsYVk3tPpD3gHvpHbvaXDbpUpy1wUfQVYRS2"            # плательщик комиссии сметаний Binance
 HOT = "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9"               # Binance 1 — проходной счёт
 STEP = 100
+RATE = float(os.environ.get("RPC_RATE", "3"))        # запросов в секунду на все потоки: на 6–9/с узел отвечает 429
 _n = [0]
+_lock = threading.Lock()
+_next = [0.0]
 
 
-def rpc(method, params, tries=6):
+def _wait():
+    with _lock:
+        now = time.time(); t = max(now, _next[0]); _next[0] = t + 1.0 / RATE
+    if t > now:
+        time.sleep(t - now)
+
+
+def rpc(method, params, tries=8):
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     last = None
     for i in range(tries):
         url = RPC[(_n[0] + i) % len(RPC)]; _n[0] += 1
+        _wait()
         try:
             with urllib.request.urlopen(urllib.request.Request(url, data=body, headers=UA), timeout=60) as r:
                 j = json.loads(r.read())
             if "error" in j:
                 raise RuntimeError(j["error"])
-            time.sleep(0.25)
             return j["result"]
+        except urllib.error.HTTPError as e:
+            last = e; time.sleep(15 * (i + 1) if e.code == 429 else 2 * (i + 1))
         except Exception as e:
-            last = e; time.sleep(1.5 * (i + 1))
+            last = e; time.sleep(2 * (i + 1))
     raise RuntimeError(f"{method}: {last}")
 
 
