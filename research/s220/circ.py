@@ -15,7 +15,8 @@ for p in ("s171", "s187"):
     sys.path.insert(0, os.path.join(HERE, "..", p))
 import k3  # noqa: E402  (hist(), кэш s171/cmc)
 
-SKIP = {"TTWO", "MU", "SPCX", "ANTHROPIC", "META", "ORDI", "ASR"}       # акции, индексы, не родные Solana
+SKIP = {"TTWO", "MU", "SPCX", "ANTHROPIC", "META", "ORDI", "ASR", "CAT"}   # акции (CAT — Caterpillar), индексы, не родные Solana
+OVERRIDE = {"HOME": 36133}            # Defi App: у CMC основная сеть BNB, по цене совпадала чужая OtterHome (Arbitrum)
 
 
 def main():
@@ -35,7 +36,13 @@ def main():
         px = pd.Series(a["c"][m].astype(float) / mult,
                        index=pd.to_datetime(a["t"][m].astype(np.int64) // 86400 * 86400, unit="s").strftime("%Y-%m-%d"))
         best = None
-        for c in by.get(coin, []):
+        same = [c for c in by.get(coin, []) if isinstance(c.get("platform"), dict)
+                and c["platform"].get("token_address") == r["mint"]]          # сначала — монета CMC с тем же адресом в Solana
+        if fs in OVERRIDE:
+            same = [{"id": OVERRIDE[fs]}]
+        if same:
+            best = (same[0]["id"], 1.0, k3.hist(same[0]["id"]))
+        for c in ([] if same else by.get(coin, [])):
             h = k3.hist(c["id"])
             q = pd.Series({d: cl for d, _, cl, _ in h if cl}, dtype=float)
             j = q.index.intersection(px.index)
