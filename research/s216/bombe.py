@@ -39,9 +39,10 @@ def week_mat(T, sel):
     return W, inv, len(u)
 
 
-def build(D, A):
+def build(D, A, specs=None):
     """Условия «признак ≤ / ≥ порог» (квинтили на A) — в том же порядке, что в переборе. → (C bool [условие × наблюдение],
-    имена, признаки). Вынесено из run() без изменений для s223 (комитет правил)."""
+    имена, признаки). Вынесено из run() без изменений для s223 (комитет правил). specs — список: если передан, в него
+    пишутся точные описания условий (признак, знак, порог) для переноса на новые данные (s224b)."""
     FE = [c for c in D.columns if c not in OUTC | {"s", "T"} and not c.startswith(("y_", "u_"))
           and pd.api.types.is_numeric_dtype(D[c])]
     conds, names = [], []
@@ -61,12 +62,16 @@ def build(D, A):
             for m, nm in cand:
                 if m[A].sum() >= MINN and m[A].mean() < 0.95 and not any((m == c).all() for c in conds[-8:]):
                     conds.append(m); names.append(nm)
+                    if specs is not None:
+                        specs.append(("sparse", f, mode, nm))
             continue
         for q in sorted(set(np.round(np.quantile(xa, [0.2, 0.4, 0.6, 0.8]), 10))):
             lo = (x <= q) & np.isfinite(x); hi = (x >= q) & np.isfinite(x)
             for m, nm in ((lo, f"{f} ≤ {q:.4g}"), (hi, f"{f} ≥ {q:.4g}")):
                 if 0.05 < m[A].mean() < 0.95 and not any((m == c).all() for c in conds[-8:]):
                     conds.append(m); names.append(nm)
+                    if specs is not None:
+                        specs.append((f, "le" if m is lo else "ge", float(q)))
     return np.array(conds, dtype=bool), names, FE   # bool: на s219 (570 тыс. наблюдений) float32 не помещался
 
 
