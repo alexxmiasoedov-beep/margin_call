@@ -5,7 +5,9 @@
 - займ вырос (ev = 2) — займ за 24 ч ≥ 1,5 × займа 4 ч назад и ≥ 50 тыс. $, первый час такого роста.
 Признаки — строки s224h_feat.pkl (37 признаков s216 на часовой сетке; там же шорт с хеджем y_hs* и выходы u_e_hs*).
 Доход шорта без хеджа — s187/fastbt.trades, вход на закрытии часа события: s4 (стоп 10%), s24 (25%), s48 (25%),
-s168 (50%), выходы — u_x_<срок>. Итог — s226_ev.pkl. Запуск из /home/user/mc_data: python3 <repo>/research/s226/events.py"""
+s168 (50%), выходы — u_x_<срок>. Итог — s226_ev.pkl. Запуск из /home/user/mc_data: python3 <repo>/research/s226/events.py
+Окружение (свежий отрезок D, s224b): PANEL, FEAT, OUT — панель, признаки и итог (по умолчанию s21/panel.pkl, s224h_feat.pkl,
+s226_ev.pkl); свечи и фандинг — MC_K и MC_F."""
 import os
 import sys
 
@@ -21,7 +23,7 @@ OUTS = {"s4": (0.10, 4), "s24": (0.25, 24), "s48": (0.25, 48), "s168": (0.50, 16
 
 
 def events():
-    P = pd.read_pickle("s21/panel.pkl").sort_values(["s", "T"]).reset_index(drop=True)
+    P = pd.read_pickle(os.environ.get("PANEL", "s21/panel.pkl")).sort_values(["s", "T"]).reset_index(drop=True)
     gap = P.groupby("s")["T"].diff()
     new = gap.isna() | (gap > 24 * H)
     acc = P.in4 & (P.bor >= 1.5 * P.bor4) & (P.bor >= 50e3)
@@ -34,7 +36,7 @@ def events():
 
 def main():
     E = events()
-    F = pd.read_pickle("s224h_feat.pkl")
+    F = pd.read_pickle(os.environ.get("FEAT", "s224h_feat.pkl"))
     X = E.merge(F, on=["s", "T"], how="left").sort_values(["T", "s"]).reset_index(drop=True)
     for k in OUTS:
         X[k] = np.nan; X["u_x_" + k] = np.nan
@@ -54,7 +56,7 @@ def main():
             okt, net, _, _, tend = FB.trades(s, I[ok], sl, hold, -1)
             X.loc[pos[ok], k] = np.where(okt, net, np.nan)
             X.loc[pos[ok], "u_x_" + k] = np.where(okt, tend, np.nan)
-    X.to_pickle("s226_ev.pkl")
+    X.to_pickle(os.environ.get("OUT", "s226_ev.pkl"))
     print("событий", len(X), "| новый займ", int((X.ev == 1).sum()), "| займ вырос", int((X.ev == 2).sum()))
     print("доход посчитан:", {k: int(X[k].notna().sum()) for k in OUTS})
 
