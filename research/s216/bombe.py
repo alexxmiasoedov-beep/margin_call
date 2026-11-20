@@ -39,20 +39,11 @@ def week_mat(T, sel):
     return W, inv, len(u)
 
 
-def run(col, shuf=False, seed=0, verbose=True):
-    D = pd.read_pickle(f"{PFX}_feat.pkl").sort_values(["T", "s"]).reset_index(drop=True)
-    D = D[D[col].notna()].reset_index(drop=True)
-    T = D["T"].to_numpy(np.int64)
-    seg = np.where(T < TA, 0, np.where(T < TB, 1, 2))
-    y = D[col].to_numpy(np.float64).copy()
-    if shuf:
-        rng = np.random.default_rng(seed)
-        mon = pd.to_datetime(D["T"], unit="s").dt.to_period("M").astype(str).to_numpy()
-        for m in np.unique(mon):
-            ix = np.flatnonzero(mon == m); y[ix] = y[rng.permutation(ix)]
+def build(D, A):
+    """Условия «признак ≤ / ≥ порог» (квинтили на A) — в том же порядке, что в переборе. → (C bool [условие × наблюдение],
+    имена, признаки). Вынесено из run() без изменений для s223 (комитет правил)."""
     FE = [c for c in D.columns if c not in OUTC | {"s", "T"} and not c.startswith(("y_", "u_"))
           and pd.api.types.is_numeric_dtype(D[c])]
-    A = seg == 0
     conds, names = [], []
     for f in FE:
         x = D[f].to_numpy(np.float64)
@@ -76,7 +67,23 @@ def run(col, shuf=False, seed=0, verbose=True):
             for m, nm in ((lo, f"{f} ≤ {q:.4g}"), (hi, f"{f} ≥ {q:.4g}")):
                 if 0.05 < m[A].mean() < 0.95 and not any((m == c).all() for c in conds[-8:]):
                     conds.append(m); names.append(nm)
-    C = np.array(conds, dtype=bool); nC = len(C)                 # bool: на s219 (570 тыс. наблюдений) float32 не помещался
+    return np.array(conds, dtype=bool), names, FE   # bool: на s219 (570 тыс. наблюдений) float32 не помещался
+
+
+def run(col, shuf=False, seed=0, verbose=True):
+    D = pd.read_pickle(f"{PFX}_feat.pkl").sort_values(["T", "s"]).reset_index(drop=True)
+    D = D[D[col].notna()].reset_index(drop=True)
+    T = D["T"].to_numpy(np.int64)
+    seg = np.where(T < TA, 0, np.where(T < TB, 1, 2))
+    y = D[col].to_numpy(np.float64).copy()
+    if shuf:
+        rng = np.random.default_rng(seed)
+        mon = pd.to_datetime(D["T"], unit="s").dt.to_period("M").astype(str).to_numpy()
+        for m in np.unique(mon):
+            ix = np.flatnonzero(mon == m); y[ix] = y[rng.permutation(ix)]
+    A = seg == 0
+    C, names, FE = build(D, A)
+    nC = len(C)
     Y = y.astype(np.float32)
     t0 = time.time()
     CA = C[:, A].astype(np.float32); YA = Y[A]
@@ -124,6 +131,7 @@ def run(col, shuf=False, seed=0, verbose=True):
     R = pd.DataFrame({"правило": [" & ".join(names[i] for i in ix) for _, ix in TOP], "z_A": [z for z, _ in TOP],
                       "n_A": res[0][0], "m_A": res[0][1], "n_B": res[1][0], "m_B": res[1][1], "z_B": res[1][2],
                       "n_C": res[2][0], "m_C": res[2][1], "z_C": res[2][2]})
+    R["ix"] = [list(map(int, ix)) for _, ix in TOP]                 # s223: номера условий правила (build)
     base = {S: float(Y[seg == S].mean()) for S in (0, 1, 2)}
     passB = (R.m_B > 0) & (R.m_B > base[1]) & (R.n_B >= 30) & (R.z_B >= ZB)
     R["passB"] = passB
