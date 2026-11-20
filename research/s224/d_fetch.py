@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
@@ -50,7 +51,8 @@ def web(path):
     for i in range(6):
         _wait()
         try:
-            with urllib.request.urlopen(urllib.request.Request(WEB + path, headers=UA), timeout=40) as r:
+            url = WEB + urllib.parse.quote(path, safe="/?&=:%")      # фьючерсы с иероглифами (币安人生) — %-кодировка
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=40) as r:
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             if e.code in (418, 429):
@@ -88,7 +90,10 @@ def klines():
             return s, -1
         rows, st = [], t0
         while st < END:
-            r = web(f"/fapi/v1/klines?symbol={s}USDT&interval=15m&startTime={st * 1000}&endTime={(END - 1) * 1000}&limit=1500")
+            try:
+                r = web(f"/fapi/v1/klines?symbol={s}USDT&interval=15m&startTime={st * 1000}&endTime={(END - 1) * 1000}&limit=1500")
+            except RuntimeError as e:
+                print("  сбой:", s, e, flush=True); return s, None       # файл не пишем — повтор при следующем запуске
             if not r:
                 break
             rows += [[k[0] // 1000, float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[7]), float(k[10]),
@@ -120,7 +125,10 @@ def funding():
             return
         rows, st = [], f0
         while st < END:
-            r = web(f"/fapi/v1/fundingRate?symbol={s}USDT&startTime={st * 1000}&endTime={(END - 1) * 1000}&limit=1000")
+            try:
+                r = web(f"/fapi/v1/fundingRate?symbol={s}USDT&startTime={st * 1000}&endTime={(END - 1) * 1000}&limit=1000")
+            except RuntimeError as e:
+                print("  сбой:", s, e, flush=True); return
             if not r:
                 break
             rows += [(int(x["fundingTime"]), x["fundingRate"]) for x in r]
