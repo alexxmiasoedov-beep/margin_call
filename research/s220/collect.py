@@ -33,6 +33,7 @@ PAYER = "5JPAWfhLNsYVk3tPpD3gHvpHbvaXDbpUpy1wUfQVYRS2"            # плател
 HOT = "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9"               # Binance 1 — проходной счёт
 STEP = 100
 RATE = float(os.environ.get("RPC_RATE", "3"))        # запросов в секунду на все потоки: на 6–9/с узел отвечает 429
+BACK429 = float(os.environ.get("RPC_429", "15"))     # пауза после 429 × номер попытки, с (WIF: узел режет getTransaction — 3 с)
 _n = [0]
 _lock = threading.Lock()
 _next = [0.0]
@@ -58,7 +59,7 @@ def rpc(method, params, tries=8):
                 raise RuntimeError(j["error"])
             return j["result"]
         except urllib.error.HTTPError as e:
-            last = e; time.sleep(15 * (i + 1) if e.code == 429 else 2 * (i + 1))
+            last = e; time.sleep(BACK429 * (i + 1) if e.code == 429 else 2 * (i + 1))
         except Exception as e:
             last = e; time.sleep(2 * (i + 1))
     raise RuntimeError(f"{method}: {last}")
@@ -90,9 +91,17 @@ def signatures(acc, t0, t1):
     return out
 
 
+FAILED = [0]                                                       # операции, которые узел так и не отдал (пропуск точки)
+
+
 def tx_info(sig, mint, hot_acc):
-    """Остаток проходного счёта после операции, изменения по владельцам, подписанты."""
-    tx = rpc("getTransaction", [sig, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}])
+    """Остаток проходного счёта после операции, изменения по владельцам, подписанты. None — узел не отдал операцию
+    (после всех попыток): точка выборки пропускается, а не обрывает сбор (WIF, 20.11 — узел режет getTransaction)."""
+    try:
+        tx = rpc("getTransaction", [sig, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}], tries=12)
+    except RuntimeError:
+        FAILED[0] += 1
+        return None
     if not tx:
         return None
     keys = tx["transaction"]["message"]["accountKeys"]
@@ -186,8 +195,8 @@ def main():
     os.makedirs("events", exist_ok=True)
     name = f"events/{fs}_all.json" if allmode else f"events/{fs}_{d0}_{d1}{'_full' if full else ''}.json"
     json.dump({"fs": fs, "mint": mint, "d0": d0, "d1": d1, "thr": thr, "n_sigs": len(sigs), "calls": calls["tx"],
-               "full": full, "step": None if full else step, "events": events}, open(name, "w"))
-    print(f"{fs}: событий ≥ {thr:,.0f}: {len(events)}; запросов getTransaction {calls['tx']}", flush=True)
+               "failed": FAILED[0], "full": full, "step": None if full else step, "events": events}, open(name, "w"))
+    print(f"{fs}: событий ≥ {thr:,.0f}: {len(events)}; запросов getTransaction {calls['tx']}, не отдано {FAILED[0]}", flush=True)
     for e in events[:20]:
         print("  ", time.strftime("%Y-%m-%d %H:%M", time.gmtime(e[0])), f"{e[1]:,.0f}", (e[2] or "")[:8])
 
