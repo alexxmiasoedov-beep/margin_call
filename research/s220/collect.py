@@ -99,6 +99,7 @@ def tx_info(sig, mint, hot_acc):
 def main():
     fs, mint, d0, d1, thr = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], float(sys.argv[5])
     full = len(sys.argv) > 6 and sys.argv[6] == "full"
+    allmode = len(sys.argv) > 6 and sys.argv[6] == "all"             # весь период: шаг выборки по числу подписей
     t0, t1 = ts(d0), ts(d1)
     bina = [ln.split("\t")[0] for ln in open("cex_solana_labels.tsv") if ln.split("\t")[1] == "Binance"]
     accs = {}
@@ -110,6 +111,7 @@ def main():
         print(fs, "нет счёта у Binance 1"); return
     sigs = signatures(hot_acc, t0, t1)[::-1]                          # от старых к новым
     print(f"{fs}: подписей проходного счёта {len(sigs)} за {d0}…{d1}", flush=True)
+    step = max(STEP, len(sigs) // 1500) if allmode else STEP
     calls = {"tx": 0}
 
     def info(i):
@@ -131,11 +133,15 @@ def main():
             if a == hot_acc:
                 continue
             for s in signatures(a, t0, t1):
-                if s[0] in pos:
-                    r = tx_info(s[0], mint, hot_acc); calls["tx"] += 1
-                    if r and r["bal"] is not None:
-                        known[pos[s[0]]] = r["bal"]
-        idx = list(range(0, len(sigs), STEP)) + [len(sigs) - 1]
+                r = tx_info(s[0], mint, hot_acc); calls["tx"] += 1
+                if not r:
+                    continue
+                if s[0] in pos and r["bal"] is not None:
+                    known[pos[s[0]]] = r["bal"]
+                if r["signers"] and r["signers"][0] == PAYER and r["delta"].get(o, 0) >= thr:   # сметание прямо на склад
+                    dep = next((x for x, d in r["delta"].items() if d < 0), None)
+                    events.append((s[2], r["delta"][o], dep, s[0]))
+        idx = list(range(0, len(sigs), step)) + [len(sigs) - 1]
         with ThreadPoolExecutor(3) as ex:
             for i, r in zip(idx, ex.map(info, idx)):
                 if r and r["bal"] is not None:
@@ -164,8 +170,9 @@ def main():
                 bisect(a, b)
     events.sort()
     os.makedirs("events", exist_ok=True)
+    name = f"events/{fs}_all.json" if allmode else f"events/{fs}_{d0}_{d1}{'_full' if full else ''}.json"
     json.dump({"fs": fs, "mint": mint, "d0": d0, "d1": d1, "thr": thr, "n_sigs": len(sigs), "calls": calls["tx"],
-               "full": full, "events": events}, open(f"events/{fs}_{d0}_{d1}{'_full' if full else ''}.json", "w"))
+               "full": full, "step": None if full else step, "events": events}, open(name, "w"))
     print(f"{fs}: событий ≥ {thr:,.0f}: {len(events)}; запросов getTransaction {calls['tx']}", flush=True)
     for e in events[:20]:
         print("  ", time.strftime("%Y-%m-%d %H:%M", time.gmtime(e[0])), f"{e[1]:,.0f}", (e[2] or "")[:8])
