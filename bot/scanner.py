@@ -3042,7 +3042,10 @@ WD_STEP, WD_BACK, WD_LATE = 300, 1200, 1800        # запрос — до 300 �
                                                     # вход — не позже 30 мин после закрытия свечи входа
 WD_DEC_BATCH, WD_RPC_S = 20, 30                    # знаков после запятой — до 20 токенов за проход; на один вызов узлов — до 30 с
 WD_ZERO = "0x" + "0" * 40
-WDV_LAM, WDV_K = 0.05, 700                          # 🐋ᵛ: завод ≥ 5% среднесуточного оборота фьючерса за 7 сут (research/s213);
+WD_LOW, WD_LOW_BLK, WD_LOW_RE = 500, 5000, 7 * 86400   # сторож: за сутки UTC (просмотрено ≥ 5000 блоков) меньше 500 переводов
+                                                    # токенов списка на адреса Binance (обычно 5–6 тыс.) — похоже, Binance сменил
+                                                    # адрес сметания (так было в 11.2026, research/s242); сообщение — раз в 7 сут
+WDV_LAM, WDV_K = 0.05, 700                         # 🐋ᵛ: завод ≥ 5% среднесуточного оборота фьючерса за 7 сут (research/s213);
                                                     # 15-мин свечей в запросе входа — 7 сут + запас на опоздание (вес 5)
 _wd_lab = {"mtime": None, "cex": {}, "bin": []}
 _wd_tmp = {}                                        # список токенов собирается за несколько проходов: CMC, CoinGecko, цены
@@ -3332,11 +3335,57 @@ def _wd_poll(w, lab, tok, now):
             logs.sort(key=lambda x: (int(x["blockNumber"], 16), int(x["logIndex"], 16)))
         except (KeyError, TypeError, ValueError):
             pass
+        n_dep = 0
         for x in logs:
             if isinstance(x, dict) and not x.get("removed"):
                 _wd_event(w, lab, tok, dec, x, cache)
+                n_dep += _wd_is_dep(lab, x)
+        _wd_count(w, now, n_dep, to - frm + 1)
         w["block"] = to; frm = to + 1
     w.pop("rpc_wait", None); w.pop("rpc_next", None)        # узлы ответили — паузы нет
+
+
+def _wd_is_dep(lab, x):
+    """1 — перевод на адрес Binance похож на пополнение: отправитель не биржа и не чеканка, сумма больше нуля
+    (переводы на ноль — от «отравителей адресов»)."""
+    try:
+        frm = "0x" + str(x["topics"][1])[-40:].lower()
+        data = str(x.get("data") or "0x")
+        amt = int(data, 16) if data not in ("0x", "") else 0
+    except (KeyError, IndexError, TypeError, ValueError):
+        return 0
+    return int(amt > 0 and frm != WD_ZERO and frm not in lab["cex"])
+
+
+def _wd_count(w, now, n, blk):
+    """Счётчик сторожа за сутки UTC (по времени прохода): переводы, похожие на пополнения, и просмотренные блоки.
+    Прошлые сутки уходят в w["cnt_prev"] — их разбирает _wd_watch."""
+    d = datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m-%d")
+    c = w.get("cnt")
+    if not isinstance(c, dict) or c.get("d") != d:
+        if isinstance(c, dict) and c.get("d"):
+            w["cnt_prev"] = c
+        c = w["cnt"] = {"d": d, "n": 0, "blk": 0}
+    c["n"] += n; c["blk"] += blk
+
+
+def _wd_watch(w, now):
+    """Сторож меток (research/s242): раз в сутки — строка «ЗАВОДЫ» со счётом прошлых суток. Если блоков просмотрено
+    ≥ WD_LOW_BLK, а переводов на адреса Binance меньше WD_LOW, — Binance, похоже, сменил адрес сметания: строка
+    и сообщение в чат (не чаще раза в WD_LOW_RE), потому что 🐋 и 🐋ᵛ тогда не видят заводов."""
+    c = w.pop("cnt_prev", None)
+    if not isinstance(c, dict):
+        return []
+    n, blk = int(c.get("n", 0)), int(c.get("blk", 0))
+    low = blk >= WD_LOW_BLK and n < WD_LOW
+    log("ЗАВОДЫ", f"за {c.get('d')}: переводов токенов списка на адреса Binance {n}, блоков просмотрено {blk}"
+                  + (" — мало: похоже, Binance сменил адрес сметания, нужно обновить метки" if low else ""))
+    if not low or now - w.get("low_said", 0) < WD_LOW_RE:
+        return []
+    w["low_said"] = now
+    return [f"⚠️ 🐋 За {c.get('d')} на адреса Binance из меток пришло {n} переводов токенов списка (обычно 5–6 тыс. в сутки). "
+            f"Похоже, Binance сменил адрес, куда сметает пополнения: журналы 🐋 и 🐋ᵛ сейчас не видят заводов, пока не "
+            f"обновлены метки bot/cex_labels.tsv."]
 
 
 def _wd_usd(x):
@@ -3423,7 +3472,9 @@ def whale_deposit_rule(state):
     до 30 мин), если фьючерс за 24 ч до входа сдвинулся не больше чем на ±5% и торгуется больше суток → виртуальный шорт на
     24 ч без тейка, стоп +25%, плечо ×1 (_wd_enter). Двойник 🐋ᵛ (research/s213, по «да» владельца 20.11.2026) — те же
     входы, только если завод по цене входа ≥ 5% среднесуточного оборота фьючерса за 7 сут до входа. Список токенов — раз
-    в сутки (_wd_refresh). Нет файла меток — правило молчит. Строки журнала службы — «ЗАВОДЫ». Сообщения для чата."""
+    в сутки (_wd_refresh). Нет файла меток — правило молчит. Раз в сутки — сторож меток (_wd_watch, research/s242): если
+    переводов на адреса Binance стало мало, Binance, похоже, сменил адрес сметания — строка и сообщение в чат.
+    Строки журнала службы — «ЗАВОДЫ». Сообщения для чата."""
     now = time.time(); w = state.setdefault("wd", {})
     lab = _wd_labels()
     if not lab:
@@ -3442,6 +3493,7 @@ def whale_deposit_rule(state):
     if rpc_ok and now - w.get("poll_t", 0) >= WD_EVERY:
         w["poll_t"] = now
         _wd_poll(w, lab, tok, now)
+    msgs += _wd_watch(w, now)
     last = w.setdefault("last", {})
     for k in [k for k, ts in last.items() if ts < now - 3 * 86400]:
         del last[k]

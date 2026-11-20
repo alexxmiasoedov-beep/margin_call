@@ -1,5 +1,7 @@
 # Метки адресов бирж в сетях EVM для журнала 🐋 (scanner.whale_deposit_rule): адрес<TAB>биржа<TAB>название.
 # Снимок 18.11.2026: Dune spellbook cex_evms_addresses и метки бирж Blockscout (research/s160, s160/sets.json).
+# 20.11.2026: новый горячий кошелёк Binance — с 01–05.11.2026 сюда сметаются пополнения в Ethereum (research/s242).
+0x690c3eebf6ee237f00fc96f9766282f096c191cc	Binance	Binance (горячий с 11.2026, куда сметаются пополнения; research/s242)
 0x1f4eed7e193165a62d2aaea4710232807006af38	1xBet	1xBet 9
 0x41acf0e6ec627bdb3747b9ed6799c2b469f77c5f	1xBet	1xBet 13
 0x5c89724967d76a4f966b013140355789093f6c7d	1xBet	1xBet 3
