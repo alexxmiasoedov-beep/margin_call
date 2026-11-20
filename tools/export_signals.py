@@ -23,8 +23,8 @@ SAFE = ("CHANNEL", "MIN_RUN_H", "GAP_MIN", "PUMP_MIN", "PUMP_MAX", "COOLDOWN_H",
 JOURNALS = (("virtual", "📓"), ("virtual_fund", "📗"), ("virtual_1525", "📘"), ("virtual_1520", "📕"), ("virtual_620", "📙"))
 OWN = (("virtual_D", "🟦"), ("virtual_P", "🟧"), ("virtual_KR", "🇰🇷"), ("virtual_KRF", "🇰🇷ᶠ"), ("virtual_KRS", "🇰🇷⭐"), ("virtual_TR", "🇹🇷"), ("virtual_L", "🟩"), ("virtual_SP", "🛒"),
        ("virtual_RP", "↩️"), ("virtual_RP7", "↩️⁷"), ("virtual_RW", "💸"), ("virtual_BF", "🏦"), ("virtual_BF3", "🏦³"), ("virtual_BFM", "🏦ᵐ"), ("virtual_NT", "🆕"), ("virtual_AN", "📢"),
-       ("virtual_KL", "🇰🇷🆕"), ("virtual_KT", "🔝"), ("virtual_RT", "👀"), ("virtual_O9", "⏰"), ("virtual_BL", "🅱️"), ("virtual_FE", "🌊"), ("virtual_UL", "🔓"), ("virtual_IU", "🔑"), ("virtual_IUA", "🔑⁺"), ("virtual_WD", "🐋"), ("virtual_WDV", "🐋ᵛ"), ("virtual_1525C", "📘ᶜ"))
-LOG_PAT = re.compile(r"СИГНАЛ|ЗАВОДЫ|СПОТ-ПАМП|ВНИМАНИЕ РОЗНИЦЫ|9 УТРА|ТИКИ|ПРЕМИЯ|ВЫГРУЗКА|НОВОЕ ПРАВИЛО|ЛИСТИНГ BINANCE|ОТЛИВ|РАЗЛОК|КОРЕЯ|ТУРЦИЯ|РОЗНИЦА|ОТДАЧА|ФАКТОР ЗАЙМА|СТАВКИ|ПУЛ|НОВЫЙ ТОКЕН|ОБЪЯВЛЕНИЕ|UPBIT|DNS|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
+       ("virtual_KL", "🇰🇷🆕"), ("virtual_KT", "🔝"), ("virtual_RT", "👀"), ("virtual_O9", "⏰"), ("virtual_BL", "🅱️"), ("virtual_FE", "🌊"), ("virtual_UL", "🔓"), ("virtual_IU", "🔑"), ("virtual_IUA", "🔑⁺"), ("virtual_WD", "🐋"), ("virtual_WDV", "🐋ᵛ"), ("virtual_C4", "🗳"), ("virtual_1525C", "📘ᶜ"))
+LOG_PAT = re.compile(r"СИГНАЛ|ЗАВОДЫ|КОМИТЕТ|СПОТ-ПАМП|ВНИМАНИЕ РОЗНИЦЫ|9 УТРА|ТИКИ|ПРЕМИЯ|ВЫГРУЗКА|НОВОЕ ПРАВИЛО|ЛИСТИНГ BINANCE|ОТЛИВ|РАЗЛОК|КОРЕЯ|ТУРЦИЯ|РОЗНИЦА|ОТДАЧА|ФАКТОР ЗАЙМА|СТАВКИ|ПУЛ|НОВЫЙ ТОКЕН|ОБЪЯВЛЕНИЕ|UPBIT|DNS|СМЕНА ИНТЕРВАЛА|РЕАЛЬНАЯ|БУМАЖНАЯ|⏭|пропуск|не открыта|закрыт шорт|ошибка|проход занял|"
                      r"РЕСУРСЫ|СИСТЕМА|telegram fail|telegram getUpdates|канал недоступен|Binance OK|торговля выключена|Убраны|Started|Stopped|Stopping|Main process exited|Scheduled restart")
 out = []
 SECRET = re.compile(r"\d{8,10}:[A-Za-z0-9_-]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|(?<=://)[^/@\s]+(?=@)")   # токены бота, GitHub, логин в URL
@@ -143,7 +143,9 @@ p("# ВИРТУАЛЬНЫЕ ЖУРНАЛЫ")
 for key, icon in JOURNALS + OWN:
     v = state.get(key) or {}
     p(f"{icon} с {fmt(v.get('started'))}, баланс {v.get('balance', 20):.2f}"
-      + (f" (с хеджем {v['balance_h']:.2f})" if "balance_h" in v else "") + f" с {fmt(v.get('bal_since'))}, сделок {len(v.get('trades', []))}")
+      + (f" (с хеджем {v['balance_h']:.2f})" if "balance_h" in v else "")
+      + (f" (с хеджем корзиной альтов {v['balance_a']:.2f})" if "balance_a" in v else "")
+      + f" с {fmt(v.get('bal_since'))}, сделок {len(v.get('trades', []))}")
 groups = {}
 for key, icon in JOURNALS:
     for t in (state.get(key) or {}).get("trades", []):
@@ -166,7 +168,8 @@ for (op, sym), d in sorted(groups.items()):
 for key, icon in OWN:
     for t in sorted((state.get(key) or {}).get("trades", []), key=lambda t: t["opened"]):
         res = (f"{short(t.get('reason'))} {fmt(t['closed'], False)} {t.get('pnl_usdt', 0):+.2f} ф{t.get('fund_usdt', 0):+.2f}"
-               + (f" хедж {t['hedge_usdt']:+.2f}" if "hedge_usdt" in t else "") if t.get("closed") else "открыта")
+               + (f" хедж {t['hedge_usdt']:+.2f}" if "hedge_usdt" in t else "")
+               + (f" корзина {t['alt_usdt']:+.2f}" if "alt_usdt" in t else "") if t.get("closed") else "открыта")
         p(f"{icon} {fmt(t['opened'])} {t['sym']}{' ЛОНГ' if t.get('side') == 'long' else ''} вход {t['entry']:.6g} "
           f"{t.get('tp_pct') or 0:g}/{t.get('sl_pct') or 0:g} ×{t.get('lev', '?')} {res} | {t.get('note', '')}")
 

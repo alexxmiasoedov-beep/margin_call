@@ -1129,6 +1129,17 @@ VIRTUALS = {
                              "плечо ×1",
                     "icon": "🐋ᵛ", "params": lambda fh: (None, 25.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
                     "hold_h": 24.0, "lev": 1, "hedge": "BTC", "twin": "virtual_WD"},
+    # комитет «шорт 4 ч» (research/s225/ВЫВОДЫ.md, по «да» владельца 20.11.2026): 100 правил по займу канала, ставке займа,
+    # цене, обороту, фандингу, OI и лонг/шорт (и их отклонению от 30 сут самой монеты); выполнено ≥ 3 → шорт на 4 ч.
+    # Отбор — 02.2025–03.2026; проверка 04–10.2026: 417 сделок в месяц, +0,33% на сделку с хеджем индексом альтов (t 3,1);
+    # свежий отрезок 22.10–19.11.2026: +0,32% (t 1,1), вместе t 3,2. Входы — scanner.c4_rule. Третий баланс — с хеджем
+    # корзиной альтов (alt_hedge: лонг поровну всех фьючерсов USDT с оборотом за сутки ≥ 5 млн $, кроме BTC, на ту же сумму,
+    # комиссия обеих ног); закрытия одного прохода — одним сообщением (batch)
+    "virtual_C4": {"title": "комитет «шорт 4 ч»: монета в канале займов, выполнены ≥ 3 из 100 правил по займу, отдаче, ставке "
+                            "займа, цене, обороту, фандингу, OI и лонг/шорт (и их отклонению от 30 суток самой монеты) → шорт "
+                            "на 4 ч без тейка, стоп +10%, плечо ×1; стратегия считается с хеджем корзиной альтов",
+                   "icon": "🗳", "params": lambda fh: (None, 10.0), "own": True, "cooldown_h": 0, "pause_h": 0.0,
+                   "hold_h": 4.0, "lev": 1, "hedge": "BTC", "hedge_balance": True, "alt_hedge": True, "batch": True},
 }
 VIRT = {"hold_h": 48.0, "pause_h": 48.0, "start_balance": 20.0,   # стартовый капитал журнала, USDT
         "check_s": 300}                                             # свечи открытых сделок докачиваются раз в 5 мин
@@ -1139,7 +1150,28 @@ def _virt(state, key):
     v.setdefault("trades", []); v.setdefault("started", time.time())
     # баланс ведётся только по сделкам, открытым после его запуска (у них флаг "bal"); старые позиции в него не входят
     v.setdefault("balance", VIRT["start_balance"]); v.setdefault("bal_since", time.time())
+    if (VIRTUALS.get(key) or {}).get("alt_hedge"):           # 🗳: третий баланс — с хеджем корзиной альтов
+        v.setdefault("balance_a", VIRT["start_balance"])
     return v
+
+
+_alt_px = {"t": 0.0, "px": {}}
+
+
+def alt_prices():
+    """Цены всех фьючерсов (/fapi/v1/ticker/price, вес 2; кэш на минуту) — для хеджа корзиной альтов у 🗳. {} — сбой."""
+    if time.time() - _alt_px["t"] > 60:
+        j = _request("GET", "/fapi/v1/ticker/price", signed=False)
+        if not isinstance(j, list):
+            return {}
+        px = {}
+        for x in j:
+            try:
+                px[str(x["symbol"])] = float(x["price"])
+            except (KeyError, TypeError, ValueError):
+                continue
+        _alt_px.update(t=time.time(), px=px)
+    return _alt_px["px"]
 
 
 def _virt_scan(t):
@@ -1268,6 +1300,17 @@ def _virt_close(v, t, px, reason, icon):
             t["hedge_usdt"] = round(notional * (hp / t["hedge_entry"] - 1 - (hfr or 0.0) - 0.0005 * 2), 4)
             hnote = (f"; с хеджем {t['hedge_sym']} ({t['hedge_entry']:.6g} → {hp:.6g}) "
                      f"{t['pnl_usdt'] + t['hedge_usdt']:+.2f} USDT")
+    if t.get("alt_px"):                          # 🗳: хедж корзиной альтов — лонг поровну всех фьючерсов корзины на ту же сумму
+        cur = alt_prices(); p0 = t.pop("alt_px")
+        rs = [max(-0.5, min(0.5, cur[s] / p - 1)) for s, p in p0.items() if s in cur and p > 0]
+        if rs:
+            ret = sum(rs) / len(rs)
+            t["alt_ret"], t["alt_n"] = round(ret, 6), len(rs)
+            t["alt_usdt"] = round(notional * (ret - 0.0005 * 2), 4)
+            hnote += (f"; с хеджем корзиной альтов ({len(rs)} фьючерсов, {ret * 100:+.2f}%) "
+                      f"{t['pnl_usdt'] + t['alt_usdt']:+.2f} USDT")
+        else:
+            t["alt_na"] = True
     if t.get("bal"):
         was = v["balance"]; v["balance"] = round(was + t["pnl_usdt"], 4)
         start = VIRT["start_balance"]
@@ -1279,6 +1322,15 @@ def _virt_close(v, t, px, reason, icon):
             bnote += (f"\n{icon} баланс с хеджем {t.get('hedge_sym', 'BTC')}: {wh:.2f} → {v['balance_h']:.2f} USDT "
                       f"({v['balance_h'] - start:+.2f}, {(v['balance_h'] / start - 1) * 100:+.1f}%)"
                       + ("" if t["h_bal"] else " — без хеджа этой сделки: Binance не отдал цену BTC, досчитаю позже"))
+        if "balance_a" in v:                     # третий баланс — с хеджем корзиной альтов (🗳)
+            wa = v["balance_a"]
+            if "alt_usdt" in t:
+                v["balance_a"] = round(wa + t["pnl_usdt"] + t["alt_usdt"], 4); t["a_bal"] = True
+                bnote += (f"\n{icon} баланс с хеджем корзиной альтов: {wa:.2f} → {v['balance_a']:.2f} USDT "
+                          f"({v['balance_a'] - start:+.2f}, {(v['balance_a'] / start - 1) * 100:+.1f}%)")
+            else:
+                bnote += (f"\n{icon} баланс с хеджем корзиной альтов {wa:.2f} USDT — без этой сделки: "
+                          f"Binance не отдал цены корзины")
     else:
         bnote = f"\n{icon} сделка открыта до запуска баланса — в баланс не входит (баланс {v['balance']:.2f} USDT)"
     return (f"{icon} {mark} виртуально закрыт {'ЛОНГ' if long else 'шорт'} {t['sym']}: {reason}, вход {t['entry']:.6g} → выход {px:.6g}, "
@@ -1324,6 +1376,9 @@ def _hedge_books(state, msgs):
                 t["hedge_na"] = t["hedge_try"] >= 48
                 if t["hedge_na"]:
                     log(f"ХЕДЖ {cfg['icon']} {t['sym']}: цену {hs} так и не получили — сделка во втором балансе без хеджа")
+        if "balance_h" not in v and not v["trades"]:              # новый журнал (🗳) — второй баланс с нуля, без сообщения
+            v["balance_h"] = v["balance"]
+            continue
         if "balance_h" not in v:
             add = [t for t in done if "hedge_usdt" in t]
             hsum = round(sum(t["hedge_usdt"] for t in add), 4)
@@ -1350,6 +1405,7 @@ def virt_manage(state):
     проверяется раз в 5 мин (VIRT["check_s"]) и в момент выхода по времени: свечи докачиваются с места прошлой проверки,
     так что стоп и тейк ловятся так же точно, а запросов к Binance в разы меньше. Текущая цена — только для выхода."""
     msgs = []; now = time.time(); cache = {}; dropped = {}; shut = {}    # (журнал, монета) → (номер сообщения о закрытии, вход)
+    batch = {}                                   # журнал с batch (🗳) → номер его общего сообщения о закрытиях в этом проходе
     try:
         _hedge_books(state, msgs)                # второй баланс 🏦 🏦³; сбой не должен мешать стопам и выходам ниже
     except Exception as e:
@@ -1365,6 +1421,16 @@ def virt_manage(state):
         не больше 5 мин) закрылась у основного журнала в этом же проходе — строка к его сообщению вместо отдельного.
         Разные входы (↩️ вошёл снова, пока ↩️⁷ держит прежнюю сделку) — отдельные сообщения."""
         text = _virt_close(v, t, px, reason, cfg["icon"])
+        if cfg.get("batch"):                                       # 🗳: строка в общее сообщение прохода, балансы — в конце
+            line = (f"{'✅' if t['pnl_usdt'] > 0 else '❌'} {t['sym']}: {reason}, {t['entry']:.6g} → {px:.6g}, "
+                    f"итого {t['pnl_usdt']:+.2f} USDT"
+                    + (f", с хеджем корзиной альтов {t['pnl_usdt'] + t['alt_usdt']:+.2f}" if "alt_usdt" in t else "")
+                    + (f", с хеджем {t['hedge_sym']} {t['pnl_usdt'] + t['hedge_usdt']:+.2f}" if "hedge_usdt" in t else ""))
+            if key in batch:
+                msgs[batch[key]] += "\n" + line
+            else:
+                batch[key] = len(msgs); msgs.append(f"{cfg['icon']} закрыто виртуально:\n{line}")
+            return
         i = shut.get((cfg.get("twin"), t["sym"]))
         if i is None or abs(i[1] - t["opened"]) > 300:
             shut[(key, t["sym"])] = (len(msgs), t["opened"]); msgs.append(text)
@@ -1404,6 +1470,11 @@ def virt_manage(state):
                     # монеты нет на фьючерсах Binance (вход был по цене из канала): закрыть не по чему — убираем из журнала
                     t["drop"] = True; dropped.setdefault(t["sym"], []).append(cfg["icon"])
         v["trades"] = [t for t in v["trades"] if not t.get("drop") and (not t.get("closed") or now - t["closed"] < 90 * 86400)]
+    for key, i in batch.items():                                   # 🗳: балансы после всех закрытий прохода
+        v = _virt(state, key); start = VIRT["start_balance"]
+        msgs[i] += (f"\n{VIRTUALS[key]['icon']} баланс {v['balance']:.2f} USDT ({v['balance'] - start:+.2f})"
+                    + (f"; с хеджем корзиной альтов {v['balance_a']:.2f} ({v['balance_a'] - start:+.2f})" if "balance_a" in v else "")
+                    + (f"; с хеджем BTC {v['balance_h']:.2f} ({v['balance_h'] - start:+.2f})" if "balance_h" in v else ""))
     if dropped:
         msgs.append("Убраны виртуальные сделки по монетам без фьючерса на Binance — цены нет, закрыть их нельзя, "
                     "в статистику они не входят: " + ", ".join(f"{s} {''.join(i)}" for s, i in dropped.items()))
@@ -1423,6 +1494,10 @@ def _virt_block(state, key, cfg):
         pend = sum(1 for t in v["trades"] if t.get("bal") and t.get("closed") and not t.get("h_bal"))
         lines.append(f"  баланс с хеджем {cfg.get('hedge', 'BTC')} {v['balance_h']:.2f} USDT ({v['balance_h'] - VIRT['start_balance']:+.2f})"
                      + (f"; без хеджа (нет цены {cfg.get('hedge', 'BTC')}) сделок {pend}" if pend else ""))
+    if "balance_a" in v:                                           # 🗳: третий баланс — с хеджем корзиной альтов
+        na = sum(1 for t in v["trades"] if t.get("bal") and t.get("closed") and not t.get("a_bal"))
+        lines.append(f"  баланс с хеджем корзиной альтов {v['balance_a']:.2f} USDT ({v['balance_a'] - VIRT['start_balance']:+.2f})"
+                     + (f"; без хеджа корзиной (нет цен) сделок {na}" if na else ""))
     hpx = {}
     for t in op:
         sgn = -1 if t.get("side") == "long" else 1                 # лонг: прибыль от роста цены, фандинг с обратным знаком
