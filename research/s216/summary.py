@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 PFX = os.environ.get("PFX", "s216")
-OUTS = ("s4", "s24", "s48", "s168", "l4", "l24", "l48", "l168")
+OUTS = tuple(os.environ.get("OUTS", "s4,s24,s48,s168,l4,l24,l48,l168").split(","))
 NAME = {"s4": "шорт 4 ч", "s24": "шорт 24 ч", "s48": "шорт 48 ч", "s168": "шорт 7 сут",
         "l4": "лонг 4 ч", "l24": "лонг 24 ч", "l48": "лонг 48 ч", "l168": "лонг 7 сут"}
 
@@ -29,13 +29,13 @@ def main():
         best = P.sort_values("z_B", ascending=False).iloc[0] if len(P) else None
         ok1 = len(P) > 0 and P.m_C.mean() > base[2] and P.m_C.mean() > shm
         ok2 = best is not None and best.m_C > 0 and best.z_C >= 2.5
-        rows.append({"исход": NAME[o], "все A/B/C": f"{base[0]:+.2%} / {base[1]:+.2%} / {base[2]:+.2%}",
+        rows.append({"исход": NAME.get(o, o), "все A/B/C": f"{base[0]:+.2%} / {base[1]:+.2%} / {base[2]:+.2%}",
                      "прошли B": len(P), "их C": f"{P.m_C.mean():+.2%}" if len(P) else "—",
                      "контроль: прошли B / их C": " · ".join(f"{n} / {m:+.2%}" for n, m in sh),
                      "лучшее по B на C": f"{best.m_C:+.2%} (t {best.z_C:+.1f}, n {best.n_C:.0f})" if best is not None else "—",
                      "порог 1": "да" if ok1 else "нет", "порог 2": "да" if ok2 else "нет"})
         if best is not None:
-            bests.append((NAME[o], best["правило"], best))
+            bests.append((NAME.get(o, o), best["правило"], best))
     print(pd.DataFrame(rows).to_string(index=False))
     print("\nЛучшие по B правила (выбраны до просмотра C):")
     for nm, rule, b in bests:

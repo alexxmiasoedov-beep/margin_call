@@ -13,6 +13,11 @@ import pandas as pd
 UTC = datetime.timezone.utc
 TA = datetime.datetime(2025, 10, 1, tzinfo=UTC).timestamp(); TB = datetime.datetime(2026, 4, 1, tzinfo=UTC).timestamp()
 MINN, TOPN, TOP2 = 150, 2000, 300
+if os.environ.get("TA"):                            # s219: свои отрезки, минимум наблюдений и порог t на B
+    TA = datetime.datetime.fromisoformat(os.environ["TA"]).replace(tzinfo=UTC).timestamp()
+    TB = datetime.datetime.fromisoformat(os.environ["TB"]).replace(tzinfo=UTC).timestamp()
+MINN = int(os.environ.get("MINN", MINN))
+ZB = float(os.environ.get("ZB", "-inf"))
 OUTC = {"s4", "s24", "s48", "s168", "l4", "l24", "l48", "l168"}
 WEEK = 7 * 86400
 PFX = os.environ.get("PFX", "s216")               # s218 и далее — тот же перебор на своём файле признаков
@@ -45,7 +50,8 @@ def run(col, shuf=False, seed=0, verbose=True):
         mon = pd.to_datetime(D["T"], unit="s").dt.to_period("M").astype(str).to_numpy()
         for m in np.unique(mon):
             ix = np.flatnonzero(mon == m); y[ix] = y[rng.permutation(ix)]
-    FE = [c for c in D.columns if c not in OUTC | {"s", "T"} and pd.api.types.is_numeric_dtype(D[c])]
+    FE = [c for c in D.columns if c not in OUTC | {"s", "T"} and not c.startswith(("y_", "u_"))
+          and pd.api.types.is_numeric_dtype(D[c])]
     A = seg == 0
     conds, names = [], []
     for f in FE:
@@ -70,10 +76,10 @@ def run(col, shuf=False, seed=0, verbose=True):
             for m, nm in ((lo, f"{f} ≤ {q:.4g}"), (hi, f"{f} ≥ {q:.4g}")):
                 if 0.05 < m[A].mean() < 0.95 and not any((m == c).all() for c in conds[-8:]):
                     conds.append(m); names.append(nm)
-    C = np.array(conds, dtype=np.float32); nC = len(C)
+    C = np.array(conds, dtype=bool); nC = len(C)                 # bool: на s219 (570 тыс. наблюдений) float32 не помещался
     Y = y.astype(np.float32)
     t0 = time.time()
-    CA = C[:, A]; YA = Y[A]
+    CA = C[:, A].astype(np.float32); YA = Y[A]
     W, inv, nW = week_mat(T, A)
     # одиночные
     N1 = CA @ W; S1 = (CA * YA) @ W
@@ -106,18 +112,20 @@ def run(col, shuf=False, seed=0, verbose=True):
         print(f"{col}: наблюдений A/B/C = {(seg == 0).sum()}/{(seg == 1).sum()}/{(seg == 2).sum()}; признаков {len(FE)}, "
               f"условий {nC}; правил {len(cand)}; {time.time() - t0:.0f} с; перемешано: {shuf} {seed if shuf else ''}", flush=True)
     TOP = cand[:TOPN]
-    masks = np.array([np.prod(C[list(ix)], axis=0) for _, ix in TOP], dtype=np.float32)
     res = {}
-    for S in (0, 1, 2):
+    for S in (0, 1, 2):                                              # правила — кусками по 250, чтобы хватило памяти
         sel = seg == S
         Ws, _, _ = week_mat(T, sel)
-        M = masks[:, sel]
-        res[S] = zclust(M @ Ws, (M * Y[sel]) @ Ws, axis=1)
+        parts = []
+        for k0 in range(0, len(TOP), 250):
+            M = np.array([np.logical_and.reduce(C[list(ix)][:, sel], axis=0) for _, ix in TOP[k0:k0 + 250]], dtype=np.float32)
+            parts.append(zclust(M @ Ws, (M * Y[sel]) @ Ws, axis=1))
+        res[S] = tuple(np.concatenate([p_[i] for p_ in parts]) for i in range(3))
     R = pd.DataFrame({"правило": [" & ".join(names[i] for i in ix) for _, ix in TOP], "z_A": [z for z, _ in TOP],
                       "n_A": res[0][0], "m_A": res[0][1], "n_B": res[1][0], "m_B": res[1][1], "z_B": res[1][2],
                       "n_C": res[2][0], "m_C": res[2][1], "z_C": res[2][2]})
     base = {S: float(Y[seg == S].mean()) for S in (0, 1, 2)}
-    passB = (R.m_B > 0) & (R.m_B > base[1]) & (R.n_B >= 30)
+    passB = (R.m_B > 0) & (R.m_B > base[1]) & (R.n_B >= 30) & (R.z_B >= ZB)
     R["passB"] = passB
     R.attrs["base"] = base
     out = f"{PFX}_bombe_{col}{'_shuf' + str(seed) if shuf else ''}.pkl"
