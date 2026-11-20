@@ -4,8 +4,8 @@
 данных (A и B); условия переносятся на строки D с точными порогами, посчитанными на A (bombe.build(..., specs)).
 D — входы с 22.10.2026 00:00 UTC по конец данных (файл s224/feat_D.pkl: часовая сетка, признаки и исходы — тем же кодом).
 Порог: средний доход с хеджем на D > 0; на C + D вместе — t ≥ 3 по неделям, ≥ 20 сделок в месяц, лучше плацебо.
-Запуск из /home/user/mc_data: python3 <repo>/research/s224/d_check.py <префикс файла признаков>:<исход>:<сетка, ч> …
-(по умолчанию — s223:y_hs4:4)."""
+Запуск из /home/user/mc_data: python3 <repo>/research/s224/d_check.py <префикс файла признаков>:<исход>:<сетка, ч>[:<файл D>] …
+(по умолчанию — s223:y_hs4:4; файл D по умолчанию — s224/feat_D.pkl, для s225 — свой файл с признаками s225)."""
 import os
 import sys
 
@@ -71,11 +71,10 @@ def check(prefix, col, grid_h, FD):
 
 
 def main(args):
-    FD = pd.read_pickle("s224/feat_D.pkl")
     for a in args or ["s223:y_hs4:4"]:
-        prefix, col, g = a.split(":")
+        prefix, col, g, *fd = a.split(":")
         os.environ["PFX"] = prefix
-        check(prefix, col, int(g), FD)
+        check(prefix, col, int(g), pd.read_pickle(fd[0] if fd else "s224/feat_D.pkl"))
 
 
 if __name__ == "__main__":

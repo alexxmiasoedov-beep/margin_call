@@ -7,7 +7,8 @@
 - позиции (s22/metrics_full, строка не позже T − 1 ч, как в s216): zoi4, zoi24 — ln-изменение OI к ст. откл. таких изменений;
   zlsr, zlsrt — (доля счетов / топ-позиций в лонге − среднее) / ст. откл.;
 - фандинг: zf — (последнее начисление на 8 ч − среднее) / ст. откл. начислений за 30 сут.
-Итог — s225_feat.pkl. Запуск из /home/user/mc_data: python3 <repo>/research/s225/features.py"""
+Итог — s225_feat.pkl. Запуск из /home/user/mc_data: python3 <repo>/research/s225/features.py
+Окружение (s224b, отрезок D): IN и OUT — файлы входа и итога (по умолчанию s223_feat.pkl и s225_feat.pkl)."""
 import glob
 import os
 import sys
@@ -45,7 +46,7 @@ def hourly_close(s):
 
 
 def main():
-    G = pd.read_pickle("s223_feat.pkl").sort_values(["T", "s"]).reset_index(drop=True)
+    G = pd.read_pickle(os.environ.get("IN", "s223_feat.pkl")).sort_values(["T", "s"]).reset_index(drop=True)
     P = pd.read_pickle("s21/panel.pkl")
     out = {k: np.full(len(G), np.nan) for k in NEW}
     for s, idx in G.groupby("s").groups.items():
@@ -129,7 +130,7 @@ def main():
                     out["zf"][j] = (c - x.mean()) / x.std()
     for k in NEW:
         G[k] = out[k]
-    G.to_pickle("s225_feat.pkl")
+    G.to_pickle(os.environ.get("OUT", "s225_feat.pkl"))
     print("готово:", G.shape, "заполнено:", {k: round(float(np.isfinite(G[k]).mean()), 2) for k in NEW}, flush=True)
 
 
