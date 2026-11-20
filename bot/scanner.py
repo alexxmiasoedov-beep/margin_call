@@ -3897,6 +3897,7 @@ def chng_confirm(state, sym, price, rule, posts, now):
 C4_K, C4_HOLD_H, C4_GRID, C4_LATE = 3, 4.0, 4 * 3600, 20 * 60     # голосов; срок, ч; сетка 4 ч; вход не позже 20 мин
 C4_KEEP_D, C4_NEED_D, C4_BACK_PAGES = 33, 31, 40                   # панель канала хранит 33 сут, торгует при покрытии 31 сут;
                                                                    # догрузка истории — до 40 страниц t.me за проход
+C4_PAGE_S = 20                                                     # и не дольше 20 с: проход бота не ждёт медленный t.me
 C4_STABLE = ("DAI", "USDC", "FDUSD", "TUSD", "USDP", "BUSD")
 C4_ALT_VOL, C4_WORKERS = 5e6, 4                                    # корзина альтов: оборот за 24 ч ≥ 5 млн $; потоков запросов
 C4_RULES = (
@@ -4114,7 +4115,8 @@ def _c4_page(before):
 
 def c4_record(posts):
     """Свежие посты канала — в панель 🗳. Дыры по номерам постов (бот стоял) встают в очередь и догружаются страницами t.me;
-    потом — история за 32 сут вниз от самого старого поста панели. Всего до C4_BACK_PAGES страниц за проход."""
+    потом — история за 32 сут вниз от самого старого поста панели. Всего до C4_BACK_PAGES страниц и C4_PAGE_S секунд
+    за проход."""
     st = _c4_load()
     fresh = [p for p in posts if p.get("ranked")]
     if fresh and st["hi"] is not None:
@@ -4123,9 +4125,9 @@ def c4_record(posts):
             st["gaps"].append([st["hi"], m]); st["dirty"] = True
     for p in fresh:
         _c4_add(st, p["id"], p["ts"], p["ranked"])
-    pages, keep = 0, time.time() - C4_KEEP_D * 86400
+    pages, keep, t0 = 0, time.time() - C4_KEEP_D * 86400, time.time()
     for g in st["gaps"]:                                      # [нижний известный пост, верхний известный пост)
-        while g[1] - 1 > g[0] and pages < C4_BACK_PAGES:
+        while g[1] - 1 > g[0] and pages < C4_BACK_PAGES and time.time() - t0 < C4_PAGE_S:
             got = _c4_page(g[1]); pages += 1
             if not got:
                 break
@@ -4140,7 +4142,7 @@ def c4_record(posts):
     st["gaps"] = [g for g in st["gaps"] if g[1] - 1 > g[0]]
     if not st["back"] and st["lo"] is not None:               # история за 32 сут — вниз от самого старого поста панели
         cur = st["lo"]
-        while pages < C4_BACK_PAGES:
+        while pages < C4_BACK_PAGES and time.time() - t0 < C4_PAGE_S:
             got = _c4_page(cur); pages += 1
             if not got:
                 break

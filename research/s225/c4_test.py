@@ -196,6 +196,11 @@ st["rows"].update(saved_q)
 # большая дыра после простоя: больше страниц, чем за один проход, — догружается за несколько проходов
 hi0 = st["hi"]; base = hi0 + 200
 GAPR[0] = (hi0, base)
+scanner.C4_PAGE_S = 0
+scanner.c4_record([{"id": base + 1, "ts": T - 30 * 60, "ranked": scanner._c4_ranked(post_text([("AAA", "1M", "100K")]))}])
+check(st["gaps"] == [[hi0, base + 1]] and st["hi"] == base + 1,
+      "время на страницы за проход вышло — дыра целиком в очереди, свежий пост записан")
+scanner.C4_PAGE_S = 20
 scanner.C4_BACK_PAGES = 4
 scanner.c4_record([{"id": base + 1, "ts": T - 30 * 60, "ranked": scanner._c4_ranked(post_text([("AAA", "1M", "100K")]))}])
 check(st["gaps"] and st["gaps"][0][0] == hi0, "дыра больше 4 страниц — за проход заполнена частично, осталась в очереди")
