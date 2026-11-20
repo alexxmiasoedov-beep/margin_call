@@ -486,7 +486,7 @@ def fetch_posts(lookback_h, max_pages=40):
                 r = ROW_ALL.match(ln.strip())
                 if r:
                     rows_all[r.group(1)] = (r.group(2), r.group(3), r.group(4), r.group(5))
-            got.append({"id": pid, "ts": ts, "rows": rows, "rows_all": rows_all})
+            got.append({"id": pid, "ts": ts, "rows": rows, "rows_all": rows_all, "ranked": _c4_ranked(text)})
         if not got:
             break
         posts += got
@@ -3886,12 +3886,749 @@ def chng_confirm(state, sym, price, rule, posts, now):
     return trader.virt_open(state, "virtual_1525C", sym, rule, note, price=price)
 
 
+# ---------------------------------------------------------------- 🗳 комитет «шорт 4 ч» (research/s225)
+# Комитет из 100 правил (1–3 условия) на 47 признаках: займ канала MarginData (объём, набор, отдача, удержание), ставка займа
+# Binance, цена, оборот, фандинг, OI, лонг/шорт — и те же величины относительно 30 сут самой монеты. Правила и порог k = 3
+# отобраны на 20.02.2025–31.03.2026; проверка 01.04–21.10.2026: 417 сделок в месяц, +0,33% на сделку с хеджем индексом
+# альтов (t 3,1); свежий отрезок 22.10–19.11.2026: +0,32% (t 1,1), вместе t 3,2 (research/s225/ВЫВОДЫ.md, s224/ВЫВОДЫ.md).
+# Каждые 4 ч (00, 04, …, 20 UTC) — монеты канала (пост не старше 30 мин) с бессрочным фьючерсом старше суток: голосов ≥ 3 →
+# виртуальный шорт на 4 ч без тейка, стоп +10%, плечо ×1; доход с хеджем корзиной альтов — третий баланс журнала.
+# Признаки считаются как в research/s216/features.py и research/s225/features.py (сверка — research/s225/c4_fidelity.py).
+C4_K, C4_HOLD_H, C4_GRID, C4_LATE = 3, 4.0, 4 * 3600, 20 * 60     # голосов; срок, ч; сетка 4 ч; вход не позже 20 мин
+C4_KEEP_D, C4_NEED_D, C4_BACK_PAGES = 33, 31, 40                   # панель канала хранит 33 сут, торгует при покрытии 31 сут;
+                                                                   # догрузка истории — до 40 страниц t.me за проход
+C4_PAGE_S = 20                                                     # и не дольше 20 с: проход бота не ждёт медленный t.me
+C4_STABLE = ("DAI", "USDC", "FDUSD", "TUSD", "USDP", "BUSD")
+C4_ALT_VOL, C4_WORKERS = 5e6, 4                                    # корзина альтов: оборот за 24 ч ≥ 5 млн $; потоков запросов
+C4_RULES = (
+    (("qv24", "ge", 34653457.98749999), ("bmc", "le", 0.0431298012), ("zr4", "ge", 0.9512845554)),
+    (("r72", "le", -0.0656418402), ("dlsr24", "ge", 0.022122454), ("zoi4", "ge", 0.6309575267)),
+    (("r4x", "ge", 1.0), ("dlsr24", "ge", 0.022122454), ("zoi4", "ge", 0.6309575267)),
+    (("dlsr24", "ge", 0.130121822), ("btc24", "le", 0.0043257379), ("zoi4", "ge", 0.6309575267)),
+    (("r4x", "ge", 0.9166431095), ("dlsr24", "ge", 0.022122454), ("zoi4", "ge", 0.6309575267)),
+    (("qv24", "ge", 4358821.0888671875), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("qvx", "ge", 2.6747527009), ("wave", "le", 12.0), ("zrep", "ge", 1.1077390316)),
+    (("pres7", "le", 8.0), ("btc24", "ge", -0.0023792619), ("zqv", "ge", 2.1282652418)),
+    (("vol24", "ge", 0.0055259055), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("hold", "ge", 59.7620505151), ("r24", "ge", 0.027151031), ("ux", "le", 1.5356245649)),
+    (("vol24", "ge", 0.0120592732), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("qvx", "ge", 2.6747527009), ("zrep", "ge", 1.1077390316), ("znet", "ge", 1.0316063107)),
+    (("r24", "ge", 0.078076153), ("lsr_top", "ge", 1.2425532), ("wave", "le", 9.0)),
+    (("qv24", "ge", 11735977.438671876), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("place", "le", 11.0), ("tb4", "ge", 0.4993410556), ("zrep", "ge", 1.1077390316)),
+    (("doi24", "ge", 0.164626883), ("lsr_top", "ge", 1.2425532), ("wave", "le", 9.0)),
+    (("dlsr24", "ge", 0.130121822), ("oiq", "le", 0.3748533987), ("zoi4", "ge", 0.6309575267)),
+    (("rep", "ge", 374900.0), ("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822)),
+    (("net7", "ge", 27515900.0), ("ux", "le", 1.5356245649), ("lsr_acc", "le", 1.475470248)),
+    (("qv24", "ge", 34653457.98749999), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("hold", "ge", 59.7620505151), ("ux", "le", 1.5356245649), ("zr24", "ge", 0.4832788382)),
+    (("bmc", "ge", 0.1492735031), ("zrate", "le", 0.0164276652), ("zr24", "ge", 1.2577623681)),
+    (("tb4", "ge", 0.5151002522), ("lsr_top", "ge", 1.0615464), ("zf", "le", -1.5067433638)),
+    (("dlsr24", "ge", 0.130121822), ("znet", "ge", -0.1565213519), ("zoi4", "ge", 0.6309575267)),
+    (("qvx", "ge", 0.9747696777), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("r4x", "ge", 1.0), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("dlsr24", "ge", 0.130121822), ("tkr", "ge", 0.8631278), ("zoi4", "ge", 0.6309575267)),
+    (("run", "ge", 23.0), ("bmc", "le", 0.1492735031), ("zf", "le", -1.5067433638)),
+    (("qvx", "ge", 1.4319920258), ("lsr_top", "ge", 1.2425532), ("zrep", "le", -1.1969645901)),
+    (("dlsr24", "ge", 0.022122454), ("znet", "ge", -0.1565213519), ("zoi4", "ge", 0.6309575267)),
+    (("zbor", "le", 0.2336148512), ("zrate", "le", 0.0164276652), ("zr24", "ge", 1.2577623681)),
+    (("f8", "le", -0.001114878), ("zr4", "ge", 0.9512845554), ("zlsrt", "ge", -0.5956906616)),
+    (("rate", "ge", 0.001550382), ("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822)),
+    (("doi4", "ge", 0.0044402727), ("zrep", "ge", 1.1077390316), ("znet", "ge", 1.0316063107)),
+    (("qvx", "ge", 0.6833150037), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("doi24", "ge", 0.164626883), ("zbor", "ge", 1.0556064946), ("zlsr", "ge", 0.1980581847)),
+    (("dlsr24", "ge", 0.130121822), ("tkr", "le", 1.445549), ("zoi4", "ge", 0.6309575267)),
+    (("run", "ge", 23.0), ("ux", "le", 1.5356245649), ("zf", "le", -1.5067433638)),
+    (("place", "le", 4.0), ("run", "le", 6.0), ("f24", "le", -0.003897142)),
+    (("zbor", "ge", 1.0556064946), ("zrate", "le", -0.0765585691), ("zlsr", "ge", -1.3181832104)),
+    (("r24", "ge", 0.027151031), ("ux", "le", 1.5356245649), ("bmc", "ge", 0.1492735031)),
+    (("r4x", "ge", 1.0831794905), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("net", "ge", 10456919.999999987), ("run", "le", 6.0), ("btc24", "ge", -0.0023792619)),
+    (("r4x", "ge", 1.0831794905), ("f24", "ge", -0.000847178), ("znet", "ge", 1.0316063107)),
+    (("r4", "ge", 0.0067558621), ("f8", "le", -0.001114878), ("zrate", "le", 0.0164276652)),
+    (("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822), ("znet", "ge", -0.1565213519)),
+    (("net", "ge", 10456919.999999987), ("wave", "ge", 7.0), ("zrate", "le", -0.0765585691)),
+    (("qvx", "ge", 0.9747696777), ("tb4", "ge", 0.4993410556), ("zrep", "ge", 1.1077390316)),
+    (("net", "ge", 92200.0), ("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822)),
+    (("qvx", "ge", 1.4319920258), ("zrep", "le", -1.1969645901), ("zlsrt", "ge", -0.5956906616)),
+    (("dlsr24", "ge", 0.130121822), ("wave", "ge", 5.0), ("zoi4", "ge", 0.6309575267)),
+    (("run", "ge", 23.0), ("zr24", "le", 1.2577623681), ("zf", "le", -1.5067433638)),
+    (("bor", "ge", 117800.0), ("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822)),
+    (("tb4", "le", 0.5151002522), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("bmc", "ge", 0.0009207144), ("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822)),
+    (("r4", "ge", 0.0067558621), ("f8", "le", -0.001114878), ("ux", "le", 1.5356245649)),
+    (("r24", "ge", -0.0025033677), ("ux", "le", 1.0679239392), ("bmc", "ge", 0.1492735031)),
+    (("ux", "le", 1.0679239392), ("bmc", "ge", 0.1492735031), ("zr24", "ge", -0.0477615703)),
+    (("dlsr24", "ge", 0.022122454), ("zqv", "ge", 2.1282652418), ("zoi4", "ge", 0.6309575267)),
+    (("hold", "le", 14.229600779), ("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822)),
+    (("net", "ge", 10456919.999999987), ("zrate", "le", -0.0765585691), ("zf", "le", 0.215375671)),
+    (("znet", "le", 1.0316063107), ("zrate", "le", 0.0164276652), ("zr24", "ge", 1.2577623681)),
+    (("tb4", "ge", 0.4993410556), ("f8", "le", -0.001114878), ("zrep", "ge", 1.1077390316)),
+    (("rep", "le", 374900.0), ("net", "ge", 10456919.999999987), ("ux", "le", 1.5356245649)),
+    (("r4x", "ge", 1.0831794905), ("r24x", "ge", 1.8305465951), ("vol24", "ge", 0.0120592732)),
+    (("r24", "ge", 0.078076153), ("lsr_top", "ge", 1.2425532), ("zbor", "le", 0.2336148512)),
+    (("bor", "ge", 12400000.0), ("zrate", "le", -0.0765585691), ("zf", "le", 0.215375671)),
+    (("r24", "ge", 0.027151031), ("zbor", "ge", 1.0556064946), ("zlsr", "ge", 0.1980581847)),
+    (("r24", "ge", 0.078076153), ("lsr_top", "ge", 1.2425532), ("zrep", "le", 0.3677247801)),
+    (("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822), ("wave", "ge", 5.0)),
+    (("pres7", "le", 8.0), ("qvx", "ge", 2.6747527009), ("btc24", "ge", -0.0023792619)),
+    (("vol24", "ge", 0.0120592732), ("tb4", "ge", 0.4993410556), ("zrep", "ge", 1.1077390316)),
+    (("qv24", "ge", 110920761.12148443), ("lsr_acc", "ge", 1.10032409), ("zr4", "ge", 0.9512845554)),
+    (("pres7", "le", 8.0), ("dr24", "ge", 1.3049377657), ("zoi24", "ge", 1.4140015538)),
+    (("place", "le", 4.0), ("zrep", "ge", 1.1077390316), ("zlsr", "le", -1.3181832104)),
+    (("bqv", "le", 0.0330324893), ("doi24", "ge", 0.164626883), ("lsr_top", "ge", 1.2425532)),
+    (("r4x", "ge", 1.0831794905), ("f24", "ge", -0.000847178), ("zbor", "ge", 1.0556064946)),
+    (("qv24", "ge", 110920761.12148443), ("qvx", "ge", 2.6747527009), ("zrep", "ge", 1.1077390316)),
+    (("pres7", "le", 30.0), ("doi24", "ge", 0.164626883), ("wave", "le", 7.0)),
+    (("bor", "ge", 12400000.0), ("lim", "le", 0.0), ("zrate", "le", 0.0164276652)),
+    (("net", "ge", 10456919.999999987), ("f8", "le", -0.000225256), ("zrate", "le", -0.0765585691)),
+    (("dr24", "ge", 1.3049377657), ("zoi4", "ge", 0.6309575267), ("zlsr", "ge", 1.0493297498)),
+    (("net", "ge", 10456919.999999987), ("zrate", "le", -0.0765585691), ("zlsr", "le", 0.1980581847)),
+    (("oiq", "le", 0.1885212594), ("zoi4", "ge", 0.6309575267), ("zlsr", "ge", 1.0493297498)),
+    (("vol24", "ge", 0.0077652701), ("zoi4", "ge", 0.6309575267), ("zlsr", "ge", 1.0493297498)),
+    (("r24", "ge", 0.078076153), ("lsr_top", "ge", 1.2425532), ("zrep", "le", -1.1969645901)),
+    (("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822), ("btc24", "le", 0.0043257379)),
+    (("oiq", "le", 0.3748533987), ("zoi4", "ge", 0.6309575267), ("zlsr", "ge", 1.0493297498)),
+    (("rep", "ge", 1300000.0), ("dr24", "ge", 1.3049377657), ("zrate", "le", 0.1614775555)),
+    (("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822), ("tkr", "le", 1.445549)),
+    (("hold", "le", 5.4365902965), ("dlsr24", "ge", 0.130121822), ("zoi4", "ge", 0.6309575267)),
+    (("rb", "ge", 0.0558447705), ("vol24", "ge", 0.0077652701), ("zqv", "le", -0.3366578062)),
+    (("qv24", "ge", 110920761.12148443), ("lsr_acc", "ge", 1.475470248), ("zr4", "ge", 0.2858790762)),
+    (("r4x", "ge", 1.0), ("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822)),
+    (("doi24", "ge", 0.164626883), ("wave", "ge", 5.0), ("wave", "le", 7.0)),
+    (("tb4", "ge", 0.4993410556), ("tb4", "le", 0.5151002522), ("zrep", "ge", 1.1077390316)),
+    (("qv24", "ge", 110920761.12148443), ("tb4", "ge", 0.4993410556), ("zrep", "ge", 1.1077390316)),
+    (("net7", "ge", 1396840.0), ("doi4", "ge", 0.0265674927), ("dlsr24", "ge", 0.130121822)),
+    (("net", "ge", 10456919.999999987), ("run", "le", 6.0), ("btc24", "ge", 0.0043257379)),
+    (("net", "ge", 10456919.999999987), ("ux", "le", 1.5356245649), ("znet", "ge", 1.0316063107)),
+)
+C4_FILE = os.path.join(os.path.dirname(os.path.abspath(STATE_FILE)), "c4_panel.json")
+C4_RATES = "https://www.binance.com/bapi/margin/v1/public/margin/vip/spec/history-interest-rate"
+_c4 = None                                   # панель канала: {"rows": {час: {монета: [время, займ, отдача, место, пост]}},
+                                             #  "hours": {монета: [часы с постами]}, "lo": пост, "hi": пост, "back": история
+                                             #  догружена, "gaps": [[пост, пост), …] — дыры после простоя}
+_c4_cmc = {"t": 0, "rows": None}             # список CMC (раз в сутки): {тикер: [(цена, капитализация), …]}
+
+
+def _c4_num(x):
+    """Число из поста канала: 1.2M, 931.4K, 0 (как research/s7/margin_ev.py)."""
+    x = x.strip().replace(",", ".")
+    m = {"K": 1e3, "M": 1e6, "B": 1e9}.get(x[-1:].upper(), 1)
+    try:
+        return float(x[:-1] if m != 1 else x) * m
+    except ValueError:
+        return float("nan")
+
+
+def _c4_ranked(text):
+    """Строки поста займов в порядке поста (как research/s7/margin_ev.py): [(монета, займ, отдача, место)]."""
+    if "B/R" not in text[:60]:
+        return []
+    out, rank = [], 0
+    for ln in text.split("\n")[2:]:
+        p = ln.split()
+        if len(p) < 4 or ln.startswith("MarginData"):
+            continue
+        sym = re.sub(r"[^\w]", "", p[0])
+        if not sym:
+            continue
+        rank += 1
+        out.append((sym, _c4_num(p[1]), _c4_num(p[2]), rank))
+    return out
+
+
+def _c4_load():
+    global _c4
+    if _c4 is None:
+        try:
+            with open(C4_FILE) as f:
+                d = json.load(f)
+            _c4 = {"rows": d.get("rows") or {}, "hours": {k: set(v) for k, v in (d.get("hours") or {}).items()},
+                   "lo": d.get("lo"), "hi": d.get("hi"), "back": bool(d.get("back")), "gaps": d.get("gaps") or [],
+                   "dirty": False}
+        except Exception:
+            _c4 = {"rows": {}, "hours": {}, "lo": None, "hi": None, "back": False, "gaps": [], "dirty": False}
+    return _c4
+
+
+def _c4_save():
+    st = _c4
+    if not st or not st.get("dirty"):
+        return
+    old = int(time.time() // 3600 * 3600 - C4_KEEP_D * 86400)
+    for h in [h for h in st["rows"] if int(h) < old]:
+        del st["rows"][h]
+    oh = old // 3600
+    for c in list(st["hours"]):
+        st["hours"][c] = {h for h in st["hours"][c] if h >= oh}
+        if not st["hours"][c]:
+            del st["hours"][c]
+    try:
+        with open(C4_FILE + ".tmp", "w") as f:
+            f.write(json.dumps({"rows": st["rows"], "hours": {k: sorted(v) for k, v in st["hours"].items()},
+                                "lo": st["lo"], "hi": st["hi"], "back": st["back"], "gaps": st["gaps"]}, separators=(",", ":")))
+        os.replace(C4_FILE + ".tmp", C4_FILE)
+        st["dirty"] = False
+    except OSError as e:
+        log("КОМИТЕТ", "панель канала не записана:", e)
+
+
+def _c4_add(st, pid, ts, ranked):
+    """Пост канала в панель: строка монеты в ближайшей отметке часа не раньше поста, если пост не старше 30 мин к ней
+    (из нескольких — последний), и час поста — в часы присутствия монеты (research/s21/borrow_study.py, s216 pres7/run)."""
+    if not ranked:
+        return
+    T = int(math.ceil(ts / 3600) * 3600)
+    row = st["rows"].setdefault(str(T), {}) if T - ts <= 1800 else None
+    for sym, b, r, k in ranked:
+        if row is not None:
+            cur = row.get(sym)
+            if cur is None or (ts, pid) > (cur[0], cur[4]):
+                row[sym] = [ts, b, r, k, pid]
+        st["hours"].setdefault(sym, set()).add(int(ts // 3600))
+    st["lo"] = pid if st["lo"] is None else min(st["lo"], pid)
+    st["hi"] = pid if st["hi"] is None else max(st["hi"], pid)
+    st["dirty"] = True
+
+
+def _c4_page(before):
+    """Страница веб-версии канала до поста before: [(номер, время, строки займов)]; None — сбой или страница без постов."""
+    try:
+        page = http(f"https://t.me/s/{CHANNEL}?before={before}")
+    except Exception as e:
+        log("КОМИТЕТ", "канал не отдал страницу истории:", e)
+        return None
+    if "tgme_widget_message" not in page:                     # страница без постов — сбой t.me, а не конец истории
+        log("КОМИТЕТ", f"страница истории канала до поста {before} пустая — повтор в следующем проходе")
+        return None
+    out = []
+    for b in re.split(r'(?=<div class="tgme_widget_message_wrap)', page):
+        m = re.search(rf'data-post="{CHANNEL}/(\d+)"', b)
+        t = re.search(r'<time datetime="([^"]+)"', b)
+        body = re.search(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', b, re.S)
+        if not (m and t and body):
+            continue
+        text = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"<br\s*/?>", "\n", body.group(1))))
+        out.append((int(m.group(1)), datetime.fromisoformat(t.group(1)).timestamp(), _c4_ranked(text)))
+    return out
+
+
+def c4_record(posts):
+    """Свежие посты канала — в панель 🗳. Дыры по номерам постов (бот стоял) встают в очередь и догружаются страницами t.me;
+    потом — история за 32 сут вниз от самого старого поста панели. Всего до C4_BACK_PAGES страниц и C4_PAGE_S секунд
+    за проход."""
+    st = _c4_load()
+    fresh = [p for p in posts if p.get("ranked")]
+    if fresh and st["hi"] is not None:
+        m = min(p["id"] for p in fresh)
+        if m - 1 > st["hi"]:
+            st["gaps"].append([st["hi"], m]); st["dirty"] = True
+    for p in fresh:
+        _c4_add(st, p["id"], p["ts"], p["ranked"])
+    pages, keep, t0 = 0, time.time() - C4_KEEP_D * 86400, time.time()
+    for g in st["gaps"]:                                      # [нижний известный пост, верхний известный пост)
+        while g[1] - 1 > g[0] and pages < C4_BACK_PAGES and time.time() - t0 < C4_PAGE_S:
+            got = _c4_page(g[1]); pages += 1
+            if not got:
+                break
+            for pid, ts, rk in got:
+                if pid > g[0]:
+                    _c4_add(st, pid, ts, rk)
+            g[1] = min(x[0] for x in got)
+            if min(x[1] for x in got) < keep:                 # глубже хранимых 33 сут дыра не нужна
+                g[1] = g[0]
+            st["dirty"] = True
+            time.sleep(0.5)
+    st["gaps"] = [g for g in st["gaps"] if g[1] - 1 > g[0]]
+    if not st["back"] and st["lo"] is not None:               # история за 32 сут — вниз от самого старого поста панели
+        cur = st["lo"]
+        while pages < C4_BACK_PAGES and time.time() - t0 < C4_PAGE_S:
+            got = _c4_page(cur); pages += 1
+            if not got:
+                break
+            for pid, ts, rk in got:
+                _c4_add(st, pid, ts, rk)
+            cur = min(g[0] for g in got)
+            if min(g[1] for g in got) < time.time() - (C4_NEED_D + 1) * 86400:
+                st["back"] = True; st["dirty"] = True
+                log("КОМИТЕТ", "история канала за 32 сут догружена")
+                break
+            time.sleep(0.5)
+    _c4_save()
+
+
+def _c4_ready(st, now):
+    """Панель годится для признаков за 30 сут: история догружена на 31 сут назад и нет недогруженных дыр по номерам постов
+    (часы, когда сам канал молчал, — не дыра: так было и в бэктесте)."""
+    if not st["back"] or st["gaps"]:
+        return False
+    hs = [int(h) for h, r in st["rows"].items() if r]
+    return bool(hs) and min(hs) <= now - C4_NEED_D * 86400
+
+
+def _c4_live(fs, h):
+    """Фьючерс жив на отметку часа h (запущен не меньше чем за сутки до свечи, закрывающейся в h)."""
+    on = (trader.contract(fs) or {}).get("onboard") or 0
+    return bool(on) and h - 900 >= on + 86400
+
+
+def _c4_series(st, coin, fs, T):
+    """Строки панели монеты (как research/s21: только часы, когда фьючерс жив) — {час: (займ, отдача, место)}
+    за [T − 31 сут, T]."""
+    out = {}
+    for h in range(T - 31 * 86400, T + 1, 3600):
+        v = (st["rows"].get(str(h)) or {}).get(coin)
+        if v is not None and _c4_live(fs, h):
+            out[h] = (v[1], v[2], v[3])
+    return out
+
+
+def _c4_wave(st, T, fut):
+    """Сколько монет канала за сутки до T ускорили займ: строка в отметке часа из (T − 24 ч, T], монета была в канале
+    4 ч назад, займ ≥ 1,5 × займа 4 ч назад и ≥ 50 тыс. $ (research/s216/features.py, wave)."""
+    seen = set()
+    for h in range(T - 23 * 3600, T + 1, 3600):
+        row = st["rows"].get(str(h)) or {}; row4 = st["rows"].get(str(h - 4 * 3600)) or {}
+        for coin, v in row.items():
+            if coin in seen or coin in C4_STABLE:
+                continue
+            v4 = row4.get(coin)
+            fs = fut(coin)
+            if v4 is not None and v[1] >= 1.5 * v4[1] and v[1] >= 50e3 and fs and _c4_live(fs, h):
+                seen.add(coin)
+    return len(seen)
+
+
+def _c4_std(x):
+    x = [v for v in x if v == v and abs(v) != float("inf")]
+    if len(x) < 48:
+        return None
+    m = sum(x) / len(x)
+    return math.sqrt(sum((v - m) ** 2 for v in x) / len(x))
+
+
+def _c4_mean_std(x):
+    x = [v for v in x if v == v and abs(v) != float("inf")]
+    if len(x) < 48:
+        return None, None
+    m = sum(x) / len(x)
+    return m, math.sqrt(sum((v - m) ** 2 for v in x) / len(x))
+
+
+def _c4_median(x):
+    x = sorted(x)
+    n = len(x)
+    return (x[n // 2] if n % 2 else (x[n // 2 - 1] + x[n // 2]) / 2) if n else None
+
+
+def _c4_quantile(x, q):
+    """Квантиль с линейной интерполяцией (как numpy и pandas по умолчанию)."""
+    x = sorted(x)
+    if not x:
+        return None
+    pos = (len(x) - 1) * q; lo = int(math.floor(pos)); hi = min(lo + 1, len(x) - 1)
+    return x[lo] + (x[hi] - x[lo]) * (pos - lo)
+
+
+def c4_features(T, coin, fs, st, kl15, kl1h, fund, met, tkr, rates, mcap, btc, wave):
+    """47 признаков комитета в момент T (сетка 4 ч) — точно как research/s216/features.py и research/s225/features.py.
+    kl15 — 15-мин свечи Binance (списки как у /fapi/v1/klines), последняя закрывается в T (≥ 673); kl1h — часовые свечи
+    за 31+ сут до T; fund — [(время начисления, с; ставка)] за 31 сут; met — {час: (OI, OI $, топ-позиции, все счета)}
+    за 31 сут до T − 1 ч; tkr — отношение агрессивных объёмов на T − 1 ч (5-мин окно перед ним); rates — [(время, с;
+    дневная ставка)] за 31+ сут; mcap — капитализация CMC или None; btc — (закрытие BTC в T, за сутки до T); wave — число.
+    Нет данных — признака нет (условие с ним не выполняется)."""
+    H, D = 3600, 86400
+    F = {}
+    ser = _c4_series(st, coin, fs, T)
+    cur = ser.get(T)
+    if cur is None:
+        return None
+    bor, rep, rank = cur
+    F["bor"], F["rep"], F["net"] = bor, rep, bor - rep
+    F["rb"] = rep / bor if bor > 0 else None
+    r4row = (st["rows"].get(str(T - 4 * H)) or {}).get(coin)             # in4 — по постам, без проверки фьючерса
+    if r4row is not None and r4row[2] > 0:
+        F["r4x"] = rep / r4row[2]
+    b24 = ser.get(T - D)
+    if b24 is not None and b24[1] > 0:
+        F["r24x"] = rep / b24[1]
+    F["net7"] = sum((ser[T - k * D][0] - ser[T - k * D][1]) if (T - k * D) in ser else 0.0 for k in range(7))
+    F["place"] = rank
+    hs = st["hours"].get(coin) or set()
+    h0 = T // H - 1
+    F["pres7"] = sum(1 for k in range(168) if (h0 - k) in hs)
+    run = 0
+    while (h0 - run) in hs and run < 24 * 60:
+        run += 1
+    F["run"] = run
+    F["hold"] = min(1000.0, max(-1000.0, F["net7"] / max(rep, 1e3)))
+    win = [ser[h] for h in sorted(ser) if T - 30 * D <= h < T]
+    if len(win) >= 48:
+        mb = _c4_median([w[0] for w in win]); mr = _c4_median([w[1] for w in win])
+        F["zbor"] = math.log(bor / mb) if bor > 0 and mb > 0 else None
+        F["zrep"] = math.log(rep / mr) if rep > 0 and mr > 0 else None
+        nets = [w[0] - w[1] for w in win]; mn = sum(nets) / len(nets)
+        sd = math.sqrt(sum((x - mn) ** 2 for x in nets) / len(nets))
+        F["znet"] = (bor - rep - mn) / sd if sd > 0 else None
+    # цена и оборот: 15-мин свечи, последняя закрывается в T
+    if kl15 and len(kl15) >= 673 and int(kl15[-1][0]) // 1000 + 900 == T:
+        c = [float(k[4]) for k in kl15]; qv = [float(k[7]) for k in kl15]; tb = [float(k[10]) for k in kl15]
+        i = len(c) - 1
+        F["r4"] = c[i] / c[i - 16] - 1; F["r24"] = c[i] / c[i - 96] - 1; F["r72"] = c[i] / c[i - 288] - 1
+        lr = [math.log(c[j] / c[j - 1]) for j in range(i - 95, i + 1)]
+        m = sum(lr) / len(lr); F["vol24"] = math.sqrt(sum((x - m) ** 2 for x in lr) / len(lr))
+        q24 = sum(qv[i - 95:i + 1]); q7 = sum(qv[i - 671:i + 1]) / 7
+        F["qv24"] = q24; F["qvx"] = q24 / q7 if q7 > 0 else None
+        q4 = sum(qv[i - 15:i + 1]); F["tb4"] = sum(tb[i - 15:i + 1]) / q4 if q4 > 0 else None
+        F["bqv"] = bor / q24 if q24 > 0 else None
+    # фандинг — как в s216 только вместе с ценой (фьючерсу ≥ 7 сут свечей)
+    if fund and F.get("qv24") is not None:
+        ft = [x[0] for x in fund]; fr = [x[1] for x in fund]
+        k = max((j for j in range(len(ft)) if ft[j] <= T), default=-1)
+        if k >= 1:
+            gap = (ft[k] - ft[k - 1]) / H
+            F["f8"] = fr[k] * 8 / gap if gap > 0 else None
+            F["f24"] = sum(fr[j] for j in range(len(ft)) if T - D < ft[j] <= T)
+            f8s = [fr[j] * 8 / ((ft[j] - ft[j - 1]) / H) for j in range(1, len(ft))
+                   if T - 30 * D < ft[j] <= T and ft[j] > ft[j - 1]]
+            mz, sz = _c4_mean_std(f8s)
+            if sz and F.get("f8") is not None:
+                F["zf"] = (F["f8"] - mz) / sz
+    # ставка займа: почасовой ряд (последняя запись не позже часа), час T − 1 ч
+    if rates:
+        rt = [x[0] for x in rates]; rv = [x[1] for x in rates]
+        h_first = rt[0] // H * H; h_last = max(rt[-1] // H * H, (T - H) // H * H)   # последнее значение тянется до T − 1 ч
+        hrs = list(range(h_first, h_last + H, H))
+        v, j = [], 0
+        for h in hrs:
+            while j + 1 < len(rt) and rt[j + 1] <= h:
+                j += 1
+            v.append(rv[j])
+        k = max((n for n in range(len(hrs)) if hrs[n] <= T - H), default=-1)
+        if k >= 24:
+            w = v[max(0, k - 719):k + 1]
+            if len(w) >= 120:
+                q10 = _c4_quantile(w, 0.1); mx = max(w)
+                F["rate"] = v[k]
+                F["ux"] = v[k] / q10 if q10 else None
+                F["dr24"] = v[k] / v[k - 24] if v[k - 24] else None
+                F["lim"] = 1.0 if (F["ux"] is not None and v[k] >= 0.9 * mx and F["ux"] >= 3) else 0.0
+            else:
+                F["rate"] = v[k]
+                F["dr24"] = v[k] / v[k - 24] if v[k - 24] else None
+            if k >= 48:
+                med = _c4_median(v[max(k - 720, 0):k])
+                F["zrate"] = math.log(v[k] / med) if v[k] > 0 and med and med > 0 else None
+    # капитализация
+    if mcap:
+        F["bmc"] = bor / mcap
+    # позиции: строка на T − 1 ч
+    T1 = T - H
+    if met:
+        def mv(x, col):
+            r = met.get(x)
+            return r[col] if r is not None else None
+        o, o4, o24 = mv(T1, 0), mv(T1 - 4 * H, 0), mv(T1 - D, 0)
+        if o is not None and o4:
+            F["doi4"] = o / o4 - 1
+        if o is not None and o24:
+            F["doi24"] = o / o24 - 1
+        oiv = mv(T1, 1)
+        F["lsr_top"] = mv(T1, 2); F["lsr_acc"] = mv(T1, 3)
+        a, b = mv(T1, 3), mv(T1 - D, 3)
+        F["dlsr24"] = a - b if a is not None and b is not None else None
+        if oiv is not None and F.get("qv24"):
+            F["oiq"] = oiv / F["qv24"]
+        mt = sorted(met)                                   # сдвиг на 4 и 24 строки ряда с проверкой времени — как в s225
+        hh = [h for h in mt if T1 - 30 * D <= h < T1]
+        pos = {h: n for n, h in enumerate(mt)}
+        o4s, o24s = [], []
+        for h in hh:
+            n = pos[h]; a0 = met[h][0]
+            if n >= 4 and mt[n - 4] == h - 4 * H and a0 and a0 > 0 and met[mt[n - 4]][0] and met[mt[n - 4]][0] > 0:
+                o4s.append(math.log(a0 / met[mt[n - 4]][0]))
+            if n >= 24 and mt[n - 24] == h - D and a0 and a0 > 0 and met[mt[n - 24]][0] and met[mt[n - 24]][0] > 0:
+                o24s.append(math.log(a0 / met[mt[n - 24]][0]))
+        s4, s24 = _c4_std(o4s), _c4_std(o24s)
+        if s4 and F.get("doi4") is not None and F["doi4"] > -1:
+            F["zoi4"] = math.log1p(F["doi4"]) / s4
+        if s24 and F.get("doi24") is not None and F["doi24"] > -1:
+            F["zoi24"] = math.log1p(F["doi24"]) / s24
+        if len(hh) >= 48:
+            for col, name, curk in ((3, "zlsr", "lsr_acc"), (2, "zlsrt", "lsr_top")):
+                m, s = _c4_mean_std([met[h][col] for h in hh if met[h][col] is not None])
+                if s and F.get(curk) is not None:
+                    F[name] = (F[curk] - m) / s
+    if tkr is not None:
+        F["tkr"] = tkr
+    # часовые свечи: разброс 4- и 24-часовых ходов за 30 сут и медиана суточного оборота
+    if kl1h:
+        th = [int(k[0]) // 1000 + H for k in kl1h]; ch = [float(k[4]) for k in kl1h]; qh = [float(k[7]) for k in kl1h]
+        idx = [n for n in range(len(th)) if T - 30 * D <= th[n] < T]
+        l4 = [math.log(ch[n] / ch[n - 4]) for n in idx if n >= 4 and th[n] - th[n - 4] == 4 * H]
+        l24 = [math.log(ch[n] / ch[n - 24]) for n in idx if n >= 24 and th[n] - th[n - 24] == D]
+        s4, s24 = _c4_std(l4), _c4_std(l24)
+        if s4 and F.get("r4") is not None:
+            F["zr4"] = math.log1p(F["r4"]) / s4
+        if s24 and F.get("r24") is not None:
+            F["zr24"] = math.log1p(F["r24"]) / s24
+        pos = {t: n for n, t in enumerate(th)}
+        qs = []
+        for kd in range(1, 31):
+            n = pos.get(T - kd * D)
+            if n is not None and n >= 23 and th[n] - th[n - 23] == 23 * H:
+                q = sum(qh[n - 23:n + 1])
+                if q > 0:
+                    qs.append(q)
+        if len(qs) >= 20 and F.get("qv24"):
+            F["zqv"] = math.log(F["qv24"] / _c4_median(qs))
+    if btc and btc[0] and btc[1]:
+        F["btc24"] = btc[0] / btc[1] - 1
+    F["wave"] = wave
+    return F
+
+
+def c4_votes(F):
+    """Сколько из 100 правил комитета выполнено: правило — все его условия (признак есть и ≤ / ≥ порога)."""
+    n = 0
+    for rule in C4_RULES:
+        ok = True
+        for f, op, q in rule:
+            x = F.get(f)
+            if x is None or x != x or not (x <= q if op == "le" else x >= q):
+                ok = False
+                break
+        n += ok
+    return n
+
+
+def _c4_klines(fs, interval, n, end_ts):
+    """Закрытые свечи фьючерса, последняя закрывается не позже end_ts. None — сбой."""
+    j = http_json(f"https://fapi.binance.com/fapi/v1/klines?symbol={fs}USDT&interval={interval}"
+                  f"&endTime={end_ts * 1000 - 1}&limit={n}", 20)
+    return j if isinstance(j, list) else None
+
+
+def _c4_funding(fs, T):
+    j = http_json(f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={fs}USDT&startTime={(T - 31 * 86400) * 1000}"
+                  f"&endTime={T * 1000 + 999}&limit=1000", 20)
+    if not isinstance(j, list):
+        return None
+    try:
+        return sorted((int(x["fundingTime"]) // 1000, float(x["fundingRate"])) for x in j)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _c4_metrics(fs, T, now):
+    """Почасовые OI, OI $, лонг/шорт топ-трейдеров по позициям и всех счетов за ~30 сут до T − 1 ч (Binance отдаёт только
+    30 сут); отношение агрессивных объёмов — 5-мин окно перед T − 1 ч (как строки архива data.binance.vision)."""
+    T1 = T - 3600; a0 = max(T1 - 31 * 86400, int(now) - 30 * 86400 + 300)
+    base = "https://fapi.binance.com/futures/data"
+    out = {}
+    for path, key in (("openInterestHist", "oi"), ("topLongShortPositionRatio", "top"), ("globalLongShortAccountRatio", "acc")):
+        rows, start = [], a0
+        for _ in range(3):
+            j = http_json(f"{base}/{path}?symbol={fs}USDT&period=1h&startTime={start * 1000}&endTime={T1 * 1000}&limit=500", 20)
+            if not isinstance(j, list):
+                return None, None
+            rows += j
+            if len(j) < 500:
+                break
+            start = int(j[-1]["timestamp"]) // 1000 + 1
+        for x in rows:
+            try:
+                t = int(x["timestamp"]) // 1000
+                if key == "oi":
+                    out.setdefault(t, [None, None, None, None])[0:2] = [float(x["sumOpenInterest"]), float(x["sumOpenInterestValue"])]
+                else:
+                    out.setdefault(t, [None, None, None, None])[2 if key == "top" else 3] = float(x["longShortRatio"])
+            except (KeyError, TypeError, ValueError):
+                continue
+    j = http_json(f"{base}/takerlongshortRatio?symbol={fs}USDT&period=5m&startTime={(T1 - 300) * 1000}"
+                  f"&endTime={(T1 - 300) * 1000}&limit=1", 20)
+    tkr = None
+    if isinstance(j, list) and j:
+        try:
+            if int(j[0]["timestamp"]) // 1000 == T1 - 300:
+                tkr = float(j[0]["buySellRatio"])
+        except (KeyError, TypeError, ValueError):
+            tkr = None
+    return {t: tuple(v) for t, v in out.items() if v[0] is not None}, tkr
+
+
+def _c4_rates(asset, T):
+    j = http_json(f"{C4_RATES}?asset={urllib.parse.quote(asset)}&vipLevel=0&startTime={(T - 31 * 86400) * 1000}"
+                  f"&endTime={T * 1000}", 20)
+    if not (isinstance(j, dict) and j.get("success") and isinstance(j.get("data"), list)):
+        return None
+    try:
+        return sorted((int(x["timestamp"]) // 1000, float(x["dailyInterestRate"])) for x in j["data"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _c4_cmc_refresh(now):
+    """Список CMC раз в сутки (те же две страницы, что у 🐋): {тикер: [(цена, капитализация), …]}."""
+    if _c4_cmc["rows"] is not None and now - _c4_cmc["t"] < 86400:
+        return
+    rows = {}
+    for start in (1, 5001):
+        j = http_json(WD_CMC.format(start), 60)
+        d = j.get("data") if isinstance(j, dict) else None
+        lst = d.get("cryptoCurrencyList") if isinstance(d, dict) else None
+        if not isinstance(lst, list):
+            if start == 1:
+                return
+            break
+        for c in lst:
+            try:
+                qs = [q for q in c.get("quotes") or [] if isinstance(q, dict)]
+                q = next((q for q in qs if q.get("name") == "USD"), qs[0] if qs else {})
+                p, mc = float(q.get("price") or 0), float(q.get("marketCap") or 0)
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if p > 0 and mc > 0:
+                rows.setdefault(str(c.get("symbol") or "").upper(), []).append((p, mc))
+        if len(lst) < 5000:
+            break
+    _c4_cmc.update(t=now, rows=rows)
+
+
+def _c4_mcap(coin, px):
+    """Капитализация CMC монеты фьючерса: тот же тикер, цена CMC к цене фьючерса (с множителем) 0,8–1,25, из таких —
+    наибольшая капитализация (как research/s216 mcap_table)."""
+    base, mult = _wd_base(coin)
+    best = None
+    for p, mc in (_c4_cmc["rows"] or {}).get(base, []):
+        if 0.8 <= px / (p * mult) <= 1.25 and (best is None or mc > best):
+            best = mc
+    return best
+
+
+def _c4_alt_basket():
+    """Корзина альтов для хеджа: бессрочные фьючерсы USDT с оборотом за 24 ч ≥ 5 млн $, кроме BTC — {фьючерс: цена}."""
+    j = http_json("https://fapi.binance.com/fapi/v1/ticker/24hr", 20)
+    if not isinstance(j, list):
+        return None
+    trader.contract("BTC")
+    out = {}
+    for x in j:
+        try:
+            s = str(x.get("symbol") or "")
+            if s in trader._contracts and s != "BTCUSDT" and float(x.get("quoteVolume") or 0) >= C4_ALT_VOL:
+                out[s] = float(x["lastPrice"])
+        except (TypeError, ValueError, AttributeError):
+            continue
+    return out or None
+
+
+def c4_rule(state):
+    """🗳: раз в 4 ч (00, 04, …, 20 UTC), в первые 20 мин после закрытия свечи — признаки монет канала и голосование.
+    Сбой данных по монете — повтор в следующем проходе того же окна. Пока панель канала не покрывает 31 сут — без сделок."""
+    now = time.time(); T = int(now // C4_GRID * C4_GRID)
+    if now - T < 60 or now - T > C4_LATE:
+        return []
+    c = state.setdefault("c4", {})
+    if c.get("T") == T and c.get("done"):
+        return []
+    st = _c4_load()
+    if not _c4_ready(st, now):
+        if c.get("wait_log", 0) < now - 6 * 3600:
+            c["wait_log"] = now
+            log("КОМИТЕТ", "панель канала ещё не покрывает 31 сут — сделок нет, догружаю историю")
+        return []
+    if c.get("T") != T:
+        c.update(T=T, done=False, seen=[], tries=0)
+    c["tries"] = c.get("tries", 0) + 1
+    trader.contract("BTC")
+    fut = {}
+
+    def fut_of(coin):
+        if coin not in fut:
+            fut[coin] = _fut_sym(coin)
+        return fut[coin]
+    row = st["rows"].get(str(T)) or {}
+    cand = []
+    for coin in sorted(row):
+        if coin in C4_STABLE or coin in BL_SKIP:
+            continue
+        fs = fut_of(coin)
+        if fs and fs not in BL_SKIP and _c4_live(fs, T) and coin not in c["seen"]:
+            cand.append((coin, fs))
+    _c4_cmc_refresh(now)
+    btc15 = _c4_klines("BTC", "15m", 100, T)
+    if not btc15 or int(btc15[-1][0]) // 1000 + 900 != T:
+        if c["tries"] >= 6:
+            c["done"] = True; log("КОМИТЕТ", "нет свечей BTC — окно пропущено")
+        return []
+    bt = [int(k[0]) // 1000 + 900 for k in btc15]
+    jj = max((n for n in range(len(bt)) if bt[n] <= T - 86400), default=None)
+    btc = (float(btc15[-1][4]), float(btc15[jj][4]) if jj is not None else None)
+    wave = _c4_wave(st, T, fut_of)
+
+    def one(cf):
+        try:
+            return one_(cf)
+        except Exception as e:                                # странные данные одной монеты не срывают окно
+            log("КОМИТЕТ", f"{cf[1]}: ошибка признаков {e!r}")
+            return cf[0], cf[1], None, None
+
+    def one_(cf):
+        coin, fs = cf
+        kl15 = _c4_klines(fs, "15m", 700, T); kl1h = _c4_klines(fs, "1h", 750, T)
+        fund = _c4_funding(fs, T); met, tkr = _c4_metrics(fs, T, now)
+        asset = re.sub(r"^(1000000|1000|1M)", "", fs) if not re.match(r"^(1000000|1000|1M)\d", fs) else fs
+        rates = _c4_rates(asset, T)
+        if kl15 is None or kl1h is None or fund is None or met is None:
+            return coin, fs, None, None
+        px = float(kl15[-1][4]) if kl15 else None
+        F = c4_features(T, coin, fs, st, kl15, kl1h, fund, met, tkr, rates or [],
+                        _c4_mcap(fs, px) if px else None, btc, wave)
+        return coin, fs, F, px
+    with ThreadPoolExecutor(C4_WORKERS) as ex:
+        res = list(ex.map(one, cand))
+    basket, msgs, miss = None, [], []
+    for coin, fs, F, px in res:
+        if F is None:
+            miss.append(fs); continue
+        c["seen"].append(coin)
+        v = c4_votes(F)
+        if v < C4_K:
+            continue
+        if basket is None:
+            basket = _c4_alt_basket() or {}
+        note = (f"комитет: выполнено правил {v} из 100 (нужно ≥ {C4_K}); займ {F['bor'] / 1e6:.2f} млн $, OI за 4 ч "
+                + (f"{F['doi4'] * 100:+.1f}%" if F.get("doi4") is not None else "—")
+                + ", лонг/шорт счетов за сутки " + (f"{F['dlsr24']:+.2f}" if F.get("dlsr24") is not None else "—"))
+        m = trader.virt_open(state, "virtual_C4", fs, "🗳", note, price=px, hold_h=C4_HOLD_H)
+        if m:
+            t = state["virtual_C4"]["trades"][-1]
+            if t.get("sym") == fs and not t.get("closed") and basket:
+                t["alt_px"] = basket
+            msgs.append(m)
+        log("КОМИТЕТ", f"{fs}: голосов {v} → вход" + ("" if m else " (не открыт: занято, баланс или нет цены)"))
+    if miss and c["tries"] < 6:
+        log("КОМИТЕТ", f"нет данных Binance по {len(miss)} монетам ({', '.join(miss[:10])}) — повтор в следующем проходе")
+    else:
+        c["done"] = True
+        log("КОМИТЕТ", f"{time.strftime('%H:%M', time.gmtime(T))} UTC: монет в канале {len(row)}, проверено {len(c['seen'])}"
+            + (f", без данных {len(miss)}" if miss else "") + f", волна {wave}")
+    if msgs:
+        return ["🗳 комитет «шорт 4 ч»:\n" + "\n".join(msgs)]
+    return []
+
+
 def scan(state, dry):
     posts = fetch_posts(max(LOOKBACK_H, LOOKBACK_RP_H) if repay_due(state) or wide_due(state) else LOOKBACK_H)
     try:
         bf_record(posts)                                    # журнал постов для 🏦 (фактор займа)
     except Exception as e:
         log("ошибка журнала постов:", repr(e))
+    try:
+        c4_record(posts)                                    # панель канала для 🗳 (займ, отдача, место по часам за 33 сут)
+    except Exception as e:
+        log("ошибка панели канала 🗳:", repr(e))
     runs = channel_runs(posts)
     log(f"постов {len(posts)}, монет в канале сейчас {len(runs)}, "
         f"висят ≥{MIN_RUN_H:g}ч: {sum(1 for r in runs.values() if r['run_h'] >= MIN_RUN_H)}")
@@ -4036,6 +4773,11 @@ def scan(state, dry):
             log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
     except Exception as e:
         log("ошибка правила заводов на Binance:", repr(e))
+    try:
+        for msg in c4_rule(state):                          # 🗳 комитет «шорт 4 ч» (research/s225)
+            log(msg.replace("\n", " | ")); broadcast(state, msg, dry)
+    except Exception as e:
+        log("ошибка комитета 🗳:", repr(e))
     if cands:
         log(status_text(cands).replace("\n", " | "))
     return cands
