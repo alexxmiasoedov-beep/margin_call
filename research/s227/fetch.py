@@ -126,7 +126,9 @@ def kr():
         host = "https://api.bithumb.com" if ex == "bithumb" else "https://api.upbit.com"
         rows, to = {}, b
         while to > a:
-            u = f"{host}/v1/candles/minutes/60?market={mk}&count=200&to={to.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+            tt = ((to + datetime.timedelta(hours=9)).strftime('%Y-%m-%dT%H:%M:%S') if ex == "bithumb"   # Bithumb — время Сеула без зоны
+                  else to.strftime('%Y-%m-%dT%H:%M:%SZ'))
+            u = f"{host}/v1/candles/minutes/60?market={mk}&count=200&to={tt}"
             try:
                 j = json.loads(get(u) or b"[]")
             except Exception as e:
