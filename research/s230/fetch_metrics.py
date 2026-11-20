@@ -40,7 +40,7 @@ def day_rows(sym, day):
                 p = ln.split(",")
                 if len(p) >= 8 and p[0].endswith(":00:00"):
                     t = datetime.datetime.strptime(p[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).timestamp()
-                    rows.append([t] + [float(x) if x else np.nan for x in p[2:8]])
+                    rows.append([t] + [float(x.strip('"')) if x.strip('"') else np.nan for x in p[2:8]])   # пустые поля бывают «""»
             return rows
         except urllib.error.HTTPError as e:
             if e.code == 404:
