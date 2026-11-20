@@ -1,6 +1,8 @@
 """s216 — признаки на сетке 4 ч (монета в канале MarginData) и восемь исходов. Метод — ВЫВОДЫ.md (записан до расчёта,
 коммит c94a850). Только данные до T. Итог — s216_feat.pkl в папке данных.
-Запуск из /home/user/mc_data (сначала fetch_metrics.py): python3 <repo>/research/s216/features.py"""
+Запуск из /home/user/mc_data (сначала fetch_metrics.py): python3 <repo>/research/s216/features.py
+Окружение (s224): GRID — шаг сетки в часах (по умолчанию 4), T0 — начало сетки ГГГГ-ММ-ДД (по умолчанию вся панель),
+OUT — файл итога (по умолчанию s216_feat.pkl)."""
 import datetime
 import json
 import os
@@ -224,7 +226,12 @@ def outcomes(G):
 
 def main():
     D = pd.read_pickle("s21/panel.pkl")
-    G = D[D["T"] % G4 == 0].sort_values(["T", "s"]).reset_index(drop=True)
+    # s224: сетка и начало — из окружения (GRID — часов, по умолчанию 4; T0 — дата ГГГГ-ММ-ДД, по умолчанию вся панель)
+    grid = int(float(os.environ.get("GRID", "4")) * H)
+    G = D[D["T"] % grid == 0]
+    if os.environ.get("T0"):
+        G = G[G["T"] >= pd.Timestamp(os.environ["T0"], tz="UTC").timestamp()]
+    G = G.sort_values(["T", "s"]).reset_index(drop=True)
     F = G[["s", "T", "bor", "rep"]].copy()
     F["net"] = G.bor - G.rep
     F["rb"] = np.where(G.bor > 0, G.rep / G.bor, np.nan)
@@ -257,7 +264,7 @@ def main():
     for k, v in outcomes(G).items():
         F[k] = v
     F = F.drop(columns=["oiv", "mcap"])
-    F.to_pickle("s216_feat.pkl")
+    F.to_pickle(os.environ.get("OUT", "s216_feat.pkl"))                # s224: OUT — другой файл итога
     print("готово:", F.shape, "\nзаполнено:", F.notna().mean().round(2).to_dict(), flush=True)
 
 
