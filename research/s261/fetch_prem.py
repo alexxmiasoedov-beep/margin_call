@@ -8,6 +8,7 @@ import pickle
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -32,18 +33,25 @@ def get(url):
                 time.sleep(w)
             _last[0] = time.time()
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=60) as r:
+            u = urllib.parse.quote(url, safe=":/")              # перпы с иероглифами в названии (龙虾 и т. п.)
+            with urllib.request.urlopen(urllib.request.Request(u, headers=UA), timeout=60) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return None
+            print(f"  {url.rsplit('/', 1)[-1]}: HTTP {e.code}, попытка {k + 1}", flush=True)
             time.sleep(5 * (k + 1))
-        except Exception:
+        except Exception as e:
+            print(f"  {url.rsplit('/', 1)[-1]}: {type(e).__name__} {e}, попытка {k + 1}", flush=True)
             time.sleep(5 * (k + 1))
     return None
 
 
 def one(s):
+    cache = f"s261/pb/{s}.npz"                                 # готовые монеты — из кэша (повторный запуск)
+    if os.path.exists(cache):
+        z = np.load(cache)
+        return s, ((z["t"], z["p"]) if len(z["t"]) else None)
     rows = []
     for d in DAYS:
         b = get(f"https://data.binance.vision/data/futures/um/daily/premiumIndexKlines/{s}USDT/15m/{s}USDT-15m-{d}.zip")
@@ -54,10 +62,14 @@ def one(s):
             p = ln.split(",")
             if p and p[0].isdigit():
                 rows.append((int(p[0]) // 1000, float(p[4])))
+    os.makedirs("s261/pb", exist_ok=True)
     if not rows:
+        np.savez(cache, t=np.zeros(0, np.int64), p=np.zeros(0, np.float32))
         return s, None
     a = np.array(sorted(set(rows)))
-    return s, (a[:, 0].astype(np.int64), a[:, 1].astype(np.float32))
+    v = (a[:, 0].astype(np.int64), a[:, 1].astype(np.float32))
+    np.savez(cache, t=v[0], p=v[1])
+    return s, v
 
 
 def main():
