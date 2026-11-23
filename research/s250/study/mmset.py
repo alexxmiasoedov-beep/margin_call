@@ -4,8 +4,8 @@ FIRMS = [("wintermute", r"wintermute"), ("amber", r"amber"), ("jump", r"jump (tr
          ("dwf", r"dwf ?labs"), ("gsr", r"^gsr"), ("b2c2", r"b2c2"), ("cumberland", r"^cumberland(?!.*(river|council))"), ("falconx", r"falcon ?x"),
          ("auros", r"auros"), ("qcp", r"qcp"), ("genesis", r"genesis trading"), ("alameda", r"alameda"), ("nonco", r"^nonco \d")]
 def firm(name):
-    n = name.lower()
-    if "endaoment" in n or "charity" in n: return None
+    n = re.sub(r"0x[0-9a-fA-F]{6,40}", " ", name.lower())  # не искать имена внутри hex-адреса (b2c2!)
+    if "endaoment" in n or "charity" in n or "binance dep" in n: return None
     for f, rx in FIRMS:
         if re.search(rx, n): return f
     return None
