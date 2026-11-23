@@ -31,6 +31,31 @@ def labels():
     return lab
 
 
+def own_token():
+    """Монеты, у которых адрес BEP-20 — сам токен проекта, а не обёртка Binance (решение 23.11 до расчёта доходов):
+    адрес BNB Chain есть у монеты CoinGecko с тем же тикером (id не binance-peg-…) или в платформе монеты CMC.
+    Binance-Peg (id binance-peg-…) и неподтверждённые адреса (родные монеты других сетей) — отдельной строкой."""
+    import re
+    C = json.load(open("s249/bsc_circ.json"))
+    cmc = {c["id"]: c for c in json.load(open("s167/cmc_map_all.json"))}
+    by = {}
+    for c in json.load(open("s220/cg_list.json")):
+        a = str((c.get("platforms") or {}).get("binance-smart-chain") or "").lower()
+        if a:
+            by.setdefault(a, []).append((c["id"], str(c["symbol"]).upper()))
+    out = {}
+    for fs, r in C.items():
+        m = re.match(r"^(1000000|100000|10000|1000|1M)(.+)$", fs)
+        coin = m.group(2) if m and not m.group(2)[0].isdigit() else fs
+        ids = by.get(r["contract"], [])
+        peg = any(i.startswith("binance-peg") for i, _ in ids)
+        pl = (cmc.get(r["cmc"]) or {}).get("platform")
+        own = any(not i.startswith("binance-peg") and s == coin for i, s in ids) or (
+            isinstance(pl, dict) and str(pl.get("token_address") or "").lower() == r["contract"])
+        out[fs] = "own" if own and not peg else ("peg" if peg else "unk")
+    return out
+
+
 def raw():
     rows = []
     for p in sorted(glob.glob("s249/raw/part_*.jsonl")):
@@ -71,13 +96,18 @@ def main():
     print("событий ≥ 0,5% обращения (первые за 48 ч):", len(E), "монет", E.perp.nunique(),
           "; без сети ETH:", int((~E.eth).sum()))
     T = S221.trades(E[["perp", "t", "amt", "frac", "eth"]].copy())
+    T["cls"] = T.perp.map(own_token())
     T.to_pickle("s249_trades.pkl")
     months = (T1 - T0) / (30.44 * DAY)
-    x = T[T.net.notna() & (T.r24.abs() <= CALM)]
-    print(f"\n🐋 BNB Chain, монеты без сети ETH (основная, спокойный рынок ±5%): {S221.line(x[~x.eth], months)}")
+    x0 = T[T.net.notna() & (T.r24.abs() <= CALM)]
+    print(f"\nкак записано 23.11 (все монеты без сети ETH, с Binance-Peg): {S221.line(x0[~x0.eth], months)}")
+    print(f"  Binance-Peg: {S221.line(x0[~x0.eth & (x0.cls == 'peg')], months)}")
+    print(f"  адрес не подтверждён: {S221.line(x0[~x0.eth & (x0.cls == 'unk')], months)}")
+    x = x0[x0.cls == "own"]                                   # основная — BEP-20 самого токена (решение до расчёта)
+    print(f"\n🐋 BNB Chain, монеты без сети ETH, BEP-20 — свой токен (основная, спокойный рынок ±5%): {S221.line(x[~x.eth], months)}")
     print(f"монеты с сетью ETH: {S221.line(x[x.eth], months)}")
     print(f"все монеты: {S221.line(x, months)}")
-    print(f"без фильтра рынка (без сети ETH): {S221.line(T[T.net.notna() & ~T.eth], months)}")
+    print(f"без фильтра рынка (без сети ETH): {S221.line(T[T.net.notna() & ~T.eth & (T.cls == 'own')], months)}")
     print(f"🐋ᵛ (λ ≥ 0,05), без сети ETH: {S221.line(x[~x.eth & (x.lam >= 0.05)], months)}")
     m, t, n = S221.ct(x[~x.eth].net, x[~x.eth].entry); mh, _, _ = S221.ct(x[~x.eth].hed, x[~x.eth].entry)
     md = (x[~x.eth].net - x[~x.eth].pl).mean()
