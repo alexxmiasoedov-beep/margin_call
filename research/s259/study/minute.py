@@ -24,9 +24,9 @@ MONTH = os.environ.get("MONTH", "2026-09")
 N = int(os.environ.get("NPER", "12"))
 
 
-def fetch(sym, kind):
+def fetch(sym, kind, month=None):
     s = urllib.parse.quote(f"{sym}USDT")
-    url = f"https://data.binance.vision/data/futures/um/monthly/{kind}/{s}/1m/{s}-1m-{MONTH}.zip"
+    url = f"https://data.binance.vision/data/futures/um/monthly/{kind}/{s}/1m/{s}-1m-{month or MONTH}.zip"
     for k in range(3):
         try:
             time.sleep(0.3)
@@ -81,11 +81,40 @@ def stats(c, i):
         dp = lp[b] - lp[b - 1]
         for k in resp:
             resp[k].append((li[b + k] - li[b - 1]) / dp)
-    return dict(beta0=beta0, lag=lag, lead=lead, gap_abs=float(np.median(np.abs(gap))), gap90=float(np.quantile(np.abs(gap), .9)),
+    same = float((np.abs(gap) < 1e-5).mean())                    # минуты, где индекс = цене перпа (самоссылка / Last Price Protected)
+    # error-correction на 15 мин по настоящему индексу: g = ln(перп / индекс) на закрытии 15 мин
+    q = df[(df.index % 900) == 840]                               # минута, закрывающая 15-мин свечу
+    q = q[q.index.to_series().diff() == 900]
+    g = np.log(q.p / q.i).values; rp15 = np.diff(np.log(q.p.values)); ri15 = np.diff(np.log(q.i.values)); g1 = g[:-1]
+    ecm = {}
+    for nm, m in (("all", np.ones(len(g1), bool)), ("g05", np.abs(g1) >= 0.005)):
+        if m.sum() >= 30:
+            ap = np.polyfit(g1[m], rp15[m], 1)[0]; ai = np.polyfit(g1[m], ri15[m], 1)[0]
+            ecm[nm] = (ap, ai, int(m.sum()))
+        else:
+            ecm[nm] = (np.nan, np.nan, int(m.sum()))
+    return dict(beta0=beta0, lag=lag, lead=lead, gap_abs=float(np.median(np.abs(gap))), gap90=float(np.quantile(np.abs(gap), .9)), same=same,
+                ecm_p=ecm["all"][0], ecm_i=ecm["all"][1], ecm_p5=ecm["g05"][0], ecm_i5=ecm["g05"][1], ecm_n5=ecm["g05"][2],
                 n_big=len(big), resp={k: float(np.median(v)) if v else np.nan for k, v in resp.items()})
 
 
+def history():
+    """SYMS="MYX:2025-08,MYX:2026-09,…" — β0 и отклик индекса по месяцам у отдельных перпов (была ли самоссылка раньше)."""
+    U = json.load(open(f"{OUT}/universe.json"))
+    for item in os.environ["SYMS"].split(","):
+        s, m = item.split(":")
+        c = fetch(s, "klines", m); i = fetch(s, "indexPriceKlines", m)
+        if c is None or i is None or not len(c) or not len(i):
+            print(s, m, "нет данных"); continue
+        r = stats(c, i)
+        print(f"{s} {m} (вес перпа по снимку {U.get(s, {}).get('self')}): индекс = цене перпа в {r['same']:.1%} минут; β0 {r['beta0']:.2f}, лаги 1/2/3/5 мин "
+              f"{', '.join(f'{v:.2f}' for v in r['lag'].values())}; ходов ≥ 2% за минуту {r['n_big']}, индекс прошёл 0/1/2/5/15 мин: "
+              f"{', '.join(f'{v:.0%}' for v in r['resp'].values())}", flush=True)
+
+
 def main():
+    if os.environ.get("SYMS"):
+        return history()
     G, U = sample()
     rows = []
     for g, syms in G.items():
@@ -96,12 +125,13 @@ def main():
             r = stats(c, i)
             rows.append(dict(group=g, s=s, self=U[s].get("self", np.nan), alpha=U[s].get("alpha", np.nan), **{k: v for k, v in r.items() if k not in ("lag", "resp")},
                              **{f"lag{k}": v for k, v in r["lag"].items()}, **{f"resp{k}": v for k, v in r["resp"].items()}))
-            print(f"{g}: {s} β0 {r['beta0']:.2f}, лаги 1/2/3/5 мин {', '.join(f'{v:.2f}' for v in r['lag'].values())}; "
+            print(f"{g}: {s} индекс = цене перпа в {r['same']:.1%} минут; β0 {r['beta0']:.2f}, лаги 1/2/3/5 мин {', '.join(f'{v:.2f}' for v in r['lag'].values())}; "
                   f"|перп/индекс − 1| медиана {r['gap_abs']:.2%}, 90% {r['gap90']:.2%}; ходов перпа ≥ 2% за минуту {r['n_big']}, "
                   f"индекс прошёл 0/1/2/5/15 мин: {', '.join(f'{v:.0%}' for v in r['resp'].values())}", flush=True)
     X = pd.DataFrame(rows)
     print(f"\n=== месяц {MONTH}, медианы по группам")
-    cols = ["beta0", "lag1", "lag2", "lag3", "lag5", "lead", "gap_abs", "gap90", "n_big", "resp0", "resp1", "resp2", "resp5", "resp15"]
+    cols = ["beta0", "lag1", "lag2", "lag3", "lag5", "lead", "gap_abs", "gap90", "same", "n_big", "resp0", "resp1", "resp2", "resp5",
+            "resp15", "ecm_p", "ecm_i", "ecm_p5", "ecm_i5", "ecm_n5"]
     print(X.groupby("group")[cols].median().round(3).to_string())
     print("\nкорреляция β0 с весом перпа в индексе (без спота):",
           round(X[X.group != "со спотом, близкий оборот"][["beta0", "self"]].corr().iloc[0, 1], 2))

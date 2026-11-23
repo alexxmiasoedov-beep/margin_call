@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common259 import BAR, DAY, MID, OUT, T0, T1, load_k, TMP  # noqa: E402
+from common259 import BAR, DAY, MID, OUT, T0, T1, TMP, load_k  # noqa: E402
 
 EDGES = [2.3e6, 5.3e6, 12.4e6, 41.5e6]
 TYPES = {"вынос шортов 5/5": (1, 0.05, -0.05), "вынос шортов 10/10": (1, 0.10, -0.10),
@@ -73,6 +73,37 @@ def count(h):
     return out
 
 
+def wicks(K, U):
+    """Свечные следы каскадов (полное покрытие, 15 мин): тень вверх — максимум ≥ открытия +10% и закрытие в нижней половине
+    размаха (вынос шортов и откат); тень вниз — минимум ≤ открытия −10% и закрытие в верхней половине (ликвидации лонгов
+    и выкуп). Частота на 100 монето-суток, без спота против со спотом, по пятым долям оборота."""
+    rows = []
+    for s, u in U.items():
+        a = K[s]
+        t = a["t"].astype(np.int64) + BAR
+        o, h, l, c, qv = (a[x].astype(float) for x in ("o", "h", "l", "c", "qv"))
+        live = (qv > 0) & (t > T0) & (t <= T1)
+        rng = np.maximum(h - l, 1e-12)
+        up = live & (h >= o * 1.10) & (c <= l + 0.5 * rng)
+        dn = live & (l <= o * 0.90) & (c >= l + 0.5 * rng)
+        s0 = u["spot0"] or np.inf
+        ns = t <= s0
+        cq = pd.Series(qv).rolling(672, min_periods=96).sum().shift(1).values / 7
+        bk = np.searchsorted(EDGES, np.nan_to_num(cq))
+        for g in (True, False):
+            for b in range(5):
+                m = live & (ns == g) & (bk == b)
+                rows.append((g, b, m.sum() / 96, (up & m).sum(), (dn & m).sum()))
+    W = pd.DataFrame(rows, columns=["ns", "bk", "days", "up", "dn"]).groupby(["ns", "bk"]).sum()
+    print("\n### свечные тени ≥ 10% с возвратом за 15 мин (на 100 монето-суток: вверх / вниз)")
+    for g in (True, False):
+        x = W.loc[g]
+        tot = x.sum()
+        print(f"  {'без спота' if g else 'со спотом'}: всего {tot.up / tot.days * 100:.2f} / {tot.dn / tot.days * 100:.2f} (монето-суток {tot.days:,.0f}); "
+              "по пятым долям оборота: " + "; ".join(f"{b + 1}: {x.loc[b].up / max(x.loc[b].days, 1) * 100:.2f} / "
+                                                     f"{x.loc[b].dn / max(x.loc[b].days, 1) * 100:.2f}" for b in range(5)))
+
+
 def main():
     K = load_k()
     U = json.load(open(f"{OUT}/universe.json"))
@@ -95,6 +126,7 @@ def main():
             if oi is not None and s in R["days"]:
                 d = set(int(pd.Timestamp(x, tz="UTC").timestamp()) for x in R["days"][s])
                 rand.append(events_for(s, a, u, oi, d))
+    wicks(K, U)
     F = pd.concat(full, ignore_index=True)
     W = pd.concat(wins, ignore_index=True) if wins else F.iloc[:0]
     Rr = pd.concat(rand, ignore_index=True) if rand else F.iloc[:0]
@@ -125,11 +157,28 @@ def main():
     for b in range(5):
         rate(lambda x, b=b: x.ns & (x.bk == b), lambda x, b=b: x.ns & (x.bk == b), lambda x, b=b: x.ns & (x.bk == b), f"без спота, оборот {b + 1}")
         rate(lambda x, b=b: ~x.ns & (x.bk == b), lambda x: x.ns & False, lambda x: x.ns & False, f"со спотом, оборот {b + 1}")
+    print("\n### фандинг перед каскадом (последнее начисление до часа, r8), без спота")
+    FP = pd.read_pickle(f"{TMP}/funding_panel.pkl")[["s", "t", "r8"]] if os.path.exists(f"{TMP}/funding_panel.pkl") else None
+    if FP is not None:
+        FF = {k: (g.t.values, g.r8.values) for k, g in FP.groupby("s")}
+        for nm in ("вынос шортов 10/10", "ликвидации лонгов 10/10", "набор на росте 5/+10"):
+            sg, pr, d = TYPES[nm]
+            vals = []
+            for X in (F[F.ns], W[W.ns], Rr[Rr.ns]):
+                m = (sg * X.r.values >= pr) & ((X.doi.values <= d) if d < 0 else (X.doi.values >= d))
+                for r in X[m].itertuples():
+                    ft, fr = FF.get(r.s, (np.zeros(0), np.zeros(0)))
+                    k = np.searchsorted(ft, r.H - 3600, side="right") - 1
+                    if k >= 0:
+                        vals.append(fr[k])
+            v = np.array(vals)
+            if len(v):
+                print(f"  {nm}: часов {len(v)}; r8 ≤ −0,1% у {(v <= -0.001).mean():.0%}, ≥ +0,02% (лонги платят) у {(v >= 0.0002).mean():.0%}, "
+                      f"медиана {np.median(v):+.3%}")
     print("\n### покрытие без спота по источникам (без веса)")
     for nm, X in (("полное (s228)", F[F.ns]), ("окна событий", W[W.ns]), ("выборка вне окон", Rr[Rr.ns])):
         c = count(X)
         print(f"  {nm}: монето-суток {len(X) / 24:,.0f}; " + "; ".join(f"{k} {v}" for k, v in c.items()))
-    pd.concat([F.assign(src="full"), W.assign(src="win"), Rr.assign(src="rand")]).to_pickle(f"{TMP}/cascade_hours.pkl")
 
 
 if __name__ == "__main__":
