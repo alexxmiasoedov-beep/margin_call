@@ -60,7 +60,10 @@ def raw():
     rows = []
     for p in sorted(glob.glob("s249/raw/part_*.jsonl")):
         for line in open(p):
-            rows.append(json.loads(line))
+            try:                                         # строка, оборванная при остановке сбора, — пропустить
+                rows.append(json.loads(line))
+            except ValueError:
+                continue
     return pd.DataFrame(rows, columns=["block", "t", "tok", "frm", "to", "amt", "tx"]).drop_duplicates(["tx", "tok", "frm", "to", "amt"])
 
 
