@@ -47,7 +47,8 @@ NOPX = set()                                   # фьючерсы, для кот
 HEAD = [20_000_000]
 LOGS = []
 state = {"wd": {"tok": {A[s]: [s, scanner._wd_base(s)[0], CIRC[s], i] for i, s in enumerate(A)},
-                "dec": {a: 18 for a in A.values()}, "tok_t": T0, "block": HEAD[0] - scanner.WD_CONF}}
+                "dec": {a: 18 for a in A.values()}, "tok_t": T0, "block": HEAD[0] - scanner.WD_CONF,
+                "sol": {"tok_t": T0}}}                 # список Solana (🐋⁺) уже собран — без запросов CMC в этом тесте
 
 
 def pad(a):

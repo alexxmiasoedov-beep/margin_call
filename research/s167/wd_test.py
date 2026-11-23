@@ -1,5 +1,5 @@
 """s167 — тест журнала 🐋 (scanner.whale_deposit_rule) с подменой узлов Ethereum, CoinMarketCap, CoinGecko и Binance:
-нет файла меток; список токенов за три прохода (монеты с одинаковым тикером, сверка цены, множитель 1000, стейблкоин,
+нет файла меток; список токенов за четыре прохода (монеты с одинаковым тикером, сверка цены, множитель 1000, стейблкоин,
 токен без ERC-20); знаки после запятой (в том числе токен без decimals()); события — порог 0,5%, отправитель-биржа,
 кастоди среди адресов Binance, вторая выдача за 48 ч и новая после 48 ч; вход — спокойный и неспокойный рынок, молодой
 фьючерс, опоздание больше 30 мин; догон пропущенных блоков; сбой узлов (строка не чаще раза в час); выход через 24 ч."""
@@ -62,7 +62,7 @@ PERP = {"ZQZ": 1.0, "AAA": 1.0, "1000BBB": 0.02, "DDD": 2.0, "YNG": 1.0, "RRR": 
 DEC = {AAA: 18, BBB: 9, DDD: 18, YNG: 6}                  # RRR — decimals() откатывается
 ONBOARD = {s: T0 - 400 * D for s in PERP}
 R24 = {"AAA": 0.02, "1000BBB": -0.03, "DDD": 0.08, "YNG": 0.0}   # ход фьючерса за сутки до входа
-CALLS = {"cmc": 0, "cg": 0, "px": 0, "logs": [], "dec": 0}
+CALLS = {"cmc": 0, "cg": 0, "bnet": 0, "px": 0, "logs": [], "dec": 0}
 FAIL = {"rpc": False}
 
 HEAD = [20_000_000]
@@ -124,6 +124,9 @@ def fake_http_json(url, timeout=30):
     if url == scanner.WD_CG:
         CALLS["cg"] += 1
         return CG
+    if url == scanner.WDS_BNET:                              # сети ввода Binance (для 🐋⁺) — сбой: на список Ethereum не влияет
+        CALLS["bnet"] += 1
+        return None
     if url == "https://fapi.binance.com/fapi/v1/ticker/price":
         CALLS["px"] += 1
         return [{"symbol": f"{s}USDT", "price": str(p)} for s, p in PERP.items()]
@@ -186,14 +189,17 @@ with open(LAB, "w") as f:
     for a, ex, nm in ((B1, "Binance", "Binance 14"), (B2, "Binance", "Binance 20"), (BW, "Binance", "Binance Wintermute Deposit 1"),
                       (CB, "Coinbase", "Coinbase 10")):
         f.write(f"{a}\t{ex}\t{nm}\n")
-# 2. список токенов: CMC, CoinGecko, цены Binance — по одному запросу за проход
+# 2. список токенов: CMC, CoinGecko, сети ввода Binance (для 🐋⁺), цены Binance — по одному запросу за проход
 CLOCK[0] += 60; run()
 check(CALLS["cmc"] == 1 and CALLS["cg"] == 0 and not state["wd"].get("tok"), "проход 1: список CMC (меньше 5000 монет — одна страница)")
 CLOCK[0] += 60; run()
 check(CALLS["cg"] == 1 and CALLS["px"] == 0, "проход 2: список CoinGecko")
 CLOCK[0] += 60; run()
+check(CALLS["bnet"] == 1 and CALLS["px"] == 0 and any("сети ввода" in x for x in LOG),
+      "проход 3: сети ввода Binance (не отдал — строка, список Ethereum собирается дальше)")
+CLOCK[0] += 60; run()
 tok = state["wd"]["tok"]
-check(CALLS["px"] == 1 and set(tok) == {QQQ, AAA, BBB, DDD, YNG, RRR}, f"проход 3: цены Binance и список — {sorted(v[0] for v in tok.values())}")
+check(CALLS["px"] == 1 and set(tok) == {QQQ, AAA, BBB, DDD, YNG, RRR}, f"проход 4: цены Binance и список — {sorted(v[0] for v in tok.values())}")
 check(tok[BBB][0] == "1000BBB" and tok[DDD][2] == 5e8 and tok[AAA][2] == 1e9,
       "BBB: адрес у CoinGecko, фьючерс 1000BBB; DDD: из двух монет взята та, у которой сходится цена")
 check(any("список токенов Ethereum" in x for x in LOG), "строка об обновлении списка")

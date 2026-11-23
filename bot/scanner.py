@@ -3045,6 +3045,13 @@ WD_ZERO = "0x" + "0" * 40
 WD_LOW, WD_LOW_BLK, WD_LOW_RE = 500, 5000, 7 * 86400   # сторож: за сутки UTC (просмотрено ≥ 5000 блоков) меньше 500 переводов
                                                     # токенов списка на адреса Binance (обычно 5–6 тыс.) — похоже, Binance сменил
                                                     # адрес сметания (так было в 11.2026, research/s242); сообщение — раз в 7 сут
+WDS_RPC = ("https://api.mainnet-beta.solana.com", "https://api.mainnet.solana.com")   # 🐋⁺: публичные узлы Solana без ключа
+WDS_BNET = "https://www.binance.com/bapi/capital/v1/public/capital/getNetworkCoinAll"   # 🐋⁺: сети ввода монет Binance (адрес токена в Solana)
+WDS_PAYER = "5JPAWfhLNsYVk3tPpD3gHvpHbvaXDbpUpy1wUfQVYRS2"   # общий плательщик комиссии сметаний Binance в Solana (s220)
+WDS_HOT0 = "8DfHuYFv7VQ6wgcGtVDN2vtFn5ezF52hHNtPWYcqm8hU"    # горячий кошелёк Binance с 11.2026 (s220); бот сверяет раз в сутки
+WDS_EVERY, WDS_HOT_EVERY, WDS_JUMP = 120, 86400, 0.002     # остатки — раз в 2 мин; адрес — раз в сутки; скачок ≥ 0,2% обращения
+WDS_TX, WDS_ACC_BATCH, WDS_RPC_S = 6, 10, 25               # расшифровок операций — до 6 за проход (узел режет частые
+                                                            # getTransaction); счета — до 10 за проход; Solana — до 25 с
 WDV_LAM, WDV_K = 0.05, 700                         # 🐋ᵛ: завод ≥ 5% среднесуточного оборота фьючерса за 7 сут (research/s213);
                                                     # 15-мин свечей в запросе входа — 7 сут + запас на опоздание (вес 5)
 _wd_lab = {"mtime": None, "cex": {}, "bin": []}
@@ -3151,11 +3158,86 @@ def _wd_map(cmc, cg, px):
     return out
 
 
+def _wds_bnet(j):
+    """Сети ввода монет Binance (getNetworkCoinAll) → {монета Binance: адрес токена в Solana}; сбой ответа — {}."""
+    out = {}
+    d = j.get("data") if isinstance(j, dict) else None
+    for c in d if isinstance(d, list) else []:
+        nets = c.get("networkList") if isinstance(c, dict) else None
+        for n in nets if isinstance(nets, list) else []:
+            a = str(n.get("contractAddress") or "") if isinstance(n, dict) and n.get("network") == "SOL" else ""
+            if 32 <= len(a) <= 44 and c.get("coin"):
+                out[str(c["coin"])] = a
+    return out
+
+
+def _wds_map(cmc, cg, px, bnet=None):
+    """Родные токены Solana у фьючерсов Binance для 🐋⁺ (как набор research/s221): монета CMC — как у _wd_map (тот же тикер,
+    цена 0,8–1,25 от фьючерса, наибольшая капитализация). Адрес в Solana — из сетей ввода Binance (bnet: {монета: адрес};
+    так находятся и монеты, у которых основная сеть CMC — BNB, а id CoinGecko не совпадает со slug CMC: HOLO, HOME), иначе
+    основная платформа CMC, если это Solana, иначе монета CoinGecko с тем же id, что slug CMC, или единственная с тем же
+    названием. Монета CoinGecko с этим адресом не должна иметь адреса в Ethereum: заводы таких токенов видит 🐋.
+    → {адрес монеты в Solana: [фьючерс, монета, монет в обращении по CMC, id CMC]}"""
+    by, gid, gname, gmint = {}, {}, {}, {}
+    for c in cmc:
+        if isinstance(c, dict):
+            by.setdefault(str(c.get("symbol") or "").upper(), []).append(c)
+    for c in cg:
+        try:
+            pl = c.get("platforms") or {}
+            g = (str(pl.get("solana") or ""), bool(pl.get("ethereum")))
+        except AttributeError:
+            continue
+        gid[c.get("id")] = g
+        gname.setdefault(str(c.get("name") or "").lower(), []).append(g)
+        if g[0]:
+            gmint[g[0]] = gmint.get(g[0], False) or g[1]     # адрес в Solana → есть ли у той монеты адрес в Ethereum
+    out = {}
+    for fs, p in px.items():
+        coin, mult = _wd_base(fs)
+        if coin in BL_SKIP or fs in BL_SKIP or p <= 0:
+            continue
+        best = None
+        for c in by.get(coin, []):
+            try:
+                q = (c.get("quotes") or [{}])[0] or {}
+                cp, mc = float(q.get("price") or 0), float(q.get("marketCap") or 0)
+            except (TypeError, ValueError, IndexError, AttributeError):
+                continue
+            if cp > 0 and WD_PX[0] <= p / (cp * mult) <= WD_PX[1] and (best is None or mc > best[1]):
+                best = (c, mc)
+        if not best:
+            continue
+        c = best[0]; pl = c.get("platform") if isinstance(c.get("platform"), dict) else {}
+        cm = str(pl.get("token_address") or "") if pl.get("slug") == "solana" else ""
+        bm = str((bnet or {}).get(fs) or (bnet or {}).get(coin) or "")
+        if 32 <= len(bm) <= 44:
+            g = (bm, gmint.get(bm, False))                   # адрес, который принимает Binance, — главный
+        elif 32 <= len(cm) <= 44:
+            g = (cm, gmint.get(cm, False))                   # адрес из CMC; у CoinGecko такой монеты нет — считаем родной
+        else:
+            g = gid.get(c.get("slug"))
+            if g is None:
+                n = gname.get(str(c.get("name") or "").lower(), [])
+                g = n[0] if len(n) == 1 else None
+        if not g or not g[0] or g[1] or not 32 <= len(g[0]) <= 44:
+            continue                                         # нет адреса в Solana или есть в Ethereum (это 🐋)
+        try:
+            circ = float(c.get("circulatingSupply") or 0)
+        except (TypeError, ValueError):
+            circ = 0.0
+        if circ > 0:
+            out[g[0]] = [fs, coin, circ, int(c.get("id") or 0)]
+    return out
+
+
 def _wd_refresh(w, now):
-    """Раз в сутки — список токенов (_wd_map), по одному запросу за проход: CMC (одна-две страницы по 5000 монет), CoinGecko
-    (монеты с адресами контрактов), цены фьючерсов Binance. Сбой — повтор через 10 мин, строка в журнал не чаще раза в 6 ч."""
+    """Раз в сутки — список токенов (_wd_map, _wds_map), по одному запросу за проход: CMC (одна-две страницы по 5000 монет),
+    CoinGecko (монеты с адресами контрактов), сети ввода Binance (для 🐋⁺; сбой — без них), цены фьючерсов Binance.
+    Сбой — повтор через 10 мин, строка в журнал не чаще раза в 6 ч."""
     t = _wd_tmp
-    if not t and (now - w.get("tok_t", 0) < WD_LIST_EVERY or now < w.get("tok_next", 0)):
+    sol_ready = "tok_t" in (w.get("sol") or {})             # 🐋⁺: после выкладки список Solana собирается сразу
+    if not t and ((sol_ready and now - w.get("tok_t", 0) < WD_LIST_EVERY) or now < w.get("tok_next", 0)):
         return
 
     def fail(why):
@@ -3199,9 +3281,15 @@ def _wd_refresh(w, now):
         j = http_json(WD_CG, 60)
         if not isinstance(j, list) or not j:
             return fail("CoinGecko не отдал список монет с адресами контрактов")
-        t["cg"] = [{"id": c.get("id"), "name": c.get("name"), "platforms": {"ethereum": c["platforms"]["ethereum"]}}
+        t["cg"] = [{"id": c.get("id"), "name": c.get("name"),
+                    "platforms": {k: c["platforms"].get(k) for k in ("ethereum", "solana") if c["platforms"].get(k)}}
                    for c in j if isinstance(c, dict) and isinstance(c.get("platforms"), dict)
-                   and c["platforms"].get("ethereum")]               # нужны только монеты с адресом в Ethereum
+                   and (c["platforms"].get("ethereum") or c["platforms"].get("solana"))]   # адрес в Ethereum или Solana (🐋⁺)
+        return
+    if "bnet" not in t:                                      # 🐋⁺: адреса токенов, которые Binance принимает в Solana
+        t["bnet"] = _wds_bnet(http_json(WDS_BNET, 60))
+        if not t["bnet"]:
+            log("ЗАВОДЫ", "Binance не отдал сети ввода монет — адреса Solana для 🐋⁺ только по CMC и CoinGecko")
         return
     trader.contract("BTC")
     j = http_json("https://fapi.binance.com/fapi/v1/ticker/price", 20)
@@ -3216,6 +3304,7 @@ def _wd_refresh(w, now):
         except (KeyError, TypeError, ValueError):
             continue
     tok = _wd_map(t["cmc"], t["cg"], px)
+    tsol = _wds_map(t["cmc"], t["cg"], px, t.get("bnet"))
     _wd_tmp.clear()
     if not tok:
         return fail("ни одного токена Ethereum с фьючерсом Binance")
@@ -3224,6 +3313,11 @@ def _wd_refresh(w, now):
     w.update(tok=tok, tok_t=now)
     log("ЗАВОДЫ", f"список токенов Ethereum с фьючерсом Binance обновлён: {len(tok)}"
         + (f"; новые: {', '.join(new[:30])}" if old and new else ""))
+    s = w.setdefault("sol", {})
+    s["tok_t"] = now
+    if tsol:                                                 # 🐋⁺: родные токены Solana; пустой список — оставляем прежний
+        s["tok"] = tsol
+        log("ЗАВОДЫ", f"список родных токенов Solana с фьючерсом Binance (🐋⁺) обновлён: {len(tsol)}")
 
 
 def _wd_decimals(w):
@@ -3444,22 +3538,303 @@ def _wd_enter(state, w, now):
         big = lam is not None and lam[0] >= WDV_LAM
         vnote = (f"завод {_wd_usd(lam[1])} — {lam[0] * 100:.1f}% среднесуточного оборота фьючерса за 7 сут ({_wd_usd(lam[2])})"
                  if lam else "оборот фьючерса за 7 сут не посчитан (фьючерс моложе 7 сут или нет суммы завода)")
-        was = _virt_is_open(state, "virtual_WD", fs), _virt_is_open(state, "virtual_WDV", fs)
+        was = (_virt_is_open(state, "virtual_WD", fs), _virt_is_open(state, "virtual_WDV", fs),
+               _virt_is_open(state, "virtual_WDS", fs))
         m = trader.virt_open(state, "virtual_WD", fs, "WD", note)
         if not (m or was[0]):
             continue                                         # Binance не отдал цену — повтор в следующем проходе, до WD_LATE
         mv = trader.virt_open(state, "virtual_WDV", fs, "WD", f"{note}; {vnote}", price=c) if big else None
+        ms = trader.virt_open(state, "virtual_WDS", fs, "WD", note, price=c)     # 🐋⁺ входит во все сделки 🐋
         opened = not was[0] and _virt_is_open(state, "virtual_WD", fs)
         opened_v = not was[1] and _virt_is_open(state, "virtual_WDV", fs)
+        opened_s = not was[2] and _virt_is_open(state, "virtual_WDS", fs)
         del pend[fs]
         log("ЗАВОДЫ", fs, note + (" → шорт 🐋" if opened else " — сделка не открыта (уже есть или мало виртуального баланса)")
             + f"; {vnote}" + (" → шорт 🐋ᵛ" if opened_v else " — 🐋ᵛ не открыта (уже есть или мало виртуального баланса)" if big
-                              else f" — 🐋ᵛ без входа (порог {WDV_LAM * 100:g}%)"))
+                              else f" — 🐋ᵛ без входа (порог {WDV_LAM * 100:g}%)")
+            + ("; шорт 🐋⁺" if opened_s else "; 🐋⁺ не открыта (уже есть или мало виртуального баланса)"))
+        if opened and opened_s:                              # 🐋⁺ входит вместе с 🐋 — строкой к его сообщению
+            m += "\n🐋⁺ тот же шорт"; ms = None
         if opened and (opened_v or not big):                 # обычно журналы решают вместе — одной строкой
             msgs.append(m + (f"\n🐋ᵛ тот же шорт: {vnote}" if opened_v
                              else f"\n🐋ᵛ без входа: {vnote}" + (f" — меньше {WDV_LAM * 100:g}%" if lam else "")))
+            if ms:
+                msgs.append(ms)
         else:
-            msgs.extend(x for x in (m, mv) if x)
+            msgs.extend(x for x in (m, mv, ms) if x)
+    return msgs
+
+
+def _wds_rpc(s, method, params, timeout=20):
+    """JSON-RPC Solana: узлы WDS_RPC по очереди, начиная со следующего за прошлым ответившим. (результат, None) или
+    (None, ошибка). Ответ 429 (узел режет частые запросы) — тоже ошибка, без пауз внутри прохода: повтор — в следующем.
+    Результат null (операции ещё нет) — (None, None)."""
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    err, i0 = None, int(s.get("rpc_i", 0))
+    for k in range(len(WDS_RPC)):
+        url = WDS_RPC[(i0 + k) % len(WDS_RPC)]
+        host = urllib.parse.urlsplit(url).hostname
+        try:
+            j = json.loads(http(url, data=body, timeout=timeout, ctype="application/json"))
+        except Exception as e:
+            err = err or f"{host}: {e!r}"[:160]
+            continue
+        if isinstance(j, dict) and "result" in j:
+            s["rpc_i"] = (i0 + k + 1) % len(WDS_RPC)
+            return j["result"], None
+        err = err or f"{host}: {str(j.get('error') if isinstance(j, dict) else j)}"[:160]
+    return None, err or "узлы не опрошены"
+
+
+def _wds_err(s, now, why):
+    """Сбой узлов Solana: пауза 2 → 4 → … → 30 мин, строка «ЗАВОДЫ» не чаще раза в час (как у Ethereum)."""
+    s["rpc_wait"] = min(1800, max(WDS_EVERY, s.get("rpc_wait", WDS_EVERY // 2) * 2))
+    s["rpc_next"] = now + s["rpc_wait"]
+    if now - s.get("err", 0) >= 3600:
+        s["err"] = now
+        log("ЗАВОДЫ", f"Solana: {why} — повтор через {s['rpc_wait'] // 60} мин")
+
+
+def _wds_amount(b):
+    """Количество токена из записи остатка (jsonParsed): uiAmountString, иначе uiAmount; нет — 0."""
+    u = (b or {}).get("uiTokenAmount") or (b or {}).get("tokenAmount") or {}
+    try:
+        return float(u.get("uiAmountString") or u.get("uiAmount") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _wds_tx(tx, mint=None):
+    """Операция Solana (jsonParsed): изменения остатков токена mint (None — всех токенов) по владельцам, первый подписант
+    (плательщик комиссии), время блока. → (delta {владелец: изменение}, подписант, время) или None (ошибка операции)."""
+    try:
+        meta = tx["meta"]
+        if meta.get("err") is not None:
+            return None
+        keys = tx["transaction"]["message"]["accountKeys"]
+        signer = next((k.get("pubkey") for k in keys if isinstance(k, dict) and k.get("signer")), None)
+        pre = {b["accountIndex"]: b for b in meta.get("preTokenBalances") or [] if mint is None or b.get("mint") == mint}
+        post = {b["accountIndex"]: b for b in meta.get("postTokenBalances") or [] if mint is None or b.get("mint") == mint}
+        delta = {}
+        for i in set(pre) | set(post):
+            o = (post.get(i) or pre.get(i)).get("owner")
+            delta[o] = delta.get(o, 0.0) + _wds_amount(post.get(i)) - _wds_amount(pre.get(i))
+        return delta, signer, tx.get("blockTime")
+    except (KeyError, TypeError, AttributeError):
+        return None
+
+
+def _wds_check(s, mint, sig, tx):
+    """Операция на счёте горячего кошелька: сметание (первый подписант — плательщик сметаний WDS_PAYER), остаток кошелька
+    вырос на ≥ 0,5% монет в обращении → событие монеты, если в Solana у неё не было события WD_GAP_H. Событие ждёт входа
+    в s["pend"] (как у 🐋: закрытие первой 15-мин свечи не раньше чем через 15 мин после блока)."""
+    r = _wds_tx(tx, mint)
+    t = (s.get("tok") or {}).get(mint)
+    if not r or not t:
+        return
+    delta, signer, ts = r
+    n = delta.get(s.get("hot"), 0.0)
+    if signer != WDS_PAYER or n <= 0 or not ts:
+        return
+    share = n / t[2]
+    if share < WD_MIN:
+        return
+    fs, coin = t[0], t[1]
+    dep = next((o for o, d in delta.items() if d < 0), None) or ""
+    what = (f"{fs}: {f'{n:,.0f}'.replace(',', ' ')} {coin} ({share * 100:.2f}% монет в обращении) на горячий кошелёк Binance "
+            f"в Solana с {dep[:8]}…, tx {sig[:12]}…, блок {datetime.fromtimestamp(ts, timezone.utc):%d.%m %H:%M} UTC")
+    last = s.setdefault("last", {})
+    if ts - last.get(fs, 0) < WD_GAP_H * 3600:
+        return log("ЗАВОДЫ", what + f" — событие монеты в Solana было {(ts - last[fs]) / 3600:.0f} ч назад, без сделки")
+    last[fs] = ts
+    te = int(-(-(ts + 900) // 900) * 900)
+    s.setdefault("pend", {})[fs] = {"t": ts, "te": te, "share": round(share * 100, 3), "n": n, "what": what}
+    log("ЗАВОДЫ", what + f" — событие 🐋⁺; вход в {datetime.fromtimestamp(te, timezone.utc):%H:%M} UTC, если фьючерс за сутки "
+                         f"сдвинулся не больше чем на ±{WD_CALM * 100:g}%")
+
+
+def _wds_hot(s, now):
+    """Раз в сутки — адрес горячего кошелька Binance в Solana: владелец, чей остаток растёт в последних сметаниях,
+    подписанных плательщиком WDS_PAYER (10 последних операций, до 3 расшифровок). Сменился (так было после взлома в 10.2026,
+    s220) — счета и остатки собираются заново. Сбой — прежний адрес (при первом запуске — WDS_HOT0), повтор через час.
+    → False, если узлы не ответили."""
+    if s.get("hot") and now - s.get("hot_t", 0) < WDS_HOT_EVERY:
+        return True
+    s["hot_t"] = now - WDS_HOT_EVERY + 3600                  # сбой — повтор через час
+    sig, err = _wds_rpc(s, "getSignaturesForAddress", [WDS_PAYER, {"limit": 10}])
+    if not isinstance(sig, list):
+        s.setdefault("hot", WDS_HOT0)
+        _wds_err(s, now, f"узлы не отдали операции плательщика сметаний ({err})")
+        return False
+    votes = {}
+    for x in [x for x in sig if isinstance(x, dict) and not x.get("err")][:3]:
+        tx, err = _wds_rpc(s, "getTransaction", [x.get("signature"), {"encoding": "jsonParsed",
+                                                                       "maxSupportedTransactionVersion": 0}])
+        r = _wds_tx(tx) if isinstance(tx, dict) else None
+        if r and r[1] == WDS_PAYER:
+            for o, d in r[0].items():
+                if d > 0:
+                    votes[o] = votes.get(o, 0) + 1
+    if not votes:
+        s.setdefault("hot", WDS_HOT0)
+        return True
+    hot = max(votes, key=votes.get)
+    if hot != s.get("hot"):
+        if s.get("hot"):
+            log("ЗАВОДЫ", f"Solana: горячий кошелёк Binance сменился: {s['hot'][:8]}… → {hot[:8]}… — счета собираются заново")
+        s.update(hot=hot, acc={}, bal={}, cand={})
+    s["hot_t"] = now
+    return True
+
+
+def _wds_accounts(s, now):
+    """Счета горячего кошелька по токенам списка: до WDS_ACC_BATCH новых за проход (getTokenAccountsByOwner по монете),
+    при нескольких — с наибольшим остатком; первый остаток — точка отсчёта. Нет счёта — пустая строка: монеты на кошельке
+    ещё не было, проверка — раз в сутки заново. → False, если узлы не ответили."""
+    acc = s.setdefault("acc", {})
+    for m in [m for m in s.get("tok") or {} if m not in acc][:WDS_ACC_BATCH]:
+        r, err = _wds_rpc(s, "getTokenAccountsByOwner", [s["hot"], {"mint": m}, {"encoding": "jsonParsed"}])
+        if not isinstance(r, dict):
+            _wds_err(s, now, f"узлы не отдали счёт горячего кошелька по {s['tok'][m][0]} ({err})")
+            return False
+        best = None
+        for a in r.get("value") or []:
+            try:
+                amt = _wds_amount(a["account"]["data"]["parsed"]["info"])
+            except (KeyError, TypeError):
+                continue
+            if best is None or amt > best[1]:
+                best = (a.get("pubkey"), amt)
+        acc[m] = best[0] if best and best[0] else ""
+        if best and best[0]:
+            s.setdefault("bal", {})[best[0]] = best[1]
+    return True
+
+
+def _wds_poll(s, now):
+    """Остатки счетов горячего кошелька одним запросом getMultipleAccounts (по 100 счетов): рост за WDS_EVERY на ≥ WDS_JUMP
+    монет в обращении — кандидат (сметание может быть в одном интервале с выводами клиентов, поэтому порог вдвое ниже
+    порога события). → False, если узлы не ответили."""
+    accs = [(m, a) for m, a in (s.get("acc") or {}).items() if a and m in (s.get("tok") or {})]
+    bal, cand = s.setdefault("bal", {}), s.setdefault("cand", {})
+    since = s.get("bal_t") or now - WDS_EVERY
+    for i in range(0, len(accs), 100):
+        part = accs[i:i + 100]
+        r, err = _wds_rpc(s, "getMultipleAccounts", [[a for _, a in part], {"encoding": "jsonParsed"}])
+        vals = r.get("value") if isinstance(r, dict) else None
+        if not isinstance(vals, list) or len(vals) != len(part):
+            _wds_err(s, now, f"узлы не отдали остатки горячего кошелька ({err or 'неполный ответ'})")
+            return False
+        for (m, a), x in zip(part, vals):
+            try:
+                amt = _wds_amount(x["data"]["parsed"]["info"])
+            except (KeyError, TypeError):
+                continue                                     # счёт закрыт — остаток не трогаем
+            b0 = bal.get(a); bal[a] = amt
+            if b0 is not None and amt - b0 >= WDS_JUMP * s["tok"][m][2] and a not in cand:
+                cand[a] = {"m": m, "since": since}
+    s["bal_t"] = now
+    return True
+
+
+def _wds_cands(s, now, t0):
+    """Скачки остатка: операции счёта с прошлой проверки (getSignaturesForAddress), расшифровка новых — до WDS_TX за проход
+    (остальные — в следующем). Расшифрованные помнятся двое суток. → False, если узлы не ответили."""
+    cand, seen = s.setdefault("cand", {}), s.setdefault("seen", {})
+    budget = WDS_TX
+    for a in list(cand):
+        c = cand[a]
+        if now - c["since"] > WD_LATE + 2 * WDS_EVERY:       # вход всё равно опоздал бы — не тратим запросы
+            del cand[a]
+            log("ЗАВОДЫ", f"Solana: скачок остатка {s['tok'].get(c['m'], ['?'])[0]} не разобран вовремя — пропуск")
+            continue
+        if time.time() - t0 > WDS_RPC_S:
+            return True
+        sig, err = _wds_rpc(s, "getSignaturesForAddress", [a, {"limit": 25}])
+        if not isinstance(sig, list):
+            _wds_err(s, now, f"узлы не отдали операции счёта горячего кошелька ({err})")
+            return False
+        new = [x for x in sig if isinstance(x, dict) and not x.get("err") and x.get("signature") not in seen
+               and (x.get("blockTime") or 0) >= c["since"] - 300]
+        for x in new[::-1]:                                  # от старых к новым
+            if budget <= 0 or time.time() - t0 > WDS_RPC_S:
+                return True                                  # остальное — в следующем проходе
+            tx, err = _wds_rpc(s, "getTransaction", [x["signature"], {"encoding": "jsonParsed",
+                                                                       "maxSupportedTransactionVersion": 0}])
+            if tx is None and err:
+                _wds_err(s, now, f"узлы не отдали операцию ({err})")
+                return False
+            budget -= 1
+            seen[x["signature"]] = now
+            if isinstance(tx, dict):
+                _wds_check(s, c["m"], x["signature"], tx)
+        del cand[a]
+    for k in [k for k, ts in seen.items() if ts < now - 2 * 86400]:
+        del seen[k]
+    return True
+
+
+def _wds_enter(state, s, now):
+    """Вход 🐋⁺ по событиям Solana s["pend"] — те же условия, что у 🐋 (_wd_enter): закрытие свечи входа (опоздание —
+    до WD_LATE), фьючерс за 24 ч до входа ±5% и торгуется больше суток → виртуальный шорт 🐋⁺ на 24 ч, стоп +25%."""
+    msgs, pend = [], s.setdefault("pend", {})
+    for fs, p in sorted(pend.items(), key=lambda kv: kv[1]["te"]):
+        if now < p["te"]:
+            continue
+        if now > p["te"] + WD_LATE:
+            del pend[fs]
+            log("ЗАВОДЫ", p["what"] + f" — вход 🐋⁺ опоздал больше чем на {WD_LATE // 60} мин, сделки нет")
+            continue
+        k = _closed_15m(fs, p["te"], 100)
+        if not k or len(k) < 97 or int(k[-97][0]) // 1000 + 900 != p["te"] - 86400:
+            continue                                         # Binance не отдал свечи — повтор в следующем проходе
+        c, c0 = float(k[-1][4]), float(k[-97][4])
+        r24 = c / c0 - 1 if c0 > 0 else 0.0
+        if abs(r24) > WD_CALM:
+            del pend[fs]
+            log("ЗАВОДЫ", p["what"] + f" — фьючерс за сутки {r24 * 100:+.1f}%, рынок не спокойный, 🐋⁺ без сделки")
+            continue
+        on = (trader.contract(fs) or {}).get("onboard") or 0
+        if on and p["te"] - on < 86400:
+            del pend[fs]
+            log("ЗАВОДЫ", p["what"] + f" — фьючерс запущен {(p['te'] - on) / 3600:.0f} ч назад, моложе суток, 🐋⁺ без сделки")
+            continue
+        note = f"завод на Binance в Solana: {p['what']}; фьючерс за сутки {r24 * 100:+.1f}%; выход через 24 ч"
+        was = _virt_is_open(state, "virtual_WDS", fs)
+        m = trader.virt_open(state, "virtual_WDS", fs, "WDS", note, price=c)
+        if not (m or was):
+            continue                                         # Binance не отдал цену — повтор в следующем проходе, до WD_LATE
+        del pend[fs]
+        opened = not was and _virt_is_open(state, "virtual_WDS", fs)
+        log("ЗАВОДЫ", fs, note + (" → шорт 🐋⁺" if opened else " — 🐋⁺ не открыта (уже есть или мало виртуального баланса)"))
+        if m:
+            msgs.append(m)
+    return msgs
+
+
+def _wds_rule(state, w, now):
+    """Часть 🐋⁺ в Solana (research/s220–s221): вход по готовым событиям; адрес горячего кошелька Binance (раз в сутки,
+    по плательщику сметаний); счета по родным токенам Solana из списка (_wds_map); остатки — раз в WDS_EVERY; скачки —
+    операции и расшифровка; события. Время на вызовы Solana — до WDS_RPC_S за проход, после сбоя — пауза (_wds_err)."""
+    s = w.setdefault("sol", {})
+    msgs = _wds_enter(state, s, now)
+    if not s.get("tok") or now < s.get("rpc_next", 0):
+        return msgs
+    t0 = time.time()
+    if not _wds_hot(s, now) or not s.get("hot"):
+        return msgs
+    if now - s.get("acc_t", 0) >= WDS_HOT_EVERY:             # монеты без счёта — проверить заново раз в сутки
+        s["acc"] = {m: a for m, a in (s.get("acc") or {}).items() if a}
+        s["acc_t"] = now
+    if not _wds_accounts(s, now) or time.time() - t0 > WDS_RPC_S:
+        return msgs
+    if now - s.get("poll_t", 0) >= WDS_EVERY:
+        s["poll_t"] = now
+        if not _wds_poll(s, now):
+            return msgs
+    if s.get("cand") and time.time() - t0 <= WDS_RPC_S and not _wds_cands(s, now, t0):
+        return msgs
+    s.pop("rpc_wait", None); s.pop("rpc_next", None)        # узлы ответили — паузы нет
     return msgs
 
 
@@ -3474,6 +3849,8 @@ def whale_deposit_rule(state):
     входы, только если завод по цене входа ≥ 5% среднесуточного оборота фьючерса за 7 сут до входа. Список токенов — раз
     в сутки (_wd_refresh). Нет файла меток — правило молчит. Раз в сутки — сторож меток (_wd_watch, research/s242): если
     переводов на адреса Binance стало мало, Binance, похоже, сменил адрес сметания — строка и сообщение в чат.
+    Дубль 🐋⁺ (research/s221 и s248, по «да» владельца 23.11.2026) входит во все сделки 🐋 и ещё по сметаниям родных токенов
+    Solana на горячий кошелёк Binance (_wds_rule) — с теми же условиями входа и выхода.
     Строки журнала службы — «ЗАВОДЫ». Сообщения для чата."""
     now = time.time(); w = state.setdefault("wd", {})
     lab = _wd_labels()
@@ -3494,6 +3871,7 @@ def whale_deposit_rule(state):
         w["poll_t"] = now
         _wd_poll(w, lab, tok, now)
     msgs += _wd_watch(w, now)
+    msgs += _wds_rule(state, w, now)                         # 🐋⁺: заводы в Solana
     last = w.setdefault("last", {})
     for k in [k for k, ts in last.items() if ts < now - 3 * 86400]:
         del last[k]
