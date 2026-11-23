@@ -1,6 +1,6 @@
 """s243 — монеты в обращении по дням для токенов Base с фьючерсом Binance (как s220/circ.py): монета CoinMarketCap с тем же
 адресом в Base, иначе с тем же тикером и медианой цены к фьючерсу 0,8–1,25; история CMC `cryptocurrency/historical`
-(кэш s171/cmc). Итог — s243/base_circ.json: {фьючерс: {"cmc": id, "addr": адрес в Base, "days": [[день, в обращении, цена]]}}.
+(кэш s171/cmc; до 15.01.2025 — s249/cmcfull). Итог — s243/base_circ.json: {фьючерс: {"cmc": id, "addr": адрес в Base, "days": [[день, в обращении, цена]]}}.
 Запуск из /home/user/mc_data: python3 <repo>/research/s243/circ.py"""
 import json
 import os
@@ -10,9 +10,10 @@ import numpy as np
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-for p in ("s171", "s187"):
+for p in ("s171", "s187", "s249"):
     sys.path.insert(0, os.path.join(HERE, "..", p))
 import k3  # noqa: E402
+from cmcfull import full  # noqa: E402  (история CMC до 15.01.2025, s249)
 
 OVERRIDE = {"MAV": 18037}            # у CMC «MAV» по тикеру и цене совпала Massive Protocol без истории; Maverick — 18037
 SKIP = {"ETH", "USDC"}
@@ -56,7 +57,7 @@ def main():
                 best = (c["id"], rr, h)
         if best:
             out[fs] = {"cmc": best[0], "addr": addr.lower(), "eth": bool(eth), "ins": ins,
-                       "days": [[d, ci, cl] for d, ci, cl, _ in best[2] if ci and cl]}
+                       "days": [[d, ci, cl] for d, ci, cl, _ in full(best[0], best[2]) if ci and cl]}
         print(fs, "CMC", best[0] if best else "—", "по адресу" if same else "", flush=True)
     json.dump(out, open("s243/base_circ.json", "w"))
     print("готово:", len(out))

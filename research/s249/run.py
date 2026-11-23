@@ -83,12 +83,25 @@ def main():
     md = (x[~x.eth].net - x[~x.eth].pl).mean()
     print("\nпорог s249: " + "; ".join(f"{k} — {'да' if ok else 'нет'}" for k, ok in
                                       (("среднее > 0 и t ≥ 2", m > 0 and t >= 2), ("с хеджем > 0", mh > 0), ("сверх плацебо > 0", md > 0))))
+    cols = ["perp", "entry", "net", "hed", "pl", "stop", "lam"]
     W = pd.read_pickle("s213_main_2024–2026.pkl")
-    W = W[W.net.notna() & (W.r24.abs() <= CALM)][["perp", "entry", "net", "hed", "pl", "stop", "lam"]]
+    W = W[W.net.notna() & (W.r24.abs() <= CALM)][cols]
     S = pd.read_pickle("s221_trades.pkl")
-    S = S[S.net.notna() & (S.r24.abs() <= CALM)][["perp", "entry", "net", "hed", "pl", "stop", "lam"]]
-    A = pd.concat([W, S, x[["perp", "entry", "net", "hed", "pl", "stop", "lam"]]])
-    print(f"🐋 Ethereum + Solana + BNB Chain вместе: {S221.line(A, months)}")
+    S = S[S.net.notna() & (S.r24.abs() <= CALM)][cols]
+    for name, B in (("BNB Chain — монеты без сети ETH", x[~x.eth]), ("BNB Chain — все монеты", x)):
+        A = dedup(pd.concat([W.assign(src="eth"), S.assign(src="sol"), B[cols].assign(src="bsc")], ignore_index=True))
+        print(f"🐋 Ethereum + Solana + {name} (одна сделка на монету за 48 ч): {S221.line(A, months)}")
+
+
+def dedup(A):
+    """Одна сделка на монету за 48 ч по всем сетям вместе (первая по времени входа)."""
+    keep = []
+    for perp, g in A.sort_values(["perp", "entry"]).groupby("perp"):
+        last = -10 ** 12
+        for i, e in zip(g.index, g.entry.values):
+            if e - last >= GAP:
+                keep.append(i); last = e
+    return A.loc[keep]
 
 
 if __name__ == "__main__":

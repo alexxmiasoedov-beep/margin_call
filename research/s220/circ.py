@@ -1,5 +1,5 @@
 """s220 — монеты в обращении по дням для токенов Solana с фьючерсом Binance: монета CoinMarketCap с тем же тикером и медианой
-цены к фьючерсу 0,8–1,25 (как s171/k3), история CMC `cryptocurrency/historical` (кэш s171/cmc). Итог — sol_circ.json:
+цены к фьючерсу 0,8–1,25 (как s171/k3), история CMC `cryptocurrency/historical` (кэш s171/cmc; до 15.01.2025 — s249/cmcfull). Итог — sol_circ.json:
 {фьючерс: {"cmc": id, "days": [[ГГГГ-ММ-ДД, монет в обращении, цена], …]}}. Токенизированные акции и индексы пропускаются.
 Запуск из /home/user/mc_data: python3 <repo>/research/s220/circ.py"""
 import json
@@ -11,9 +11,10 @@ import numpy as np
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-for p in ("s171", "s187"):
+for p in ("s171", "s187", "s249"):
     sys.path.insert(0, os.path.join(HERE, "..", p))
 import k3  # noqa: E402  (hist(), кэш s171/cmc)
+from cmcfull import full  # noqa: E402  (история CMC до 15.01.2025, s249)
 
 SKIP = {"TTWO", "MU", "SPCX", "ANTHROPIC", "META", "ORDI", "ASR", "CAT"}   # акции (CAT — Caterpillar), индексы, не родные Solana
 OVERRIDE = {"HOME": 36133}            # Defi App: у CMC основная сеть BNB, по цене совпадала чужая OtterHome (Arbitrum)
@@ -52,7 +53,7 @@ def main():
             if 0.8 <= rr <= 1.25 and (best is None or abs(np.log(rr)) < abs(np.log(best[1]))):
                 best = (c["id"], rr, h)
         if best:
-            out[fs] = {"cmc": best[0], "mint": r["mint"], "days": [[d, ci, cl] for d, ci, cl, _ in best[2] if ci and cl]}
+            out[fs] = {"cmc": best[0], "mint": r["mint"], "days": [[d, ci, cl] for d, ci, cl, _ in full(best[0], best[2]) if ci and cl]}
         print(fs, "CMC", best[0] if best else "—", flush=True)
     json.dump(out, open("s220/sol_circ.json", "w"))
     print("готово:", len(out), "из", len(S))

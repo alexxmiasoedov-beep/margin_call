@@ -1,6 +1,7 @@
 """s249 — монеты в обращении по дням для токенов фьючерсов Binance, которые Binance принимает в BNB Chain: адрес BEP-20 —
 из сетей ввода Binance (снимок s242/netcoin.json), монета CoinMarketCap — с тем же адресом в BNB Chain, иначе с тем же
-тикером и медианой цены к фьючерсу 0,8–1,25 (как s220), история CMC `cryptocurrency/historical` (кэш s171/cmc).
+тикером и медианой цены к фьючерсу 0,8–1,25 (как s220), история CMC `cryptocurrency/historical` (кэш s171/cmc — с 15.01.2025,
+раньше — дозагрузка 15.08.2024–15.01.2025 в кэш s249/cmc_early).
 Итог — s249/bsc_circ.json: {фьючерс: {"cmc": id, "contract": адрес, "eth": есть ли у Binance сеть ETH, "sol": есть ли SOL,
 "since": время добавления сети BSC, "days": [[ГГГГ-ММ-ДД, монет в обращении, цена], …]}}.
 Запуск из /home/user/mc_data: python3 <repo>/research/s249/circ.py"""
@@ -14,7 +15,9 @@ import pandas as pd
 HERE = os.path.dirname(os.path.abspath(__file__))
 for p in ("s171", "s187"):
     sys.path.insert(0, os.path.join(HERE, "..", p))
+sys.path.insert(0, HERE)
 import k3  # noqa: E402  (hist(), base(), кэш s171/cmc)
+from cmcfull import full  # noqa: E402  (история до 15.01.2025)
 
 SKIP = {"USDC", "FDUSD", "USD1", "TUSD", "DAI", "XAUT", "PAXG", "BTCDOM", "DEFI", "BNB", "BTC", "ETH"}   # стейблкоины, металлы,
                                                                      # индексы и монеты, которые Binance держит как резерв в BNB Chain
@@ -64,7 +67,7 @@ def main():
             if 0.8 <= rr <= 1.25 and (best is None or abs(np.log(rr)) < abs(np.log(best[1]))):
                 best = (c["id"], rr, h)
         if best:
-            out[fs] = dict(r, cmc=best[0], days=[[d, ci, cl] for d, ci, cl, _ in best[2] if ci and cl])
+            out[fs] = dict(r, cmc=best[0], days=[[d, ci, cl] for d, ci, cl, _ in full(best[0], best[2]) if ci and cl])
         print(fs, "CMC", best[0] if best else "—", flush=True)
     os.makedirs("s249", exist_ok=True)
     json.dump(out, open("s249/bsc_circ.json", "w"))
