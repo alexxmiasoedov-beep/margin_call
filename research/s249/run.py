@@ -104,6 +104,10 @@ def main():
     print(f"  Binance-Peg: {S221.line(x0[~x0.eth & (x0.cls == 'peg')], months)}")
     print(f"  адрес не подтверждён: {S221.line(x0[~x0.eth & (x0.cls == 'unk')], months)}")
     x = x0[x0.cls == "own"]                                   # основная — BEP-20 самого токена (решение до расчёта)
+    C = json.load(open("s249/bsc_circ.json")); cmc = {c["id"]: c for c in json.load(open("s167/cmc_map_all.json"))}
+    nat = x.perp.map(lambda fs: not isinstance((cmc.get(C[fs]["cmc"]) or {}).get("platform"), dict))
+    print(f"  для прозрачности — основная без родных монет других сетей (IOST, ZIL, BB, 0G…): "
+          f"{S221.line(x[~x.eth & ~nat], months)}")
     print(f"\n🐋 BNB Chain, монеты без сети ETH, BEP-20 — свой токен (основная, спокойный рынок ±5%): {S221.line(x[~x.eth], months)}")
     print(f"монеты с сетью ETH: {S221.line(x[x.eth], months)}")
     print(f"все монеты: {S221.line(x, months)}")
