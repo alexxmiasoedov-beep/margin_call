@@ -119,8 +119,8 @@ def main():
     print(f"  доля в 2 раза выше обычной за 7 сут: {line(X[ex >= 2], mid, mo)}")
     print(f"  доля не выше обычной: {line(X[ex < 2], mid, mo)}")
     print(f"  доля ≥ 26% (порог 🛒): {line(X[X.share >= SH], mid, mo)}")
-    print(f"  верхняя треть, повышенные очки Alpha (снимок mulPoint > 1): {line(hi[hi.mul.fillna(1) > 1], mid, mo)}")
-    print(f"  верхняя треть, без повышенных очков: {line(hi[hi.mul.fillna(1) <= 1], mid, mo)}")
+    print(f"  верхняя треть, повышенные очки Alpha (снимок mulPoint > 1): {line(hi[hi["mul"].fillna(1) > 1], mid, mo)}")
+    print(f"  верхняя треть, без повышенных очков: {line(hi[hi["mul"].fillna(1) <= 1], mid, mo)}")
     m, t, n = ct(hb.net, hb.t); md = (hb.net - hb.pl).mean()
     print("\nпорог s256 (вторая половина): " + "; ".join(f"{k} — {'да' if ok else 'нет'}" for k, ok in
           (("среднее > 0 и t ≥ 2 по неделям", m > 0 and t >= 2), ("сверх плацебо > 0", md > 0),
