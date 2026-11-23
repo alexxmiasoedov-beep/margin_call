@@ -55,14 +55,14 @@ def placebo(X):
         if a is None:
             pl.append(np.nan); continue
         t = a["t"].astype(np.int64)
-        i0 = int(np.searchsorted(t, int(r.t)))
-        if len(chk) < 200 and i0 < len(t) and t[i0] == int(r.t):           # сверка соглашения о времени входа
+        i0 = int(np.searchsorted(t, int(r.t) - 900))                    # t в таблице — закрытие свечи входа
+        if len(chk) < 200 and i0 < len(t) and t[i0] == int(r.t) - 900:     # сверка соглашения о времени входа
             z = trade(r.s, i0, 0.10, 0.25, 48)
             if z is not None:
                 chk.append(abs(z["net"] - r.net) < 1e-6)
         v = []
         for d in (45, 90, 135):
-            tt = int(r.t) - d * DAY
+            tt = int(r.t) - 900 - d * DAY
             i = int(np.searchsorted(t, tt))
             if i < len(t) and t[i] == tt:
                 z = trade(r.s, i, 0.10, 0.25, 48)
