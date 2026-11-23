@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common259 import DAY, MID, OUT, T0, T1  # noqa: E402
+from common259 import DAY, MID, OUT, T0, T1, TMP  # noqa: E402
 
 SNAP0 = int(pd.Timestamp("2026-07-01", tz="UTC").timestamp())
 
@@ -84,9 +84,8 @@ def describe(D, name):
           + f"; среднее {r8.mean():+.4%}; на базовой ставке (0,01% за 8 ч) {base.mean():.0%}")
     print(f"  кто платит: лонги (r > базы) {(r8 > 0.0001 + 1e-7).mean():.0%} начислений, шорты (r < 0) {(r < 0).mean():.0%}; "
           f"средний фандинг в сутки {(D.r.sum() / days):+.3%} (+ лонги платят шортам)")
-    print("  за начисление ≤ −0,5% / ≤ −1% / ≤ −2% / ≥ +0,5% / ≥ +1%: " + " / ".join(
-        f"{(c).sum()} ({c.sum() / days * 30.44:.1f} на монето-месяц ×100 = {c.sum() / days * 3044:.1f})" for c in
-        (r <= -0.005, r <= -0.01, r <= -0.02, r >= 0.005, r >= 0.01)))
+    print("  за начисление ≤ −0,5% / ≤ −1% / ≤ −2% / ≥ +0,5% / ≥ +1% (в скобках — на 100 монето-месяцев): " + " / ".join(
+        f"{c.sum()} ({c.sum() / days * 3044:.1f})" for c in (r <= -0.005, r <= -0.01, r <= -0.02, r >= 0.005, r >= 0.01)))
     print(f"  в пересчёте на 8 ч ≤ −0,5%: {(r8 <= -0.005).mean():.2%} начислений, ≥ +0,5%: {(r8 >= 0.005).mean():.2%}; "
           f"≤ −0,1%: {(r8 <= -0.001).mean():.1%}, ≥ +0,1%: {(r8 >= 0.001).mean():.1%}")
     hh = D.groupby("h").size() / n
@@ -129,7 +128,7 @@ def caps(D):
             rows.append((s, u["spot0"] is None, float(x["adjustedFundingRateCap"]), float(x["adjustedFundingRateFloor"]),
                          int(x["fundingIntervalHours"])))
     C = pd.DataFrame(rows, columns=["s", "ns", "cap", "floor", "h"])
-    print(f"\n== fundingInfo (снимок {pd.Timestamp.utcnow():%d.%m.%Y}): символов с особыми настройками {len(FI)}; из живых перпов вселенной {len(C)}")
+    print(f"\n== fundingInfo (снимок 23.11.2026): символов с особыми настройками {len(FI)}; из живых перпов вселенной {len(C)}")
     for ns, g in C.groupby("ns"):
         print(f"  {'без спота' if ns else 'со спотом'}: {len(g)}; потолок (мода/медиана) {g.cap.mode().iloc[0]:.2%}/{g.cap.median():.2%}, "
               f"пол {g.floor.mode().iloc[0]:.2%}/{g.floor.median():.2%}; интервал: " +
@@ -161,11 +160,14 @@ def main():
     describe(late[late["self"] == 0], "07–10.2026, перпа в индексе нет")
     describe(late[late.alpha > 0], "07–10.2026, Alpha в индексе")
     describe(late[late.alpha == 0], "07–10.2026, Alpha в индексе нет")
-    tr = D[D.spot0.notna()]
+    U = json.load(open(f"{OUT}/universe.json"))
+    trs = {s for s, u in U.items() if u["spot0"] and max(u["live0"], T0) + 30 * DAY < u["spot0"] < min(u["live1"], T1) - 30 * DAY}
+    tr = D[D.s.isin(trs)]
+    print(f"\nперпов с переходом «без спота → спот» и 30 сут по обе стороны: {len(trs)}")
     describe(tr[(tr.t >= tr.spot0 - 30 * DAY) & (tr.t < tr.spot0 - 3 * DAY)], "за 30…3 сут до спота")
     describe(tr[(tr.t >= tr.spot0 + 3 * DAY) & (tr.t < tr.spot0 + 30 * DAY)], "через 3…30 сут после спота")
     caps(D)
-    D.to_pickle(f"{OUT}/funding_panel.pkl")
+    D.to_pickle(f"{TMP}/funding_panel.pkl")
 
 
 if __name__ == "__main__":

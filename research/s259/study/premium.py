@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common259 import BAR, DAY, MID, OUT, T0, T1, load_k  # noqa: E402
+from common259 import BAR, DAY, MID, OUT, T0, T1, load_k, TMP  # noqa: E402
 
 TH = (0.005, 0.01, 0.02, 0.05)
 EXIT = 0.001
@@ -71,23 +71,29 @@ def q(x, qs=(.01, .05, .25, .5, .75, .95, .99)):
     return " ".join(f"{v:+.2%}" for v in np.quantile(x, qs)) if len(x) else "—"
 
 
-def describe(P, sel, name):
-    """Распределение и эпизоды по группе свечей: sel(s, d) → маска свечей перпа s."""
-    ps, n_bars, eps, perps = [], 0, {th: [] for th in TH}, set()
+def describe(P, sel, name, sub=None):
+    """Распределение и эпизоды по группе свечей sel(s, d); sub(s, d) — разрез внутри группы (оборот и т. п.): эпизоды
+    считаются по всей группе (чтобы разрез не рвал их), а относятся к разрезу по свече начала."""
+    ps, eps, perps = [], {th: [] for th in TH}, set()
     days = 0.0
     for s, d in P.items():
-        m = sel(s, d)
+        g = sel(s, d)
+        m = g & sub(s, d) if sub else g
         if not m.any():
             continue
         perps.add(s)
-        ps.append(d["p"][m]); n_bars += m.sum(); days += m.sum() / 96
-        idx = np.flatnonzero(m)
+        ps.append(d["p"][m]); days += m.sum() / 96
+        idx = np.flatnonzero(g)
         t, p = d["t"][idx], d["p"][idx]
+        inm = m[idx]
         for th in TH:
             for sign in (1, -1):
                 for a, b, pk in episodes(t, p, th, sign):
-                    eps[th].append((s, int(t[a]), sign, None if b is None else (b - a) * 0.25, pk))
+                    if inm[a]:
+                        eps[th].append((s, int(t[a]), sign, None if b is None else (b - a) * 0.25, pk))
     p = np.concatenate(ps) if ps else np.zeros(0)
+    if not len(p):
+        print(f"\n== {name}: нет данных"); return {}
     print(f"\n== {name}: перпов {len(perps)}, монето-суток {days:,.0f}")
     print(f"  p квантили 1/5/25/50/75/95/99%: {q(p)}; доля p = 0: {(p == 0).mean():.0%}; среднее {p.mean():+.3%}")
     print("  доля свечей |p| ≥ 0,1/0,3/0,5/1/2/5%: " + " / ".join(f"{(np.abs(p) >= x).mean():.2%}" for x in (0.001, 0.003, 0.005, 0.01, 0.02, 0.05))
@@ -108,18 +114,22 @@ def describe(P, sel, name):
     return res
 
 
-def decay(P, sel, name, th=0.01):
+def decay(P, sel, name, th=0.01, sub=None):
     """Схождение после входа в эпизод |p| ≥ th: медиана |p(t+k)| / |p(старт)|, время до половины."""
     rat = {k: [] for k in (1, 2, 4, 8, 16, 32, 96)}
     half = []
     for s, d in P.items():
-        m = sel(s, d)
+        g = sel(s, d)
+        m = g & sub(s, d) if sub else g
         if not m.any():
             continue
-        idx = np.flatnonzero(m); t, p = d["t"][idx], d["p"][idx]
+        idx = np.flatnonzero(g); t, p = d["t"][idx], d["p"][idx]
+        inm = m[idx]
         for sign in (1, -1):
             x = p * sign
             for a, b, pk in episodes(t, p, th, sign):
+                if not inm[a]:
+                    continue
                 x0 = x[a]
                 for k in rat:
                     if a + k < len(x) and t[a + k] == t[a] + k * BAR:
@@ -151,14 +161,14 @@ def main():
         describe(P, lambda s, d, lo=lo, hi=hi: ~d["ns"] & (d["t"] >= lo) & (d["t"] < hi), f"со спотом, {h}")
     print("\n### по пятым долям оборота (1 — меньший)")
     for b in range(5):
-        describe(P, lambda s, d, b=b: d["ns"] & (d["bk"] == b), f"без спота, оборот {b + 1}")
-        describe(P, lambda s, d, b=b: ~d["ns"] & (d["bk"] == b), f"со спотом, оборот {b + 1}")
+        describe(P, nos, f"без спота, оборот {b + 1}", sub=lambda s, d, b=b: d["bk"] == b)
+        describe(P, spt, f"со спотом, оборот {b + 1}", sub=lambda s, d, b=b: d["bk"] == b)
     print("\n### схождение")
     decay(P, nos, "без спота"); decay(P, spt, "со спотом")
     decay(P, nos, "без спота", 0.02); decay(P, spt, "со спотом", 0.02)
     for b in range(5):
-        decay(P, lambda s, d, b=b: d["ns"] & (d["bk"] == b), f"без спота, оборот {b + 1}")
-        decay(P, lambda s, d, b=b: ~d["ns"] & (d["bk"] == b), f"со спотом, оборот {b + 1}")
+        decay(P, nos, f"без спота, оборот {b + 1}", sub=lambda s, d, b=b: d["bk"] == b)
+        decay(P, spt, f"со спотом, оборот {b + 1}", sub=lambda s, d, b=b: d["bk"] == b)
     print("\n### самоссылка индекса (перпы снимка 23.11.2026 без спота, свечи 07–10.2026)")
     late = lambda d: d["ns"] & (d["t"] >= SNAP0) & d["snap"]  # noqa: E731
     describe(P, lambda s, d: late(d) & (d["self"] > 0), "сам перп в индексе")
@@ -169,8 +179,8 @@ def main():
     decay(P, lambda s, d: late(d) & (d["self"] > 0), "сам перп в индексе")
     decay(P, lambda s, d: late(d) & (d["self"] == 0), "перпа в индексе нет")
     for b in range(5):
-        describe(P, lambda s, d, b=b: late(d) & (d["self"] > 0) & (d["bk"] == b), f"самоссылка, оборот {b + 1}")
-        describe(P, lambda s, d, b=b: late(d) & (d["self"] == 0) & (d["bk"] == b), f"без самоссылки, оборот {b + 1}")
+        describe(P, lambda s, d: late(d) & (d["self"] > 0), f"самоссылка, оборот {b + 1}", sub=lambda s, d, b=b: d["bk"] == b)
+        describe(P, lambda s, d: late(d) & (d["self"] == 0), f"без самоссылки, оборот {b + 1}", sub=lambda s, d, b=b: d["bk"] == b)
     print("\n### до и после листинга спота (перпы с переходом, ±30 сут, без 3 сут вокруг)")
     tr = {s for s, d in P.items() if d["spot0"] and d["t"][0] + 30 * DAY < d["spot0"] < d["t"][-1] - 30 * DAY}
     print("перпов с переходом и 30 сут по обе стороны:", len(tr))
@@ -187,7 +197,7 @@ def main():
     X = pd.DataFrame(rows, columns=["s", "b5", "a5", "tob", "toa"])
     print(f"попарно по монетам ({len(X)}): доля |p| ≥ 0,5% до {X.b5.median():.2%} → после {X.a5.median():.2%} (медианы), "
           f"снизилась у {(X.a5 < X.b5).mean():.0%}; оборот перпа до {X.tob.median() / 1e6:.1f} → после {X.toa.median() / 1e6:.1f} млн $/сут")
-    pickle.dump({k: {th: v[th] for th in TH if th in v} for k, v in R.items()}, open(f"{OUT}/prem_episodes.pkl", "wb"))
+    pickle.dump({k: {th: v[th] for th in TH if th in v} for k, v in R.items()}, open(f"{TMP}/prem_episodes.pkl", "wb"))
 
 
 if __name__ == "__main__":

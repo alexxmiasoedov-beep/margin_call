@@ -16,6 +16,8 @@ SKIP = {"USDT", "USDC", "USDE", "USD1", "USDS", "DAI", "FDUSD", "TUSD", "USDP", 
         "XAU", "XAG", "XPT", "XPD", "PAXG", "XAUT", "BTCDOM", "DEFI"}           # стейблкоины, металлы, индексы (BL_SKIP бота)
 OLD_SPOT = {"RENDER": 1635724800}                                               # спот под прежним тикером (RNDR, s253)
 OUT = "s259"
+TMP = "/dev/shm/s259"                   # крупные промежуточные таблицы — в памяти (диск почти полон)
+os.makedirs(TMP, exist_ok=True)
 
 
 def base(fs):
