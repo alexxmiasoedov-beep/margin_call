@@ -64,3 +64,20 @@ def block_at(ts, lo=0, hi=None):
         else:
             lo = mid
     return hi
+
+_ANCH = None
+
+def block_guess(ts):
+    """Блок по времени — кусочно-линейно по опорным точкам anchors.json (погрешность — минуты)."""
+    global _ANCH
+    import json, os
+    if _ANCH is None:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "anchors.json")
+        _ANCH = sorted((int(t), int(b)) for b, t in json.load(open(p)).items() if t)
+    A = _ANCH
+    if ts <= A[0][0]:
+        return A[0][1]
+    for (t0, b0), (t1, b1) in zip(A, A[1:]):
+        if t0 <= ts <= t1:
+            return int(b0 + (b1 - b0) * (ts - t0) / (t1 - t0))
+    return A[-1][1]

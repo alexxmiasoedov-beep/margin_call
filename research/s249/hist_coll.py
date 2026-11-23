@@ -11,7 +11,7 @@ res = {}
 for day in ("2024-11-15", "2025-03-15", "2025-07-15", "2025-11-15", "2026-03-15", "2026-07-15", "2026-10-10"):
     t0 = pd.Timestamp(day, tz="UTC").timestamp()
     deps = D[(D.t >= t0 - 30 * 86400) & (D.t < t0)].frm.drop_duplicates().tolist()[:600]
-    b0 = sqd.block_at(t0); b1 = sqd.block_at(t0 + 86400)
+    b0 = sqd.block_guess(t0); b1 = sqd.block_guess(t0 + 86400)
     L = sqd.logs(b0, b1, topic0=[T], topic1=[pad(a) for a in deps])
     c = collections.Counter(); s = collections.defaultdict(set); k = collections.defaultdict(set)
     for b, ts, l in L:
