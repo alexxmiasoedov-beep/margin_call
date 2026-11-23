@@ -67,6 +67,29 @@ def raw():
     return pd.DataFrame(rows, columns=["block", "t", "tok", "frm", "to", "amt", "tx"]).drop_duplicates(["tx", "tok", "frm", "to", "amt"])
 
 
+def covered211():
+    """Блоки, собранные по всем 211 токенам (первый запуск и запуск p): у монет с сетью ETH дособор не шёл."""
+    lo0, hi0 = 42639092, 128646816
+    iv = []
+    step = (hi0 - lo0) // 8 + 1
+    for k in range(8):
+        a, b = lo0 + k * step, min(hi0, lo0 + (k + 1) * step - 1)
+        nx = json.load(open(f"s249/raw/prog_{k}.json"))["next"]
+        if nx > a:
+            iv.append((a, min(b, nx - 1)))
+    for j, (a, b) in enumerate(json.load(open("s249/raw/plan.json"))):
+        nx = json.load(open(f"s249/raw/prog_p{j}.json"))["next"]
+        if nx > a:
+            iv.append((a, min(b, nx - 1)))
+    return sorted(iv)
+
+
+def in_iv(blocks, iv):
+    a = np.array([x[0] for x in iv]); b = np.array([x[1] for x in iv])
+    k = np.searchsorted(a, blocks, "right") - 1
+    return (k >= 0) & (blocks <= b[np.maximum(k, 0)])
+
+
 def events(R):
     C = json.load(open("s249/bsc_circ.json"))
     by = {r["contract"]: fs for fs, r in C.items()}
@@ -83,6 +106,7 @@ def events(R):
         out.append(g)
     X = pd.concat(out)
     X = X[(X.frac >= BIG) & (X.t >= T0) & (X.t < T1) & (X.t >= X.since)].sort_values(["perp", "t"])
+    X = X[~X.eth.astype(bool) | in_iv(X.block.values.astype(np.int64), covered211())]   # монеты с сетью ETH — только собранная часть
     keep = []
     for perp, g in X.groupby("perp"):
         last = -10 ** 12
@@ -112,8 +136,9 @@ def main():
     print(f"  для прозрачности — основная без родных монет других сетей (IOST, ZIL, BB, 0G…): "
           f"{S221.line(x[~x.eth & ~nat], months)}")
     print(f"\n🐋 BNB Chain, монеты без сети ETH, BEP-20 — свой токен (основная, спокойный рынок ±5%): {S221.line(x[~x.eth], months)}")
-    print(f"монеты с сетью ETH: {S221.line(x[x.eth], months)}")
-    print(f"все монеты: {S221.line(x, months)}")
+    iv = covered211(); cov = sum(b - a + 1 for a, b in iv) / (128646816 - 42639092 + 1)
+    print(f"монеты с сетью ETH (сбор только {cov:.0%} диапазона блоков, частота занижена): {S221.line(x[x.eth], months)}")
+    print(f"все монеты (то же ограничение для монет с сетью ETH): {S221.line(x, months)}")
     print(f"без фильтра рынка (без сети ETH): {S221.line(T[T.net.notna() & ~T.eth & (T.cls == 'own')], months)}")
     print(f"🐋ᵛ (λ ≥ 0,05), без сети ETH: {S221.line(x[~x.eth & (x.lam >= 0.05)], months)}")
     m, t, n = S221.ct(x[~x.eth].net, x[~x.eth].entry); mh, _, _ = S221.ct(x[~x.eth].hed, x[~x.eth].entry)
