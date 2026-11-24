@@ -20,13 +20,13 @@ EXITS = (("8 ч", 8, 0.10), ("4 ч", 4, 0.10), ("12 ч", 12, 0.10), ("24 ч (�
 MAIN = "8 ч"
 
 
-def run(per):
+def run(per, src="main"):
     import fastbt as FB  # noqa: E402
     import common182 as C  # noqa: E402
     from run import deposits, events  # noqa: E402  (s202/run.py)
     K = FB.K
     t0, t1 = C.ts(C.PER[per][0]), C.ts(C.PER[per][1])
-    E = events(deposits("main"))
+    E = events(deposits(src))
     E = E[E.kind == "single"].copy()
     E["entry"] = (np.ceil((E.tb + 900) / 900) * 900).astype(np.int64)
     E = E[(E.entry >= t0) & (E.entry < t1)]
@@ -59,7 +59,7 @@ def run(per):
                     rows.append(dict(ex=lab, s=s, t=int(e), net=float(net[j]), stop=bool(stp[j]),
                                      hed=float(net[j] + alt[j]), pl=float(pl[j])))
     R = pd.DataFrame(rows)
-    R.to_pickle(f"{OUT}/s284_{per}.pkl")
+    R.to_pickle(f"{OUT}/s284_{per}.pkl" if src == "main" else f"{OUT}/s284_{src}_{per}.pkl")
     print(per, R.groupby("ex").size().to_dict(), flush=True)
 
 
@@ -108,5 +108,29 @@ def report():
                   f"{'да' if all(signs) else 'нет'} → {'ПОРОГ ТРЁХ ПЕРИОДОВ ПРОЙДЕН' if ok else 'не пройден'}")
 
 
+def report_s167():
+    """Независимые токены s167: 8 ч (основной) и 24 ч (🐋) в 2020–2022 и 2022–2024; порог — оба > 0, вместе t ≥ 2."""
+    for lab in ("8 ч", "24 ч (🐋)"):
+        allx, signs = [], []
+        for p in ("2020–2022", "2022–2024"):
+            f = f"{OUT}/s284_s167_{p}.pkl"
+            if not os.path.exists(f):
+                continue
+            X = pd.read_pickle(f)
+            x = X[X.ex == lab]
+            m, t, n = ct(x.net, x.t)
+            mh, th, _ = ct(x.hed, x.t)
+            print(f"  s167 {p}, {lab}: n={n}, {m:+.2%} (t {t:+.1f}); с хеджем {mh:+.2%} (t {th:+.1f}); "
+                  f"сверх плацебо {ct(x.net - x.pl, x.t)[0]:+.2%}; стопов {x.stop.mean():.0%}")
+            allx.append(x)
+            signs.append(m > 0)
+        if len(allx) == 2:
+            A = pd.concat(allx)
+            m, t, n = ct(A.net, A.t)
+            print(f"  s167 вместе, {lab}: {m:+.2%} (t {t:+.1f}, n={n}) → "
+                  f"{'порог пройден' if all(signs) and t >= 2 else 'порог не пройден'}")
+
+
 if __name__ == "__main__":
-    report() if sys.argv[1] == "report" else run(sys.argv[1])
+    a = sys.argv[1]
+    report() if a == "report" else report_s167() if a == "report_s167" else run(a, sys.argv[2] if len(sys.argv) > 2 else "main")
