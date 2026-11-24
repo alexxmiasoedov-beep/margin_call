@@ -118,7 +118,7 @@ check(trader.virt_open(state, "virtual_SP", "AAA", "SP", "через 49 ч", pri
 # 8. порядок в korea_rule: 🛒 проверяется до 🟩 (лонг) в том же пампе
 src = open(scanner.__file__).read()
 i, j = src.index("ok_sp, why_sp = spot_pump_check(s, coin, T, k, spot)"), src.index("ok, why = noretail_check(s, coin, T, fut, kr_share, spot)")
-check(0 < j - i < 900, "korea_rule: проверка 🛒 стоит перед проверкой 🟩")
+check(0 < j - i < 2000, "korea_rule: проверка 🛒 (и вход 🛒⁸) стоит перед проверкой 🟩")   # 24.11: + вход двойника 🛒⁸
 
 print("\nВсе проверки пройдены" if not fails else f"\nНЕ ПРОЙДЕНО: {len(fails)}")
 sys.exit(1 if fails else 0)

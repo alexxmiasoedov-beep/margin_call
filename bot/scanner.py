@@ -1382,9 +1382,16 @@ def korea_rule(state):
             ok_sp, why_sp = spot_pump_check(s, coin, T, k, spot)
             log("СПОТ-ПАМП", s, f"{head}; {why_sp}" + (" → шорт 🛒" if ok_sp else ""))
             if ok_sp:
+                was = _virt_is_open(state, "virtual_SP", s), _virt_is_open(state, "virtual_SP8", s)
                 m = trader.virt_open(state, "virtual_SP", s, "SP", f"{head}; {why_sp}", price=c)
-                if m:
-                    msgs.append(m)
+                m8 = trader.virt_open(state, "virtual_SP8", s, "SP", f"{head}; {why_sp}", price=c)  # 🛒⁸: выход через 8 ч
+                new = not was[0] and _virt_is_open(state, "virtual_SP", s), not was[1] and _virt_is_open(state, "virtual_SP8", s)
+                if not new[1]:
+                    log("СПОТ-ПАМП", s, "🛒⁸ без входа: " + ("сделка ещё открыта" if was[1] else "кулдаун или баланс"))
+                if all(new):
+                    msgs.append(m + "\n🛒⁸ тот же шорт: выход через 8 ч, без тейка, стоп 10%")   # обычно входят вместе
+                else:
+                    msgs += [x for x in (m, m8) if x]
         except Exception as e:
             log("СПОТ-ПАМП", s, f"ошибка проверки: {e!r}")
         ok, why = noretail_check(s, coin, T, fut, kr_share, spot)
