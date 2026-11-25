@@ -3515,8 +3515,8 @@ def _wdv_lambda(k, n, fs):
 def _wd_enter(state, w, now):
     """Вход по событиям w["pend"]: в момент закрытия свечи входа (опоздание — до WD_LATE). Фьючерс за 24 ч до входа
     (закрытие свечи входа к закрытию свечи сутками раньше) ±5% и торгуется больше суток → виртуальный шорт 🐋. Двойник 🐋ᵛ
-    входит в ту же сделку, если завод ≥ 5% среднесуточного оборота фьючерса за 7 сут (_wdv_lambda); совместный вход — одной
-    строкой к сообщению 🐋."""
+    входит в ту же сделку, если завод ≥ 5% среднесуточного оборота фьючерса за 7 сут (_wdv_lambda); дубль 🐋⁺ и двойник 🐋⁸
+    (выход через 8 ч, стоп +10%) — во все сделки 🐋; совместный вход — одной строкой к сообщению 🐋."""
     msgs, pend = [], w.setdefault("pend", {})
     for fs, p in sorted(pend.items(), key=lambda kv: kv[1]["te"]):
         if now < p["te"]:
@@ -3546,29 +3546,34 @@ def _wd_enter(state, w, now):
         vnote = (f"завод {_wd_usd(lam[1])} — {lam[0] * 100:.1f}% среднесуточного оборота фьючерса за 7 сут ({_wd_usd(lam[2])})"
                  if lam else "оборот фьючерса за 7 сут не посчитан (фьючерс моложе 7 сут или нет суммы завода)")
         was = (_virt_is_open(state, "virtual_WD", fs), _virt_is_open(state, "virtual_WDV", fs),
-               _virt_is_open(state, "virtual_WDS", fs))
+               _virt_is_open(state, "virtual_WDS", fs), _virt_is_open(state, "virtual_WD8", fs))
         m = trader.virt_open(state, "virtual_WD", fs, "WD", note)
         if not (m or was[0]):
             continue                                         # Binance не отдал цену — повтор в следующем проходе, до WD_LATE
         mv = trader.virt_open(state, "virtual_WDV", fs, "WD", f"{note}; {vnote}", price=c) if big else None
         ms = trader.virt_open(state, "virtual_WDS", fs, "WD", note, price=c)     # 🐋⁺ входит во все сделки 🐋
+        m8 = trader.virt_open(state, "virtual_WD8", fs, "WD", note.replace("выход через 24 ч", "выход через 8 ч"),
+                              price=c)                       # 🐋⁸: те же входы, выход через 8 ч (s284)
         opened = not was[0] and _virt_is_open(state, "virtual_WD", fs)
         opened_v = not was[1] and _virt_is_open(state, "virtual_WDV", fs)
         opened_s = not was[2] and _virt_is_open(state, "virtual_WDS", fs)
+        opened_8 = not was[3] and _virt_is_open(state, "virtual_WD8", fs)
         del pend[fs]
         log("ЗАВОДЫ", fs, note + (" → шорт 🐋" if opened else " — сделка не открыта (уже есть или мало виртуального баланса)")
             + f"; {vnote}" + (" → шорт 🐋ᵛ" if opened_v else " — 🐋ᵛ не открыта (уже есть или мало виртуального баланса)" if big
                               else f" — 🐋ᵛ без входа (порог {WDV_LAM * 100:g}%)")
-            + ("; шорт 🐋⁺" if opened_s else "; 🐋⁺ не открыта (уже есть или мало виртуального баланса)"))
+            + ("; шорт 🐋⁺" if opened_s else "; 🐋⁺ не открыта (уже есть или мало виртуального баланса)")
+            + ("; шорт 🐋⁸" if opened_8 else "; 🐋⁸ не открыта (уже есть или мало виртуального баланса)"))
         if opened and opened_s:                              # 🐋⁺ входит вместе с 🐋 — строкой к его сообщению
             m += "\n🐋⁺ тот же шорт"; ms = None
+        if opened and opened_8:                              # 🐋⁸ тоже — строкой к сообщению 🐋
+            m += "\n🐋⁸ тот же шорт: выход через 8 ч, без тейка, стоп 10%"; m8 = None
         if opened and (opened_v or not big):                 # обычно журналы решают вместе — одной строкой
             msgs.append(m + (f"\n🐋ᵛ тот же шорт: {vnote}" if opened_v
                              else f"\n🐋ᵛ без входа: {vnote}" + (f" — меньше {WDV_LAM * 100:g}%" if lam else "")))
-            if ms:
-                msgs.append(ms)
+            msgs.extend(x for x in (ms, m8) if x)
         else:
-            msgs.extend(x for x in (m, mv, ms) if x)
+            msgs.extend(x for x in (m, mv, ms, m8) if x)
     return msgs
 
 
@@ -3857,7 +3862,8 @@ def whale_deposit_rule(state):
     в сутки (_wd_refresh). Нет файла меток — правило молчит. Раз в сутки — сторож меток (_wd_watch, research/s242): если
     переводов на адреса Binance стало мало, Binance, похоже, сменил адрес сметания — строка и сообщение в чат.
     Дубль 🐋⁺ (research/s221 и s248, по «да» владельца 23.11.2026) входит во все сделки 🐋 и ещё по сметаниям родных токенов
-    Solana на горячий кошелёк Binance (_wds_rule) — с теми же условиями входа и выхода.
+    Solana на горячий кошелёк Binance (_wds_rule) — с теми же условиями входа и выхода. Двойник 🐋⁸ (research/s284,
+    по «да» владельца 25.11.2026) входит во все сделки 🐋 (Ethereum), выход через 8 ч, стоп +10%.
     Строки журнала службы — «ЗАВОДЫ». Сообщения для чата."""
     now = time.time(); w = state.setdefault("wd", {})
     lab = _wd_labels()
