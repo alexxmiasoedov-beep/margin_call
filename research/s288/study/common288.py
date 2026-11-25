@@ -47,6 +47,14 @@ WRAPPED = {"WBTC", "BTCB", "WETH", "STETH", "WSTETH", "CBBTC", "TBTC", "RENBTC",
            "BNSOL", "WEETH", "SAVAX", "STLINK"}
 
 
+def norm_hash(h):
+    """Хеш для сопоставления: нижний регистр без префикса 0x (в Telegram 2019–2022 гг. хеши Ethereum — без 0x)."""
+    if not isinstance(h, str):
+        return ""
+    h = h.strip().lower()
+    return h[2:] if h.startswith("0x") else h
+
+
 def coin_class(tic):
     t = tic.upper() if isinstance(tic, str) else ""
     if t in GOLD:

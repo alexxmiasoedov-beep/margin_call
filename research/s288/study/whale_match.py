@@ -54,10 +54,10 @@ def whale_events():
 def main():
     M = whale_events()
     A = pd.read_pickle(f"{C.OUT}/wa_archive.pkl.gz")
-    A["hl"] = A.hash.str.lower()
+    A["hl"] = A.hash.map(C.norm_hash)
     T = pd.read_pickle(f"{C.OUT}/posts.pkl.gz")
-    T["hl"] = T.hash.fillna("").str.lower()
-    M["hl"] = M.tx.fillna("").str.lower()
+    T["hl"] = T.hash.map(C.norm_hash)
+    M["hl"] = M.tx.map(C.norm_hash)
     a1 = A.drop_duplicates("hl").set_index("hl")
     t1 = T[T.hl != ""].sort_values("id").drop_duplicates("hl").set_index("hl")
     # 1) прямое совпадение хеша (алерт и есть перевод на горячий кошелёк Binance)
@@ -80,7 +80,7 @@ def main():
             if len(g):
                 best = g.sort_values("tb").iloc[-1]
         hit_t.append(best.tb if best is not None else np.nan)
-        hit_h.append(best.hash.lower() if best is not None else "")
+        hit_h.append(C.norm_hash(best.hash) if best is not None else "")
         hit_usd.append(best.usd if best is not None else np.nan)
         hit_frm.append(best.frm if best is not None else None)
     M["m_addr"] = [h != "" for h in hit_h]
@@ -145,7 +145,7 @@ def main():
     e = e[e.sym.isin(syms160)].copy()
     e["ta_l"] = e.ta.fillna("").str.lower()
     e["lab_ours"] = e.ta_l.map(lambda a: cex.get(a, [None])[0])
-    e["in195"] = e.hash.str.lower().isin(set(pd.read_pickle("s195_deposits.pkl").tx.str.lower()))
+    e["in195"] = e.hash.map(C.norm_hash).isin(set(pd.read_pickle("s195_deposits.pkl").tx.map(C.norm_hash)))
     e["per"] = C.period_of(e.tb)
     e["from_unknown"] = e.frm.str.startswith("unknown")
     say("\n== Обратная сверка: алерты «ERC-20 альт с перпом → binance» в архиве ==")

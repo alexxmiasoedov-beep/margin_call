@@ -23,11 +23,11 @@ def say(*a):
 
 
 def load():
-    T = pd.read_pickle(SRC + ".pkl")
+    T = pd.read_pickle(SRC + ".pkl.gz") if os.path.exists(SRC + ".pkl.gz") else pd.read_pickle(SRC + ".pkl")
     A = pd.read_pickle(f"{C.OUT}/wa_archive.pkl.gz")
-    A["hl"] = A.hash.str.lower()
+    A["hl"] = A.hash.map(C.norm_hash)
     A = A.drop_duplicates(["hl", "sym"])
-    T["hl"] = T.hash.fillna("").str.lower()
+    T["hl"] = T.hash.map(C.norm_hash)
     m = T.merge(A[["hl", "sym", "tb", "tw_t", "fot", "tot", "fat", "tat", "fa", "ta", "frm", "to", "type", "chain"]]
                 .rename(columns={"frm": "a_frm", "to": "a_to", "chain": "a_chain", "sym": "tic"}),
                 on=["hl", "tic"], how="left")

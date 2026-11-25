@@ -1,7 +1,7 @@
 """s288: разбор сырых страниц t.me/s канала Whale Alert в таблицу постов.
 
 Запуск: python3 -I parse_tg.py <папка сырья> <канал> <файл итога без расширения>
-Итог: <файл>.csv.gz и <файл>.pkl — по строке на пост:
+Итог: <файл>.csv.gz и <файл>.pkl.gz — по строке на пост:
   id, t (UTC, с), kind (transfer, stolen, mint, burn, unlock, escrow, stake, unstake, frozen, dormant, fee, story, other),
   amt, tic, usd, frm, to (для mint/burn/unlock/escrow/stake — место «at» в frm), chain, hash, nemo (число эмодзи),
   views, text (очищенный текст, до 300 знаков).
@@ -129,7 +129,7 @@ def main():
         if (i + 1) % 1000 == 0:
             print(i + 1, "страниц,", len(rows), "постов", flush=True)
     D = pd.DataFrame(sorted(rows.values(), key=lambda r: r["id"]))
-    D.to_pickle(out + ".pkl")
+    D.to_pickle(out + ".pkl.gz", compression="gzip")
     D.to_csv(out + ".csv.gz", index=False, compression="gzip")
     print("постов", len(D), "| виды:", D.kind.value_counts().to_dict(), flush=True)
     print("с", pd.to_datetime(D.t.min(), unit="s"), "по", pd.to_datetime(D.t.max(), unit="s"))
